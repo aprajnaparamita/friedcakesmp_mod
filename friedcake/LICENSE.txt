@@ -1,0 +1,9 @@
+FriedcakeSMP — see per-mod headers.
+
+This work is released under the terms of the GNU LGPL 2.1 or later, the same
+licence as Mineclonia and Luanti (Minetest). Each `smp_*` mod carries its own
+copyright header in `init.lua`; the default is the LGPL 2.1+ boilerplate used
+by Mineclonia.
+
+Third-party assets referenced from Mineclonia or Luanti retain their original
+licences and copyright.

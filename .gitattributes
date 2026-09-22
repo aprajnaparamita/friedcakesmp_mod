@@ -1,0 +1,12 @@
+# Force LF line endings — Luanti and the wider Lua/Markdown tooling are
+# hostile to CRLF on macOS/Windows checkouts.
+*           text=auto eol=lf
+
+# Binary by content
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.webp      binary
+*.mp4       binary
+*.sqlite    binary
+*.zip       binary

@@ -1,0 +1,53 @@
+# Agent harness internal state — never committed.
+.pi/
+
+# Source media — too big, regenerable from the YouTube link.
+frames/
+*.mp4
+
+# Big regenerable artefacts. The thumbnail grid is rebuilt by the navigation
+# builder; the frame_descriptions_vlm.* files come from the VLM pipeline.
+thumbnail_grid.jpg
+frame_descriptions_vlm.csv
+frame_descriptions_vlm.json
+frame_descriptions_vlm.md
+
+# Subtitles paired with the source video.
+*.srt
+
+# Generated caches.
+__pycache__/
+*.pyc
+*.pyo
+.lua_cache/
+
+# Luanti / Mineclonia runtime state.
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+# OS junk.
+.DS_Store
+Thumbs.db
+
+# Editor / IDE.
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Personal notes — keep these out of the shared repo.
+TODO.local.md
+scratch/
+
+# Mineclonia world output, if someone runs the game locally.
+world/
+minetest.conf.local
+
+# Old, pre-spec draft of the feature spec. Replaced by spec/README.md.
+old-donut-smp-feature-spec-luanti-mineclonia.md
+
+# Dev test scratch output.
+*.luac
+/tmp-test-*.lua

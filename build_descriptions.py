@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""For each remaining frame, extract rendered text via OCR and combine with
+the active subtitle to produce a faithful description file.
+
+Outputs:
+  - frame_descriptions.md  : human-readable descriptions, grouped by feature
+  - frame_descriptions.csv : machine-readable (frame, time, ocr_text, subtitle)
+"""
+import csv
+import re
+import subprocess
+from pathlib import Path
+
+ROOT = Path("/Volumes/Dara/dev/coconut")
+FRAMES_DIR = ROOT / "frames"
+WORK_DIR = ROOT / "ocr_work"
+WORK_DIR.mkdir(exist_ok=True)
+
+# Reuse the feature boundaries from build_navigation.py
+FEATURES = [
+    (0,   "Intro — joining the server (donutsmp.net)"),
+    (21,  "/rtp — random teleport"),
+    (43,  "/sethome + /homes — set home, rename, delete, change icon"),
+    (87,  "/pay + /sell — send money, quick-sell items"),
+    (107, "/ah / /auction — auction house browse & search"),
+    (127, "/ah — putting your own items up for auction"),
+    (154, "/orders — fulfilling other players' buy orders"),
+    (184, "/orders — creating your own buy order"),
+    (231, "/settings — chat, PvP, privacy toggles"),
+    (267, "/msg + /ignore — private messages and ignore list"),
+    (304, "Outro"),
+]
+
+
+def parse_srt(path: Path):
+    content = path.read_text(encoding="utf-8")
+    cues = []
+    for block in re.split(r"\r?\n\r?\n+", content.strip()):
+        lines = block.splitlines()
+        if len(lines) < 2:
+            continue
+        ts_idx = next((i for i, l in enumerate(lines) if "-->" in l), -1)
+        if ts_idx < 0:
+            continue
+        m = re.match(
+            r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})",
+            lines[ts_idx],
+        )
+        if not m:
+            continue
+        start = int(m.group(1))*3600 + int(m.group(2))*60 + int(m.group(3)) + int(m.group(4))/1000
+        text = " ".join(l.strip() for l in lines[ts_idx+1:] if l.strip())
+        cues.append((start, text))
+    return cues
+
+
+def find_active(cues, t):
+    for s, txt in cues:
+        if s <= t < s + 5:
+            return txt
+    return ""
+
+
+def hms(t):
+    h = int(t // 3600)
+    m = int((t % 3600) // 60)
+    s = int(t % 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def feature_for(t):
+    name = FEATURES[0][1]
+    for start, n in FEATURES:
+        if t >= start:
+            name = n
+        else:
+            break
+    return name
+
+
+def ocr_frame(jpg_path: Path) -> str:
+    """Run OCR on a frame with preprocessing. Returns cleaned text or ''."""
+    png_path = WORK_DIR / (jpg_path.stem + "_enh.png")
+    if not png_path.exists():
+        from PIL import Image, ImageOps
+        img = Image.open(jpg_path).convert("L")
+        img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)
+        img = ImageOps.autocontrast(img, cutoff=2)
+        img.save(png_path)
+    out = subprocess.run(
+        ["tesseract", str(png_path), "-", "--psm", "6"],
+        capture_output=True, text=True, timeout=60,
+    )
+    text = out.stdout.strip()
+    # Collapse whitespace, drop empty lines, strip per-line
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    return "\n".join(lines)
+
+
+def feature_boundaries(frames_nums):
+    """Map each frame number to the feature it belongs to (preserving order)."""
+    boundaries = sorted({s for s, _ in FEATURES})
+    result = {}
+    for n in frames_nums:
+        t = n - 1
+        idx = 0
+        for i, b in enumerate(boundaries):
+            if t >= b:
+                idx = i
+        result[n] = FEATURES[idx][1]
+    return result
+
+
+def main():
+    cues = parse_srt(next(ROOT.glob("*.en-orig.srt")))
+    frames = sorted(int(p.stem.split("_")[1]) for p in FRAMES_DIR.glob("frame_*.jpg"))
+    print(f"Processing {len(frames)} frames...")
+
+    rows = []
+    for n in frames:
+        fp = FRAMES_DIR / f"frame_{n:04d}.jpg"
+        t = n - 1
+        subtitle = find_active(cues, t)
+        ocr_text = ocr_frame(fp)
+        rows.append({
+            "frame": n,
+            "time_hms": hms(t),
+            "time_seconds": t,
+            "feature": feature_for(t),
+            "subtitle": subtitle,
+            "ocr_text": ocr_text,
+        })
+        print(f"  frame_{n:04d}.jpg ({hms(t)}) — {len(ocr_text)} chars")
+
+    # CSV
+    csv_path = ROOT / "frame_descriptions.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["frame", "time_hms", "time_seconds", "feature", "subtitle", "ocr_text"])
+        for r in rows:
+            w.writerow([r["frame"], r["time_hms"], r["time_seconds"], r["feature"],
+                        r["subtitle"], r["ocr_text"]])
+
+    # Markdown, organized by feature
+    md_path = ROOT / "frame_descriptions.md"
+    with md_path.open("w", encoding="utf-8") as f:
+        f.write("# Frame Descriptions — Donut SMP Video\n\n")
+        f.write(
+            "**Important**: This file was generated by OCR + subtitle alignment, "
+            "*not* by visual inspection. Each entry contains:\n\n"
+            "- The frame filename and timestamp\n"
+            "- The video feature segment it belongs to\n"
+            "- The speaker's subtitle text at that moment\n"
+            "- **OCR-extracted on-screen text** (chat messages, menu titles, "
+            "buttons, transaction notifications) — this is the only direct "
+            "rendered content readable from the pixels\n\n"
+            "The OCR is *noisy* because Minecraft UI text is small and "
+            "pixelated, so some words are mis-read (e.g. \"ah\" for \"/ah\", "
+            "garbled names). Use it as a pointer to where text appears and "
+            "verify against the actual frame.\n\n"
+            "**Background scenes (the 3D world, player character, world "
+            "objects) are NOT described** — OCR cannot see them and this tool "
+            "cannot view image content. You will need to look at the frame "
+            "image itself to understand the visual scene.\n\n"
+            "---\n\n"
+        )
+
+        last_feat = None
+        for r in rows:
+            if r["feature"] != last_feat:
+                f.write(f"\n## {r['feature']}\n\n")
+                last_feat = r["feature"]
+            f.write(f"### frame_{r['frame']:04d}.jpg — {r['time_hms']}\n\n")
+            if r["subtitle"]:
+                f.write(f"**Speaker says:** {r['subtitle']}\n\n")
+            if r["ocr_text"]:
+                f.write("**On-screen text (OCR):**\n\n```\n")
+                f.write(r["ocr_text"])
+                f.write("\n```\n\n")
+            else:
+                f.write("**On-screen text (OCR):** *(none detected — likely gameplay/world view with no UI)*\n\n")
+
+    print(f"\nWrote {csv_path}")
+    print(f"Wrote {md_path}")
+
+
+if __name__ == "__main__":
+    main()
