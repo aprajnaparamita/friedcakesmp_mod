@@ -62,9 +62,19 @@ local function chat_send_player(name, msg)
 end
 
 core = {
-	-- translator: identity, so assertions see the raw fmt string
+	-- translator: substitutes @1, @2, ... like the engine's translator
 	get_translator = function()
-		return function(s, ...) return s end
+		return function(s, ...)
+			local args = { ... }
+			for i = 1, #args do
+				-- function replacement: args may contain % or other
+				-- pattern magic (e.g. matched filter patterns)
+				s = s:gsub("@" .. i, function()
+					return tostring(args[i])
+				end)
+			end
+			return s
+		end
 	end,
 	get_current_modname = function() return "smp_world" end,
 	settings = {
@@ -330,9 +340,276 @@ smp_world.border_step(0.96) -- 1.01 accumulates -> sweep
 eq(probe.gets, 1, "T3 registered globalstep drives the sweep")
 M.connected = {}
 
+----------------------------------------------------------------------
+-- T5: a sixth distinct account from one IP raises a staff flag and is
+--     NOT blocked
+----------------------------------------------------------------------
+
+eq(#M.join_cbs, 1, "T5 exactly one join handler registered")
+
+local function mock_join(name, ip)
+	M.ip_of[name] = ip
+	local pl = { get_player_name = function() return name end }
+	return M.join_cbs[1](pl) -- engine ignores joinplayer returns; must be nil
+end
+
+-- Staff and bystanders online while the flags fire.
+M.connected = {
+	{ get_player_name = function() return "boss" end },
+	{ get_player_name = function() return "mod1" end },
+	{ get_player_name = function() return "bob" end },
+}
+M.privs["boss"] = { smp_admin = true }
+M.privs["mod1"] = { smp_moderator = true }
+
+local flags0 = smp_world.staff_flag_count
+local IP1 = "198.51.100.77" -- TEST-NET-2 documentation range
+
+for i = 1, 5 do
+	local ret = mock_join("altv" .. i, IP1)
+	eq(ret, nil, "T5 account " .. i .. " (<= max) joins unblocked")
+end
+eq(smp_world.staff_flag_count, flags0,
+	"T5 first five accounts raise no flag")
+eq(smp_world.accounts_on_ip(IP1), 5, "T5 index counts five distinct accounts")
+ok(M.storage["accounts_per_ip"] ~= nil and M.storage["accounts_per_ip"] ~= "",
+	"T5 index persisted to smp_world's own mod storage")
+ok(not M.storage["accounts_per_ip"]:find("198.51.100.77", 1, true),
+	"T5 IPs are stored sha1-hashed, never in the clear")
+
+-- The sixth distinct account: flag raised, still not blocked.
+local ret6 = mock_join("altv6", IP1)
+eq(ret6, nil, "T5 sixth account is NOT blocked (flag only)")
+eq(smp_world.staff_flag_count, flags0 + 1, "T5 sixth account raises a flag")
+eq(smp_world.accounts_on_ip(IP1), 6, "T5 index counts six distinct accounts")
+local boss_chats = M.chats["boss"] or {}
+local flag_msg
+for _, m in ipairs(boss_chats) do
+	if m:find("Alt%-account flag") then flag_msg = m end
+end
+ok(flag_msg ~= nil, "T5 online smp_admin is notified")
+ok(flag_msg and flag_msg:find("6", 1, true) ~= nil,
+	"T5 flag message carries the account count")
+local saw_mod_chat = false
+for _, m in ipairs(M.chats["mod1"] or {}) do
+	if m:find("Alt%-account flag") then saw_mod_chat = true end
+end
+ok(saw_mod_chat, "T5 online smp_moderator is notified")
+local saw_bob_chat = false
+for _, m in ipairs(M.chats["bob"] or {}) do
+	if m:find("Alt%-account flag") then saw_bob_chat = true end
+end
+ok(not saw_bob_chat, "T5 players without staff privs are not spammed")
+
+-- Rejoins and other IPs do not re-flag.
+mock_join("altv1", IP1)
+eq(smp_world.staff_flag_count, flags0 + 1, "T5 rejoin of a known account does not re-flag")
+eq(smp_world.accounts_on_ip(IP1), 6, "T5 rejoin does not inflate the count")
+mock_join("solo1", "203.0.113.9")
+eq(smp_world.staff_flag_count, flags0 + 1, "T5 a different IP raises no flag")
+
+-- The threshold is configurable.
+M.settings_store["world.max_accounts_per_ip"] = "2"
+mock_join("solo2", "203.0.113.9")
+eq(smp_world.staff_flag_count, flags0 + 1, "T5 at max (2) no flag yet")
+mock_join("solo3", "203.0.113.9")
+eq(smp_world.staff_flag_count, flags0 + 2, "T5 over max (3 > 2) flags")
+M.settings_store["world.max_accounts_per_ip"] = nil
+eq(smp_world.accounts_on_ip("203.0.113.9"), 3, "T5 second IP indexed separately")
+
+-- Join with no IP (engine returns nil offline / lookup failure): no crash,
+-- no bucket.
+local ret_noip = mock_join("noip1", nil)
+eq(ret_noip, nil, "T5 join without IP is harmless")
+eq(smp_world.accounts_on_ip(""), 0, "T5 no bucket created without an IP")
+M.connected = {}
+
+----------------------------------------------------------------------
+-- 5b. Staff-impersonation name filter
+----------------------------------------------------------------------
+
+eq(smp_world.staff_flag_count, flags0 + 2,
+	"name filter: no flag drift before the filter tests")
+
+-- Default pattern list: matches are caught, near-misses are not.
+eq(smp_world.staff_name_filter_matched("Admin_Dude"), "^admin[%d_%-]",
+	"default filter matches admin + separator")
+eq(smp_world.staff_name_filter_matched("staff"), "^staff$",
+	"default filter matches the bare word staff")
+eq(smp_world.staff_name_filter_matched("Moderator"), "^moderator$",
+	"default filter matches the bare word moderator")
+eq(smp_world.staff_name_filter_matched("ADMIN"), "^admin$",
+	"default filter is case-insensitive")
+eq(smp_world.staff_name_filter_matched("model"), nil,
+	"default filter must not catch 'model' (mod + letter)")
+eq(smp_world.staff_name_filter_matched("administrator2"), nil,
+	"default filter precision: separator rule, not raw prefix")
+eq(smp_world.staff_name_filter_matched("Alice"), nil,
+	"default filter passes ordinary names")
+
+-- Default action is flag: staff notified, kick never called.
+local kicks0 = #M.kicks
+M.connected = { { get_player_name = function() return "boss" end } }
+local f0 = smp_world.staff_flag_count
+eq(smp_world.apply_name_filter("Admin_Impostor"), "^admin[%d_%-]",
+	"apply_name_filter returns the matched pattern")
+eq(smp_world.staff_flag_count, f0 + 1, "flag action raises a staff flag")
+eq(#M.kicks, kicks0, "flag action does not kick by default")
+
+-- action = kick: also disconnects with the PROPOSED refusal string.
+M.settings_store["world.staff_name_action"] = "kick"
+smp_world.apply_name_filter("Mod_Impostor")
+eq(#M.kicks, kicks0 + 1, "kick action disconnects the player")
+if #M.kicks == kicks0 + 1 then
+	eq(M.kicks[#M.kicks].name, "Mod_Impostor", "kick targets the joiner")
+	eq(M.kicks[#M.kicks].reason, "This name is reserved for staff",
+		"kick reason is the PROPOSED verbatim string")
+end
+
+-- action = off: nothing happens at all.
+M.settings_store["world.staff_name_action"] = "off"
+local f1 = smp_world.staff_flag_count
+eq(smp_world.apply_name_filter("Admin_Off"), nil, "action off skips the filter")
+eq(smp_world.staff_flag_count, f1, "action off raises no flag")
+eq(#M.kicks, kicks0 + 1, "action off does not kick")
+
+-- An unknown action value degrades to flag, never to kick.
+M.settings_store["world.staff_name_action"] = "garbage"
+local f2 = smp_world.staff_flag_count
+smp_world.apply_name_filter("Admin_Garbage")
+eq(smp_world.staff_flag_count, f2 + 1, "unknown action degrades to flag")
+eq(#M.kicks, kicks0 + 1, "unknown action never kicks")
+M.settings_store["world.staff_name_action"] = nil
+
+-- world.staff_name_filter = "" disables the pattern list entirely.
+M.settings_store["world.staff_name_filter"] = ""
+eq(smp_world.staff_name_filter_matched("admin"), nil,
+	"empty world.staff_name_filter disables the filter")
+M.settings_store["world.staff_name_filter"] = nil
+
+-- A custom pattern replaces the default list.
+M.settings_store["world.staff_name_filter"] = "^customtoken"
+eq(smp_world.staff_name_filter_matched("customtoken_1"), "^customtoken",
+	"custom pattern matches")
+eq(smp_world.staff_name_filter_matched("admin"), nil,
+	"custom pattern list replaces the defaults")
+M.settings_store["world.staff_name_filter"] = nil
+
+-- The join dispatch runs the filter for every joiner (kick path chosen).
+M.settings_store["world.staff_name_action"] = "kick"
+local f3 = smp_world.staff_flag_count
+mock_join("Staff_Impostor", "203.0.113.50")
+eq(smp_world.staff_flag_count, f3 + 1, "on_joinplayer applies the name filter")
+eq(#M.kicks, kicks0 + 2, "on_joinplayer kicks under action=kick")
+M.settings_store["world.staff_name_action"] = nil
+M.connected = {}
+
+----------------------------------------------------------------------
+-- Static source scans: the smp_ mod set (paths under mods/smp_*)
+----------------------------------------------------------------------
+
+local function scan_smp_files()
+	local files = {}
+	local p = io.popen('find "' .. modpack ..
+		'/mods" -type f -path "*/smp_*/*.lua" 2>/dev/null')
+	if p then
+		for line in p:lines() do
+			files[#files + 1] = line
+		end
+		p:close()
+	end
+	return files
+end
+
+local function scan_for(patterns)
+	local hits = {}
+	for _, f in ipairs(scan_smp_files()) do
+		local fh = io.open(f, "r")
+		if fh then
+			local content = fh:read("*a") or ""
+			fh:close()
+			for _, pat in ipairs(patterns) do
+				local at = content:find(pat)
+				if at then
+					local line = 1
+					for _ in content:sub(1, at):gmatch("\n") do
+						line = line + 1
+					end
+					hits[#hits + 1] = string.format("%s:%d", f, line)
+				end
+			end
+		end
+	end
+	return hits
+end
+
+-- Scanner sanity: a pattern we KNOW occurs must be found, otherwise the
+-- two negative tests below would be vacuous.
+local known = scan_for({ "register_on_joinplayer" })
+ok(#known >= 1, "scanner sanity: finds a pattern known to occur")
+
+----------------------------------------------------------------------
+-- T6: nothing under the smp_ mod set exposes the mapgen seed (negative
+--     test — verify and document, nothing to implement)
+----------------------------------------------------------------------
+
+local SEED_PATTERNS = {
+	"get_mapgen_setting%s*%(%s*[\"']seed[\"']", -- core.get_mapgen_setting("seed")
+	"get_mapgen_params",                        -- deprecated table carries .seed
+	"[\"']mapgen_seed[\"']",                    -- engine config key
+}
+local seed_hits = scan_for(SEED_PATTERNS)
+eq(#seed_hits, 0, "T6 no seed exposure in the smp_ mod set"
+	.. (#seed_hits > 0 and (" -> " .. table.concat(seed_hits, ", ")) or ""))
+
+----------------------------------------------------------------------
+-- T7: zero ABMs across the whole smp_ mod set (static + runtime)
+----------------------------------------------------------------------
+
+local ABM_PATTERNS = { "register_abm%s*%(", "register_abms%s*%(" }
+local abm_hits = scan_for(ABM_PATTERNS)
+eq(#abm_hits, 0, "T7 no register_abm call in any smp_ mod"
+	.. (#abm_hits > 0 and (" -> " .. table.concat(abm_hits, ", ")) or ""))
+
+eq(#M.mods_loaded_cbs, 1, "T7 exactly one mods-loaded invariant registered")
+
+local function log_count(pat)
+	local n = 0
+	for _, l in ipairs(M.logs) do
+		if l:find(pat) then n = n + 1 end
+	end
+	return n
+end
+
+-- Clean set: no complaint.
+core.registered_abms = { { mod_origin = "mcl_mobs" }, { mod_origin = "mcl_core" } }
+M.mods_loaded_cbs[1]()
+eq(log_count("zero%-ABM invariant"), 0,
+	"T7 clean set raises no invariant error")
+
+-- An smp_* ABM must be reported.
+core.registered_abms = { { mod_origin = "mcl_mobs" }, { mod_origin = "smp_evil" } }
+M.mods_loaded_cbs[1]()
+eq(log_count("zero%-ABM invariant"), 1, "T7 smp_* ABM is reported as an error")
+ok(log_count("smp_evil") >= 1, "T7 report names the offending mod")
+core.registered_abms = M.registered_abms
+
+----------------------------------------------------------------------
+-- Persistence: a fresh load (server restart) restores the index from
+-- this mod's storage. Runs last: the second instance wraps the first.
+----------------------------------------------------------------------
+
+local joins_before = #M.join_cbs
+dofile(init_path)
+eq(#M.join_cbs, joins_before + 1, "reload registers a second join handler")
+eq(smp_world.accounts_on_ip(IP1), 6,
+	"account index survives a reload (JSON round-trip through storage)")
+eq(smp_world.accounts_on_ip("203.0.113.9"), 3,
+	"second IP bucket survives a reload")
+
 print(string.format("world dev-test: %d checks, %d failures",
 	checks, failures))
 if failures > 0 then
 	error(failures .. " check(s) failed", 0)
 end
-print("ALL OK so far (T1, T3)")
+print("ALL OK (T1, T3, T5, T6 guard, T7)")
