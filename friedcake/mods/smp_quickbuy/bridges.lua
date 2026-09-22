@@ -35,8 +35,8 @@ smp_quickbuy.stats  = {}
 --   directly.
 ----------------------------------------------------------------------
 function smp_quickbuy.au.cheapest_for(key, ench, qty)
-	-- TODO(f03): delegate to smp_ah.cheapest_for once the auction house
-	-- lands. The return shape above is the contract f03 must honour.
+	-- Delegates to smp_ah.cheapest_for (f03 §6.2; shipped). Returns nil only
+	-- when the auction house is absent or cannot fill the entry.
 	if smp_ah and smp_ah.cheapest_for then
 		return smp_ah.cheapest_for(key, ench, qty)
 	end
@@ -58,7 +58,7 @@ end
 --   rest of the purchase still completes.
 ----------------------------------------------------------------------
 function smp_quickbuy.au.buy(player, id, version)
-	-- TODO(f03): delegate to smp_ah.buy(player, id, version).
+	-- Delegates to smp_ah.buy(player, id, version) (f03 §6.2; shipped).
 	if smp_ah and smp_ah.buy then
 		return smp_ah.buy(player, id, version)
 	end
@@ -69,7 +69,7 @@ end
 -- f10 combat bridge
 ----------------------------------------------------------------------
 function smp_quickbuy.combat.is_tagged(player)
-	-- TODO(f10): delegate to smp_combat.is_tagged(player).
+	-- Delegates to smp_combat.is_tagged(player) (f10; shipped).
 	if smp_combat and smp_combat.is_tagged then
 		return smp_combat.is_tagged(player)
 	end
@@ -80,11 +80,11 @@ end
 -- f14 stats bridge
 ----------------------------------------------------------------------
 function smp_quickbuy.stats.add(player, key, value)
-	-- TODO(f14): delegate to smp_stats.add(player, key, value).
+	-- Delegates to smp_stats.add(player, key, value) (f14; shipped).
 	if smp_stats and smp_stats.add then
 		return smp_stats.add(player, key, value)
 	end
 	return nil
 end
 
-core.log("action", "[smp_quickbuy] bridges ready — f03/f10/f14 stubbed with TODO markers")
+core.log("action", "[smp_quickbuy] bridges ready — f03/f10/f14 all delegate to the shipped mods")

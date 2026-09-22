@@ -1,8 +1,11 @@
 -- FriedcakeSMP — smp_ah/keys.lua
 --
 -- Canonical item keys and matching levels (M0/M1/M2) for the auction house.
--- Implements spec/shared/02-architecture.md §2.5 for the slice of `smp_items`
--- that f03 needs; `smp_items` itself is still a stub mod.
+-- Implements spec/shared/02-architecture.md §2.5. `smp_items` now ships the
+-- shared implementation (filled by f04), and this file DELEGATES `key` and
+-- `matches` to it at load time (`foreign()`), so there is one canonical
+-- keying across the mod set. The fallback below only runs when `smp_items`
+-- is absent.
 --
 -- §2.5, verbatim:
 --
@@ -35,12 +38,11 @@
 -- with `<ench>` a sorted "id:level,..." list ("" when unenchanted),
 -- `<named>` 0/1 and `<contents>` a hash ("" when the stack holds none).
 --
--- **One keying per mod set.** `smp_items` is the shared owner of §2.5 and is
--- still a stub on this branch, so f03 ships the fallback implementation it
--- needs. When a real `smp_items` is loaded, `keys.key` and `keys.matches`
--- DELEGATE to it, so every mod in the set derives identical keys. Divergences
--- between the two implementations are recorded in
--- spec/features/f03-auction.md §10 and its "Proposed shared changes" block.
+-- **One keying per mod set.** `smp_items` is the shared owner of §2.5 (filled
+-- by f04). This file ships a fallback implementation for headless use, and
+-- `keys.key` / `keys.matches` DELEGATE to `smp_items` when it is loaded, so
+-- every mod in the set derives identical keys. The helpers `smp_items` does
+-- not provide (`equals`, `parts`, `display`, `parse`) stay local to f03.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -150,6 +152,27 @@ local function ench_parts(stack)
 		end
 	end
 	return table.concat(joined, ","), list
+end
+
+--- Sorted `id:level` string from an enchantment *spec* table `{id = level}`.
+--
+-- f05 (Quick Buy) stores entries as `{ key = <itemstring>, ench = {id=level},
+-- qty }` (f05 §5) and passes `ench` to `smp_ah.cheapest_for`. The canonical
+-- M1 key spells enchantments as a sorted "id:level,..." list, so this helper
+-- produces the same string the key builder does (alphabetical id order,
+-- positive levels only). Exposed so `cheapest_for` can build an M1-key prefix
+-- from a spec without an actual ItemStack.
+function keys.ench_string_from_spec(ench)
+	if type(ench) ~= "table" then return "" end
+	local ids = {}
+	for id in pairs(ench) do ids[#ids + 1] = id end
+	table.sort(ids)
+	local parts = {}
+	for _, id in ipairs(ids) do
+		local level = tonumber(ench[id]) or 0
+		if level > 0 then parts[#parts + 1] = id .. ":" .. level end
+	end
+	return table.concat(parts, ",")
 end
 
 -- Shulker (and other container item) contents. Mineclonia stores the

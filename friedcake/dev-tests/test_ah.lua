@@ -1093,6 +1093,47 @@ section("X-g", "keys: the M1/M2 identity f03 §4.1 and §5 need", function()
 end)
 
 ----------------------------------------------------------------------
+-- X-h — smp_ah.cheapest_for (f05 Quick Buy contract)
+----------------------------------------------------------------------
+
+section("X-h", "cheapest_for fills a Quick Buy entry cheapest-first", function()
+	wipe()
+	local alice = H.player("alice")
+	H.set_money("alice", 100000000)
+
+	-- Three diamond listings at different unit prices / stack sizes.
+	mk("kim", "mcl_core:diamond 8", 8000)     -- unit 1000
+	mk("lee", "mcl_core:diamond 16", 32000)   -- unit 2000
+	mk("mia", "mcl_core:diamond 32", 16000)   -- unit 500 (cheapest per item)
+
+	-- Fill a 50-item order (8+16+32 = 56 >= 50): cheapest-first picks mia
+	-- (500/unit) then kim (1000/unit) then lee (2000/unit) until 50 is met.
+	local r = smp_ah.cheapest_for("mcl_core:diamond", {}, 50)
+	ok(r ~= nil, "cheapest_for finds enough listings")
+	eq(#r.listings, 3, "aggregates all three listings")
+	eq(r.listings[1].seller, "mia", "cheapest unit price first")
+	eq(r.listings[2].seller, "kim", "then the next cheapest")
+	eq(r.listings[3].seller, "lee", "then the dearest")
+	eq(r.cost_cents, 8000 + 32000 + 16000, "cost is the sum of asking prices")
+
+	-- A quantity that cannot be filled returns nil.
+	eq(smp_ah.cheapest_for("mcl_core:diamond", {}, 1000), nil,
+		"insufficient listings return nil")
+
+	-- An unenchanted spec must NOT match an enchanted listing (M1 identity).
+	wipe()
+	local enchanted = H.ItemStack({ name = "mcl_tools:sword_netherite", wear = 0,
+		metadata = { ["mcl_enchanting:enchantments"] = "return { sharpness = 5 }" } })
+	local rec, err = smp_ah.create_listing("kim", enchanted, 5000)
+	ok(rec ~= nil, "enchanted listing created: " .. tostring(err))
+	eq(smp_ah.cheapest_for("mcl_tools:sword_netherite", {}, 1), nil,
+		"an unenchanted spec does not match an enchanted listing")
+	local r2 = smp_ah.cheapest_for("mcl_tools:sword_netherite", { sharpness = 5 }, 1)
+	ok(r2 ~= nil and #r2.listings == 1, "the matching ench spec finds it")
+	eq(r2.cost_cents, 5000, "and its cost is the listing's asking price")
+end)
+
+----------------------------------------------------------------------
 
 print(string.format("smp_ah: %d passed, %d failed", passed, failed))
 if failed > 0 then

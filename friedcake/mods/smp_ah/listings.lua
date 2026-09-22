@@ -680,6 +680,66 @@ function listings.cheapest(m1_key, now)
 	return list[1]
 end
 
+--- f05 contract (Quick Buy): the cheapest ACTIVE listings for an item that,
+-- taken together, fill `qty` items.
+--
+-- Quick Buy matches on the item name plus its enchantment set (f05 §4.2:
+-- "exact item including enchantments"). The M1 index is keyed by the full
+-- canonical M1 key (`m1|<name>|<ench>|<meta_hash>`), so this matches on the
+-- `m1|<name>|<ench>|` prefix and ignores the meta hash — exactly the width
+-- f05's spec wants.
+--
+-- Listings are bought WHOLE (f05 bridges.lua): the last one may overshoot
+-- `qty` by less than a stack. `cost_cents` is the exact total the purchase
+-- will cost (sum of each listing's asking price).
+--
+-- @param name       registered itemstring (e.g. "mcl_tools:sword_netherite")
+-- @param ench_string sorted "id:level,..." list ("" when unenchanted)
+-- @param qty        integer number of items wanted
+-- @param now        os.time() (optional)
+-- @return table `{listings = {...}, cost_cents = N}` | nil when the
+--         listings cannot fill `qty`
+function listings.cheapest_for(name, ench_string, qty, now)
+	if type(name) ~= "string" or name == "" then return nil end
+	qty = math.floor(tonumber(qty) or 0)
+	if qty <= 0 then return nil end
+	now = now or os.time()
+
+	local prefix = "m1|" .. name .. "|" .. (ench_string or "") .. "|"
+
+	-- Collect every {id, unit} entry whose M1 key matches the (name, ench)
+	-- prefix, then merge-sort cheapest first (each per-key array is already
+	-- sorted, but matches may come from several meta-hash variants).
+	local candidates = {}
+	for m1_key, arr in pairs(state.by_m1) do
+		if m1_key:sub(1, #prefix) == prefix then
+			for _, e in ipairs(arr) do
+				candidates[#candidates + 1] = e
+			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		if a.unit ~= b.unit then return a.unit < b.unit end
+		return a.id < b.id
+	end)
+
+	local out = {}
+	local total_count = 0
+	local cost = 0
+	for _, e in ipairs(candidates) do
+		local rec = state.by_id[e.id]
+		if rec and listings.is_active(rec, now) then
+			out[#out + 1] = rec
+			total_count = total_count + rec.count
+			cost = cost + rec.price
+			if total_count >= qty then
+				return { listings = out, cost_cents = cost }
+			end
+		end
+	end
+	return nil
+end
+
 --- Number of active listings sharing an M2 key (grouping/display, f03 §2.5).
 function listings.count_by_m2(m2_key)
 	local set = state.by_m2[m2_key]

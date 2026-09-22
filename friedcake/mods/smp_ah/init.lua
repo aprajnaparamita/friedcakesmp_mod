@@ -697,6 +697,19 @@ function smp_ah.listings_at_or_below(m1_key, unit_price, now)
 	return listings.listings_at_or_below(m1_key, unit_price, now)
 end
 
+--- f05 contract (Quick Buy): the cheapest active listings that together fill
+--- `qty` items matching `key` + `ench`.
+--
+-- `key` is the registered itemstring; `ench` is a `{enchant_id = level}`
+-- spec table (f05 §5). Returns `{listings = {...}, cost_cents = N}` or nil.
+-- The returned `listings` carry `{id, version, count, price, unit_price, ...}`
+-- so `smp_quickbuy` can buy each through `smp_ah.buy(id, version)`.
+function smp_ah.cheapest_for(key, ench, qty, now)
+	if type(key) ~= "string" or key == "" then return nil end
+	local ench_string = keys.ench_string_from_spec(ench)
+	return listings.cheapest_for(key, ench_string, qty, now)
+end
+
 ----------------------------------------------------------------------
 -- Listing creation (f03 §6.1)
 ----------------------------------------------------------------------
