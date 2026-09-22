@@ -1,0 +1,114 @@
+# FriedcakeSMP / Donut SMP recreation — recommended server configuration.
+# f15 World Rules and Server Configuration (spec/features/f15-world-rules.md).
+#
+# Copy the settings you want into the server's minetest.conf. Each block pins
+# a documented reference-server rule [S18] to an engine setting, or declares a
+# world.* key read by the smp_world mod. Engine pins verified against the
+# local Luanti source (~/dev/luanti) on 2026-09-23 — the spec's stale pins
+# were corrected where the engine has moved on (see comments).
+#
+# The rule -> Luanti mapping behind this file is documented in WORLD_RULES.md.
+
+----------------------------------------------------------------------
+-- Rules: no hacked clients or unfair modifications [S18]  (f15 §4.1)
+----------------------------------------------------------------------
+
+# Server-side anticheat stays ON. The spec's spelling `disable_anticheat =
+# false` was REMOVED from the engine: Luanti now migrates it (see
+# src/migratesettings.h) to `anticheat_flags`. Shipping the modern spelling
+# pins the same intent explicitly.
+#   Flags are positive: an enabled flag = that detector is active.
+anticheat_flags = digging,interaction,movement
+# Legacy spelling, kept only as documentation (the engine deletes the key on
+# load and applies it to anticheat_flags):
+#   disable_anticheat = false
+
+# Client-side modding restrictions (int range 0..63). Bit layout verified in
+# src/network/networkprotocol.h:
+#   0x01 LOAD_CLIENT_MODS  don't load client-provided mods or client builtin
+#   0x02 CHAT_MESSAGES     no chat sent from CSMs
+#   0x04 READ_ITEMDEFS     no itemdef lookups
+#   0x08 READ_NODEDEFS     no nodedef lookups
+#   0x10 LOOKUP_NODES      node lookups limited (blunts radar/ESP-style CSMs)
+#   0x20 READ_PLAYERINFO   no player info lookups
+# Engine default is 62 (all but LOAD_CLIENT_MODS). The rule is "restrict
+# client-side mods", so we ship 63 = every restriction (PROPOSED, f15 §10).
+csm_restriction_flags = 63
+
+----------------------------------------------------------------------
+-- World shape (f15 §4.2)
+----------------------------------------------------------------------
+
+# Hard map generation limit. Engine range 0..31007; 0 = unlimited; the value
+# is stored per world (map_meta.txt wins over this file for existing worlds).
+# The reference server plans a 30,000,000-block Java border [S1][S22] — no
+# Luanti equivalent exists, and the observed coordinate X -47,114 [F0055] is
+# that Java server, not a target. Our border IS this limit, softened by the
+# smp_world border hook which pushes players back to
+# `mapgen_limit - world.border_margin`.
+mapgen_limit = 31007
+
+# Spawn protection radius (square, Overworld only), enforced through
+# core.is_protected so every mod's protection check honours it (f15 §4.2.1).
+world.spawn_protect_radius = 128
+
+# Soft world border: checked once per second per online player (f15 §4.2.2).
+world.soft_border = true
+world.border_margin = 16
+
+----------------------------------------------------------------------
+-- Rules: at most five accounts per person [S18]  (f15 §4.1)
+----------------------------------------------------------------------
+
+# The sixth DISTINCT account seen from one IP address raises a staff flag.
+# Flag only — never an automatic ban (LIVE rule, PROPOSED enforcement).
+world.max_accounts_per_ip = 5
+
+----------------------------------------------------------------------
+-- Rules: no staff impersonation [S18]  (f15 §4.1)
+----------------------------------------------------------------------
+
+# Comma-separated Lua patterns, matched against the lower-cased player name
+# at join. Omit the key for the built-in default list (admin/staff/mod/...);
+# set it to an empty string to disable the filter entirely.
+# world.staff_name_filter = ^admin$,^admin[%d_%-],^administrator$,^staff$,^staff[%d_%-],^mod$,^mod[%d_%-],^moderator$,^moderator[%d_%-],^operator$,^owner$,^server$,^server[%d_%-]
+
+# What a match does at join: "flag" (default; staff notify + log only),
+# "kick" (also disconnect with a refusal), or "off".
+world.staff_name_action = flag
+
+----------------------------------------------------------------------
+-- Rules: no bug abuse / item duplication [S18]  (f15 §4.1)
+----------------------------------------------------------------------
+
+# Enforced by code, not configuration — shared §2.6 economic-integrity rules
+# (escrow, version-checked menus, no yields between validate and mutate).
+
+----------------------------------------------------------------------
+-- Entity caps (f15 §4.2.3) — V-81 UNOBSERVED
+----------------------------------------------------------------------
+
+# The reference server's June 2026 caps (creepers 2,500 / item frames 1,500
+# [S2]) have no calibrated Luanti equivalent; Luanti entity costs differ and
+# inventing numbers would be a guess (V-81). We therefore retain the ENGINE
+# DEFAULT explicitly and leave spec key `world.entity_caps = {}` unset —
+# per-type caps get values only when V-81 closes. Caps, when they exist, are
+# enforced at entity spawn time by configuration, never by a scanning ABM
+# (f15 §4.4).
+max_objects_per_block = 256
+
+# Bedrock breaking (June 2026 change, V-82 unverified): OFF. This is the
+# Mineclonia default — mcl_core:bedrock is unbreakable and there is no engine
+# setting for it. Spec key `world.bedrock_breakable = false` exists for a
+# future hook; nothing reads it today. Deliberately not set here.
+# world.bedrock_breakable = false
+
+----------------------------------------------------------------------
+-- Mod set security (friedcake/README.md "Installation")
+----------------------------------------------------------------------
+
+# smp_store uses core.request_insecure_environment() for the SQLite/Postgres
+# backends; the mod must be trusted explicitly.
+secure.trusted_mods = smp_store
+# Needed once the Postgres backend (HTTP pgwire proxy) is wired in:
+# secure.http_mods = smp_store
