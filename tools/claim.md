@@ -4,6 +4,31 @@ You are an AI agent working in the FriedcakeSMP / Donut SMP recreation
 repository. Your job is to implement one feature end-to-end so the
 integrator can merge it.
 
+## ⚠ Parallel agents share ONE worktree
+
+Every agent works in the **same clone** — there is a single working tree,
+not one checkout per agent. This has already caused real breakage (f05 was
+checked out from under its agent mid-task). Two consequences to internalise:
+
+1. **`tools/agent-flow.sh start` switches the shared checkout.** It runs
+   `git checkout main` then `git checkout -b agent/<feature>`, which moves
+   the whole worktree — including any *uncommitted* work another agent left
+   in it. Your branch can be swapped away under you, and theirs under them.
+2. **Uncommitted files belong to whoever put them there, not to you.** The
+   worktree will carry other agents' untracked/modified files at any moment.
+   Never `git add -A` or `git commit -a`; stage only your own paths.
+
+Rules to stay safe:
+
+- **Commit early and often** — committed work survives anyone else's `start`.
+- Before running `start`, run `git status` and make sure nothing you care
+  about is uncommitted.
+- Stage explicitly: `git add friedcake/mods/smp_<yours>/ <your other paths>`,
+  never `git add -A`.
+- If you return to find your branch gone, your commits are intact — find them
+  with `git reflog` / `git log --all`, recreate the branch, keep going.
+- If the integrator offers `git worktree add`, use it for real isolation.
+
 ## Setup
 
 ```

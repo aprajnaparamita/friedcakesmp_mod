@@ -27,6 +27,15 @@ case "$cmd" in
 
 	start)
 		name=${1:?usage: agent-flow.sh start <feature-slug>}
+		# PARALLEL-AGENT WARNING: all agents share this ONE worktree, so the
+		# checkouts below move every agent's uncommitted work. See tools/claim.md
+		# "Parallel agents share ONE worktree". Warn loudly rather than abort —
+		# an agent may legitimately be committing their own work right now.
+		if [ -n "$(git status --porcelain)" ]; then
+			say "WARNING: worktree has uncommitted changes (possibly another agent's)."
+			say "  These will be carried across the checkout; commit or stash first."
+			git status --short
+		fi
 		# Pull the latest main if a remote exists.
 		if git remote get-url origin >/dev/null 2>&1; then
 			say "fetching origin"
