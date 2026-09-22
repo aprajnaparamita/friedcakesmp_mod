@@ -245,6 +245,10 @@ end
 | V-37 | Which settings are binary and which are tri-state? Only `Public Chat` was seen in two states |
 | V-38 | Is category 6 `Scoreboard` or `Social`? Four frames to one favour `Scoreboard` |
 | V-39 | Where did v0.1's clone-derived settings go — `pay_accept`, `ah_alerts`, `order_alerts`, `tpa_enabled`, `auto_accept`, `keep_pearls_on_death`? `keep_pearls_on_death` is documented as living under General [S20]; the rest are unplaced |
+| F12-A | **Canonical accessor name: `smp_settings.get(player_or_name, id)`.** f11 §6 and `smp_orders/routing.lua` already call `get`; f01 §6 and `claim-f08` call `get_name`. Only `get` is implemented — integrator should normalise `get_name` → `get` at those two call sites |
+| F12-B | **Defaults conflict.** §4.7 says "most permissive" and §5.1's sample shows `default = "ON"` for `chat.private_messages`, but §5's stored schema and the first-open frames [F0242] show `Friends/Followed`. Implemented: four rows (`private_messages`, `death_messages`, `advancements`, `join_leave`) default `FRIENDS_FOLLOWED`, the rest `ON`, so a fresh profile reproduces the observed screen (§0.5 fidelity). Reverting to §4.7 is one `default` line per setting in `chat.lua` |
+| F12-C | §7's `settings.cycle_order` is read from config (comma list); `settings.categories` is NOT — the seven categories are registered in observed order in code (structure, not a rate/timer per G3). PROPOSED: leave as code, or wire a config read if the integrator wants it |
+| F12-D | `server.name` (§7, the genericised key) is read and falls back to `Donut SMP`. The engine's own setting is `server_name` (verified in luanti `builtin/settingtypes.txt`) — deliberately NOT aliased; the two must not be conflated |
 
 ### Candidate settings for the unopened categories
 
@@ -261,3 +265,68 @@ Carried from v0.1 as **candidates only**. Do not implement as observed fact.
 | Keep thrown pearls on death | General | LIVE [S20] |
 | Night vision | Visuals | LIVE [S28] |
 | Friend join and leave notices | Notifications | PROPOSED |
+
+### Implementation notes (f12 agent)
+
+Decisions taken while building `friedcake/mods/smp_settings/`. Open items
+are in the table above (F12-A … F12-D); the rest are settled here.
+
+- **Accessor name (F12-A).** One canonical pair, one signature:
+  `smp_settings.get(player_or_name, id)` → `value | nil`,
+  `smp_settings.set(player_or_name, id, value)` → `boolean`.
+  `player_or_name` accepts a `PlayerRef` or an online player's name;
+  normalisation lives in `smp_settings.player_name`. `get_name` is not
+  implemented.
+- **V-29 decided:** cycle order `ON → FRIENDS_FOLLOWED → OFF`, read from
+  config `settings.cycle_order` (comma list, this order as default).
+  Binary settings cycle `ON → OFF` (§5.1 sample, §4.4); `FRIENDS_FOLLOWED`
+  is simply not in their value domain.
+- **V-37 decided:** tri-state = `private_messages`, `death_messages`,
+  `advancements`, `join_leave` (all three values appear in §3.2's
+  "Values" column). Binary = `public`, `server_messages`,
+  `hotbar_messages` (only `ON`/`OFF` observed). If a later frame shows
+  `Friends/Followed` on a binary row, adding it is one `values` line.
+- **V-38 decided:** `Scoreboard` (majority of frames), per §3.1.
+- **V-36 / V-39:** all six unopened categories are registered with their
+  titles only and render empty screens (title + `Back`, zero rows).
+  None of the §10 candidate keys (`eco.pay_accept`, `eco.order_alerts`,
+  `tp.tpa_enabled`, `privacy.show_money`, `combat.keep_pearls_on_death`,
+  …) are registered, so consumers calling `get` on them receive `nil`
+  and apply their own fallback until their category opens with evidence.
+- **PROPOSED decisions (new behaviour, not in the OBSERVED parts):**
+  the defaults conflict (F12-B), purple `#7B2FBE` applied to every
+  button's `:hovered` state (single sampled hue, §3.1 marks it
+  PROPOSED), screen geometry (sizes/pitch, follows the §4.9 prompt-menu
+  scale), the `Click to toggle` row tooltip (§4.9 pattern, row hover not
+  captured on video), `/settings`'s house-style description string, and
+  keeping `settings.categories` as code (F12-C).
+- **Storage limitation:** player meta exists only for online players,
+  so `get` on an offline name returns the registered default and `set`
+  on an offline name returns `false`. f01's `get_name(target, …)` calls
+  therefore see defaults for offline targets — flagged for f01/f11.
+- **`/smp test smp_settings`:** `mods/smp_settings/test.lua` follows the
+  same loader contract as smp_orders' (f04 §10); the generic test loader
+  is still integrator-owned. Headless coverage runs today via
+  `luajit friedcake/dev-tests/test_settings.lua` (T1–T8, plus the
+  in-game suite; T9 is f11's).
+
+## Proposed shared changes
+
+*(for the integrator — this agent does not edit `spec/shared/`)*
+
+1. **`spec/shared/08-ui-strings.md` §8.5** — add the category-button
+   tooltip row observed at [F0237, F0238, F0239, F0241]:
+
+   | String | Where | Source |
+   |---|---|---|
+   | `Open @1 settings` | A Settings category button | OBSERVED [F0237, F0238, F0239, F0241] |
+
+2. **`spec/shared/06-config-reference.md`** — add `settings.cycle_order`
+   (§7 of this file declares it but the mirror does not carry it):
+
+   | Key | Type | Default | Tags | Owner |
+   |---|---|---|---|---|
+   | `settings.cycle_order` | list | `{ON, FRIENDS_FOLLOWED, OFF}` | PROPOSED (V-29) | f12 |
+
+3. **`spec/features/f01-*.md` §6 / claim-f08** — normalise
+   `smp_settings.get_name(...)` → `smp_settings.get(...)` (F12-A).
