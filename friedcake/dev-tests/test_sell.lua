@@ -23,7 +23,23 @@
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
-local REPO = "/Volumes/Dara/dev/coconut"
+-- Locate the repository root from the script path so the harness also
+-- works from a git worktree checkout (same helper the other dev-tests use).
+local function find_root()
+	local script = (arg and arg[0]) or ""
+	local prefix = script:match("^(.-)friedcake/dev%-tests/[^/]*$")
+	if prefix and prefix ~= "" then
+		return (prefix:gsub("/+$", ""))
+	end
+	local probe = io.open("friedcake/modpack.conf", "r")
+	if probe then
+		probe:close()
+		return "."
+	end
+	return "/Volumes/Dara/dev/coconut"
+end
+
+local REPO = find_root()
 local MODS = REPO .. "/friedcake/mods/"
 
 local failures = {}
