@@ -48,58 +48,43 @@ manipulated `smp_ah.cfg.slots.default` directly, but after f13 landed,
 now stubs both `smp_ranks.ah_limit` and `smp_ranks.limit` during the T10
 section to exercise f03's own config fallback.
 
-## Known gaps (not yet fixed)
+## Known gaps — status
 
-### 1. `smp_ah.cheapest_for` is missing (f05 ← f03 contract)
+### 1. `smp_ah.cheapest_for` — **FIXED** (commit e8f024b)
 
-f05 (Quick Buy) bridges to `smp_ah.cheapest_for(key, ench, qty)`, but f03
-only ships `smp_ah.listings_at_or_below(m1_key, unit_price)` (which f04's
-order-routing sweep uses). `cheapest_for` aggregates the cheapest matching
-listings until `qty` is met and returns `{listings, cost_cents}`.
+Implemented `smp_ah.cheapest_for(key, ench, qty, now)` as an adapter over the
+M1 index (matches on the `m1|<name>|<ench>|` prefix, ignoring meta hash —
+exactly f05 §4.2's "exact item including enchantments" width). Aggregates
+whole listings cheapest-first until `qty` is met, returns
+`{listings, cost_cents}` or nil. Covered by dev-test X-h.
 
-Consequence: Quick Buy's purchase path currently returns "not enough
-listings" always — the bridge falls through to `nil`. Everything else about
-Quick Buy (entry CRUD, the 3× price guard, the re-confirm screen) is wired
-and tested; only the final price lookup is missing its source.
+### 2. Two M1/M2 key implementations — **RESOLVED, no code change needed**
 
-**Recommended fix:** add `smp_ah.cheapest_for` as a thin adapter over
-`listings_at_or_below` (filter by M1 key + enchant set, walk cheapest-first,
-sum until qty). It belongs in `smp_ah`, not `smp_quickbuy`.
+On inspection, `smp_ah/keys.lua` already *delegates* `key` and `matches` to
+`smp_items` at load time (`foreign()`), and the two key formats are identical
+(`m0|name`, `m1|name|ench|meta_hash`, `m2|name|ench|wear|named|contents|meta_hash`).
+Since `smp_items` loads before `smp_ah` in modpack order, f03 uses the shared
+implementation. The only remaining copies are f03-internal helpers
+(`equals`, `parts`, `display`, `parse`) that `smp_items` does not provide —
+these are not cross-mod contracts. Stale comments updated; no drift risk.
 
-### 2. Two M1/M2 key implementations (smp_ah.keys vs smp_items)
+### 3. Bridge stubs are deliberate graceful-degradation — **DOCUMENTED**
 
-f03 shipped its own `smp_ah/keys.lua` (because `smp_items` was a stub when
-it started). f04 filled `smp_items` with the shared M0/M1/M2 keying, and f02
-(`smp_sell`) + f04 (`smp_orders`) use `smp_items`. So there are two
-implementations of the same §2.5 spec.
+The `TODO(fNN)` labels in the delegating bridges were updated where the target
+mod now ships (`smp_quickbuy/bridges.lua`); the pattern is otherwise correct
+and self-resolving.
 
-Both should produce identical keys (same spec), but they are two copies and
-will drift. **Recommended fix:** make `smp_ah` consume `smp_items` and delete
-`friedcake/mods/smp_ah/keys.lua`, so the canonical key code lives once.
+### 4. Non-issue: `smp_economy.credit/debit`
 
-### 3. Bridge stubs are deliberate graceful-degradation
+f14 correctly hooks `smp_store.api.add_money/take_money/set_money` (the real
+mutators) rather than the spec's suggested `smp_economy.credit/debit`. Nothing
+to do.
 
-Nearly every `TODO(fNN)` marker in the tree is a *delegating bridge* — e.g.
-`if smp_combat and smp_combat.is_tagged then return smp_combat.is_tagged(p)
-end`. These resolve automatically now that all mods are loaded; the `TODO`
-labels are documentation, not missing work. The two exceptions worth a look
-are the hardcoded fallbacks in `smp_orders/au_bridge.lua` (return `{}` /
-`false`), which now delegate to the real `smp_ah` but log nothing on the
-delegation path.
+## Remaining follow-ups (not blockers)
 
-### 4. Non-issue noted: `smp_economy.credit/debit`
-
-f14's spec §8 suggested hooking `smp_economy.credit`/`debit`, but those do
-not exist — f01 routes every money mutation through
-`smp_store.api.add_money/take_money/set_money`. f14 correctly hooks those
-instead. Nothing to do; recorded so nobody "fixes" it back.
-
-## Next steps
-
-1. Implement `smp_ah.cheapest_for` (gap 1) — the only functional hole.
-2. Consolidate key code onto `smp_items` (gap 2).
-3. A full end-to-end load test: load all 22 mods together under a real
-   engine (the dev-tests each load a subset, so cross-mod load-order edge
-   cases are only partially covered).
-4. Resolve the `TODO(fNN)` labels to plain comments now that the targets
-   exist, so the tree reads as "wired" rather than "stubbed".
+1. A full end-to-end load test: load all 22 mods together under a real engine
+   (the dev-tests each load a subset, so cross-mod load-order edge cases are
+   only partially covered). See `MANUAL_TEST_GUIDE.md`.
+2. The `smp_orders/au_bridge.lua` hardcoded fallbacks (`return {}` / `false`)
+   now delegate to the real `smp_ah` but could log on the delegation path for
+   observability.
