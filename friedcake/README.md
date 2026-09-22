@@ -101,3 +101,28 @@ In-game commands after install:
 | `/eco give\|take\|set\|reset <player> <amount>` | `smp_admin` | Adjust money |
 | `/ledger <player> [page]` | `smp_admin` / `smp_moderator` | Audit trail |
 | `/smp reload\|test\|backend` | `smp_admin` | Reload config, run tests, show backend |
+
+## Repository layout (top level)
+
+The modpack lives under `friedcake/`; the parent repo also contains the
+spec, the source pipeline, and the agent-flow tooling. See
+`/Volumes/Dara/dev/coconut/README.md`, `AGENTS.md`, `CONTRIBUTING.md` and
+`tools/agent-flow.sh` for the workflow.
+
+A parallel agent working on a feature would:
+
+```sh
+# 1. Claim a feature branch.
+../tools/agent-flow.sh start f02-sell
+
+# 2. Implement under friedcake/mods/smp_sell/.
+# ... write code ...
+
+# 3. Run the dev smoke tests.
+../tools/agent-flow.sh test
+
+# 4. Commit and push.
+git add friedcake/mods/smp_sell/
+git commit -m "f02: shulker-aware sell container and history"
+git push origin agent/f02-sell
+```
