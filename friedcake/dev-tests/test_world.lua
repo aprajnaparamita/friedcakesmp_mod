@@ -216,9 +216,123 @@ end
 eq(M.chats["alice"] and M.chats["alice"][1], "This area is protected.",
 	"T1 violation message is the verbatim f15 string")
 
+----------------------------------------------------------------------
+-- T3: a player crossing the soft border is moved back inside and told
+----------------------------------------------------------------------
+
+local function stub_player(x, y, z, name)
+	local p = { pos = { x = x, y = y, z = z }, name = name or "tester",
+		gets = 0, sets = {} }
+	function p:get_pos()
+		self.gets = self.gets + 1
+		return { x = self.pos.x, y = self.pos.y, z = self.pos.z }
+	end
+	function p:set_pos(np)
+		table.insert(self.sets, np)
+		self.pos = np
+	end
+	function p:get_player_name()
+		return self.name
+	end
+	return p
+end
+
+eq(#M.step_cbs, 1, "T3 exactly one border globalstep registered")
+
+-- Default world: mapgen_limit 31007, margin 16 -> clamp at 30991.
+eq(smp_world.border_limit(), 30991, "T3 border = mapgen_limit - margin")
+
+-- Beyond the border in both X and Z: clamped, Y untouched, told once.
+local out = stub_player(40000, 64, -40000)
+smp_world.enforce_border(out)
+eq(#out.sets, 1, "T3 player past the border is moved")
+if #out.sets == 1 then
+	eq(out.sets[1].x, 30991, "T3 X clamped to +limit")
+	eq(out.sets[1].z, -30991, "T3 Z clamped to -limit")
+	eq(out.sets[1].y, 64, "T3 Y untouched")
+end
+local border_msgs = M.chats["tester"] or {}
+eq(#border_msgs, 1, "T3 exactly one message")
+eq(border_msgs[1], "You have reached the world border.",
+	"T3 verbatim f15 border string")
+
+-- Inside: no movement, no message.
+local inside = stub_player(10, 64, 10, "insider")
+smp_world.enforce_border(inside)
+eq(#inside.sets, 0, "T3 player inside is not moved")
+eq(M.chats["insider"], nil, "T3 player inside is not told")
+
+-- One axis only: Z clamped, X preserved.
+local edge = stub_player(5, 64, 40000, "edge")
+smp_world.enforce_border(edge)
+eq(#edge.sets, 1, "T3 Z-only crossing is moved")
+if #edge.sets == 1 then
+	eq(edge.sets[1].x, 5, "T3 X preserved when only Z crosses")
+	eq(edge.sets[1].z, 30991, "T3 Z clamped")
+end
+
+-- Live margin configuration.
+M.settings_store["world.border_margin"] = "32"
+eq(smp_world.border_limit(), 30975, "T3 margin honours world.border_margin")
+M.settings_store["world.border_margin"] = nil
+
+-- world.soft_border = false: no movement, no message.
+M.settings_store["world.soft_border"] = "false"
+local off = stub_player(40000, 64, 0, "offster")
+smp_world.enforce_border(off)
+eq(#off.sets, 0, "T3 soft_border=false disables enforcement")
+M.settings_store["world.soft_border"] = nil
+
+-- Unlimited world (mapgen_limit 0) disables the border.
+M.mapgen.mapgen_limit = "0"
+eq(smp_world.border_limit(), false, "T3 mapgen_limit 0 -> no border")
+local unlim = stub_player(999999999, 64, 0, "unlim")
+smp_world.enforce_border(unlim)
+eq(#unlim.sets, 0, "T3 unlimited world is not clamped")
+M.mapgen.mapgen_limit = "31007"
+
+-- Margin >= limit degenerates to no border.
+M.mapgen.mapgen_limit = "10"
+eq(smp_world.border_limit(), false, "T3 margin >= limit -> no border")
+M.mapgen.mapgen_limit = "31007"
+
+-- Cadence: sweeps happen once per accumulated second, O(players), and a
+-- lag spike produces exactly one sweep (no burst).
+local a = stub_player(40000, 64, 0, "cadence1")
+local b = stub_player(-40000, 64, 0, "cadence2")
+local c = stub_player(0, 64, 40000, "cadence3")
+M.connected = { a, b, c }
+
+smp_world.border_step(0.5)
+eq(a.gets + b.gets + c.gets, 0, "T3 no sweep before one second accumulates")
+smp_world.border_step(0.6)
+eq(a.gets, 1, "T3 sweep after 1.1 s checks player A")
+eq(b.gets, 1, "T3 sweep checks player B (O(players))")
+eq(c.gets, 1, "T3 sweep checks player C (O(players))")
+
+local before_spike = a.gets
+smp_world.border_step(5.0) -- server freeze: one sweep, not five
+eq(a.gets - before_spike, 1, "T3 lag spike produces exactly one sweep")
+local burst = a.gets
+smp_world.border_step(0.1)
+eq(a.gets, burst, "T3 remainder reset prevents a burst")
+M.connected = {}
+
+-- The registered globalstep routes through border_step.
+local probe = stub_player(40000, 64, 0, "routed")
+M.connected = { probe }
+M.settings_store["world.soft_border"] = nil
+-- drain the accumulator deterministically first
+smp_world.border_step(2.0)
+probe.gets = 0
+smp_world.border_step(0.05)
+smp_world.border_step(0.96) -- 1.01 accumulates -> sweep
+eq(probe.gets, 1, "T3 registered globalstep drives the sweep")
+M.connected = {}
+
 print(string.format("world dev-test: %d checks, %d failures",
 	checks, failures))
 if failures > 0 then
 	error(failures .. " check(s) failed", 0)
 end
-print("ALL OK so far (T1)")
+print("ALL OK so far (T1, T3)")
