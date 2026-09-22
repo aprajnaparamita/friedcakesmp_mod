@@ -257,11 +257,40 @@ end
 
 ## 10. Open questions
 
-| Id | Question |
-|---|---|
-| V-01 | Spawner menu layout, pages and buttons |
-| V-02 | Production rate per type and stack size; whether owners must be nearby |
-| V-03 | Blaze output: rods or powder? Sources conflict |
-| V-04 | Do creeper spawners exist? |
-| V-05 | Storage capacity and behaviour when full |
-| V-62 | Is the diminishing-returns curve exponential as modelled, or another shape? Only the asymptote is published |
+| Id | Question | Decision (f07 implementer, branch `agent/f07-spawners`) |
+|---|---|---|
+| V-01 | Spawner menu layout, pages and buttons | PROPOSED layout implemented per §3: header `<Type> Spawner x<n>`, `Stored / capacity` + `XP` line, rate line, 5×9 page of item-image slots, footer `< Prev`, `Page n of m`, `Next >`, `Sell all`, `Collect XP`, `Take all`, `Close`. No shift state in Luanti formspecs, so the clone's "shift-click takes as much as fits" is substituted by a `Take all` button; a plain click takes one stack (up to 64 whole items). |
+| V-02 | Production rate per type and stack size; whether owners must be nearby | r = 6 and all non-skeleton C are implemented as PROPOSED uncalibrated defaults (C = 250 for every non-skeleton type). `spawners.C.<type>` setting overrides exist for calibration without code changes. Accrual proximity policy is the `spawners.accrual_mode` setting, default `active_only`. |
+| V-03 | Blaze output: rods or powder? Sources conflict | **Rods.** [S10] (more recent than [S24]) is taken to win the conflict; implemented as `mcl_mobitems:blaze_rod` 0.5 per virtual kill, still marked PROPOSED (verify). |
+| V-04 | Do creeper spawners exist? | §4.2 marks the type "conditional". Implemented as a real type (gunpowder 1.0, PROPOSED) gated on `spawners.enable_creeper` (default true), because the single source documenting it [S24] is recent. If the integrator rules it out, set the key to false; no other code path references the creeper. |
+| V-05 | Storage capacity and behaviour when full | Implemented per §4.4: `min(hard_cap, per_spawner × n)`. At full, production pauses, the overflow is discarded, `smp:last_update` still advances (no hidden banking), and the menu shows `Storage full`, so the pause is visible rather than silent (T5). |
+| V-62 | Is the diminishing-returns curve exponential as modelled, or another shape? Only the asymptote is published | Implemented as the §4.3 exponential. The curve function is isolated (`smp_spawners.curve`) so an alternative shape can be substituted in one place once a second data point is published. |
+| V-63 | (new) Sell-all message when f02 is absent | The f02 branch is not on `main`; `smp_sell` is an `optional_depends` and Sell all reports `Selling is not available yet` and takes nothing out of storage until `smp_sell.sell(player, stacks)` (f02 §6) exists. Marked `TODO(f02)` in `routing.lua`. |
+
+## Proposed shared changes
+
+For the integrator (feature agents do not edit `spec/shared/`):
+
+1. **`shared/06-config-reference.md`** — add the keys implemented beyond the
+   existing mirror rows:
+
+   | Key | Default | Status | Spec |
+   |---|---|---|---|
+   | `spawners.offline_cap_hours` | 24 | PROPOSED | f07 |
+   | `spawners.enable_creeper` | true | PROPOSED | f07 |
+   | `spawners.hopper_extraction` | false | PROPOSED | f07 |
+   | `spawners.C.<type>` | per-type defaults in `smp_spawners/types.lua` (skeleton 1505.35 LIVE [S24]; others 250 PROPOSED) | PROPOSED | f07 |
+
+2. **f02 (`smp_sell`)** — no shared change required; the routing-in
+   contract already exists in f02 §6 as `smp_sell.sell(player, stacks)`.
+   Flag only that `smp_spawners` is a caller (spawner Sell all), alongside
+   the f04/f05 callers, for the f02 merge review.
+
+3. **`shared/08-ui-strings.md`** — the spawner strings implemented are all
+   PROPOSED (no frames): `Skeleton Spawner x@1` header family, `Stored @1
+   / @2    XP @3 / @4`, `Rate: @1 kills/min`, `Storage full`, `Sell all`,
+   `Collect XP`, `Take all`, `Page @1 of @2`, `< Prev`, `Next >`, `You
+   took @1`, `You collected @1 XP`, `Silk Touch is required to dig a
+   spawner`, `Different spawner types cannot be stacked`, `This spawner
+   has been removed`, `This spawner has changed`, `Nothing stored to
+   sell`, `Selling is not available yet`. Add to the catalogue on merge.
