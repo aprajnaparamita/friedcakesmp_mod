@@ -60,21 +60,28 @@ function M.remaining(stack, now)
 	return r
 end
 
--- Human remaining-time line, e.g. "1d 3h", "5h 12m", "90s".
+-- Format a duration (whole seconds) as "1d 3h", "5h 12m" or "90s".
 -- PROPOSED display format; no frame evidence (f06 §10 V-21).
+function M.duration_str(secs)
+	secs = math.floor(secs or 0)
+	if secs < 0 then secs = 0 end
+	local d = math.floor(secs / 86400)
+	local h = math.floor((secs % 86400) / 3600)
+	local m = math.floor((secs % 3600) / 60)
+	local s = secs % 60
+	local parts = {}
+	if d > 0 then parts[#parts + 1] = d .. "d" end
+	if h > 0 then parts[#parts + 1] = h .. "h" end
+	if d == 0 and m > 0 then parts[#parts + 1] = m .. "m" end
+	if d == 0 and h == 0 and m == 0 then parts[#parts + 1] = s .. "s" end
+	return table.concat(parts, " ")
+end
+
+-- Human remaining-time line, or nil if the item has no expiry.
 function M.remaining_str(stack, now)
 	local r = M.remaining(stack, now)
 	if r == nil then return nil end
-	local d = math.floor(r / 86400)
-	local h = math.floor((r % 86400) / 3600)
-	local m = math.floor((r % 3600) / 60)
-	local s = r % 60
-	local parts = {}
-	if d > 0 then parts[#parts + 1] = d .. "d" end
-	if d > 0 or h > 0 then parts[#parts + 1] = h .. "h" end
-	if d == 0 and (h > 0 or m > 0) then parts[#parts + 1] = m .. "m" end
-	if d == 0 and h == 0 and m == 0 then parts[#parts + 1] = s .. "s" end
-	return table.concat(parts, " ")
+	return M.duration_str(r)
 end
 
 -- Refresh the item's description with the remaining time (f06 §4.3:
@@ -95,23 +102,28 @@ function M.refresh_description(stack, display_name, S, now)
 end
 
 -- Sweep one inventory list, removing expired amethyst items.
--- `notify` is called once per removed stack as
--- notify(stack, remaining_seconds) so the caller can message the player.
--- Returns the number of stacks removed.
-function M.sweep_list(inv, listname, notify)
+-- `notify` is called once per removed stack as notify(stack, index) so
+-- the caller can message the player. `now` is the Unix time used for the
+-- expiry comparison (defaults to os.time()); inject a fake clock in
+-- tests. Returns the number of stacks removed.
+function M.sweep_list(inv, listname, notify, now)
+	now = now or os.time()
 	local size = inv:get_size(listname)
 	if not size then return 0 end
-	local removed = 0
+	-- Collect first, then remove: no mutation while iterating.
+	local victims = {}
 	for i = 0, size - 1 do
 		local stack = inv:get_stack(listname, i)
 		if not stack:is_empty() and M.is_amethyst(stack:get_name())
-				and M.is_expired(stack) then
-			inv:set_stack(listname, i, "")
-			if notify then notify(stack, i) end
-			removed = removed + 1
+				and M.is_expired(stack, now) then
+			victims[#victims + 1] = { i = i, stack = stack }
 		end
 	end
-	return removed
+	for _, v in ipairs(victims) do
+		inv:set_stack(listname, v.i, "")
+		if notify then notify(v.stack, v.i) end
+	end
+	return #victims
 end
 
 return M
