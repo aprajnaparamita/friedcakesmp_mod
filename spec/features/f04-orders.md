@@ -382,3 +382,94 @@ end
 | V-45 | Is delivering to one's own order actually blocked on the reference server? |
 | V-46 | What does the worth shown on `Choose Item` hover represent — the `/sell` base price, or the current lowest auction price? |
 | V-47 | Are partial deliveries paid immediately, or held until the order fills? The observed `Delivering...` → payment sequence suggests immediately |
+| V-48 | What does `orders.sorts.most_paid` rank by — total committed (unit × qty) or total paid out? Implemented PROPOSED as total committed |
+| V-49 | Does `@1 requested` on Confirm Delivery show the total `qty` or the remaining? Implemented PROPOSED as total `qty` |
+| V-50 | Do open orders occupy a slot until fully collected (so a filled-but-uncollected order blocks the slot)? Implemented PROPOSED as "occupies while delivered > collected" |
+| V-51 | Does `Choose Item` offer only plain (unenchanted) items? No enchantment-selection UI was observed; the wizard creates plain M1 orders. PROPOSED: yes |
+| V-52 | When an order absorbs an auction listing larger than its remaining quantity, is the listing split or skipped? f03's `consume_listing` closes whole listings, so f04 skips it. PROPOSED |
+
+## Proposed shared changes
+
+These need integrator action; feature agents must not edit `spec/shared/` directly.
+
+1. **`smp_items` is no longer a stub.** f04 filled it in with the §2.5
+   contract (`key`, `matches`, `parse_key`, `stack_from_key`, `plain`,
+   `meta_hash`, `display_name`). f02 (`smp_sell/items.lua`) and f03
+   (`smp_ah/keys.lua`) both wrote deferral shims that pick the real
+   implementation up automatically, so no other agent needs to change
+   anything — but the integrator should confirm the three agree on the
+   key spelling: `m0|<name>`, `m1|<name>|<ench>|<meta_hash>`,
+   `m2|<name>|<ench>|<wear>|<named>|<contents>|<meta_hash>`.
+
+2. **Orders persistence lives in smp_orders' own mod storage**, not in
+   `smp_store`, because `smp_store` exposes no order table API and feature
+   mods may not edit it. When the integrator adds orders to `smp_store`
+   (SQLite at scale, shared §2.2), `smp_orders/orders.lua` is the only
+   file that changes: `save_dirty`/`load_all` swap their storage backend
+   and the CRUD/query/index layer above them stays put.
+
+3. **`/smp test <feature>` is hardcoded to `smp_core`** in smp_economy.
+   f04 ships `friedcake/mods/smp_orders/test.lua` (returns
+   `{passed, failed, lines}`) but it is only discoverable if the
+   integrator generalises the loader to `<modpath>/test.lua`. Until then,
+   `/smp test smp_orders` reports "Unknown test target".
+
+4. **Itemstring corrections** (Mineclonia @ `5bdce566`): the grey/lime
+   confirm panes are `mcl_panes:pane_grey` / `mcl_panes:pane_lime`, NOT
+   the `mcl_core:glass_pane_gray`/`lime` guessed in `04-ui-kit.md §4.3`.
+   The totem is `mcl_totems:totem`, not the `mcl_potions:totem` written in
+   f04 §5's schema example. `04-ui-kit.md` and f04 §5 should be corrected.
+
+5. **Two f03 integration seams to reconcile before merge:**
+   - `smp_ah.consume_listing` writes an `ah_sale` ledger row *and* f04's
+     absorb path writes an `order_payout` row — one credit, two ledger
+     entries (breaks X4). Propose `consume_listing(id, buyer, price,
+     reason, opts)` with `opts.ledger = false` for the f04 path, or pick
+     one reason code.
+   - f03's `create_listing` treats any non-error `fill_from_stack` return
+     as `"routed"` and discards the stack; f04's `fill_from_stack` returns
+     `nil, reason` on refusal (self-delivery, oversized stack, changed
+     order), which f03 would mis-read as success and drop items. f03 must
+     distinguish `(nil, reason)` refusals (X1 item-loss risk).
+
+## 11. Implementation notes (f04 agent)
+
+**Contracts implemented (called by other features):**
+
+- `smp_orders.best_open_order(m1_key)` → order | nil (f03 §6.1).
+- `smp_orders.fill_from_stack(order, player_or_name, stack)` →
+  `{accepted, payout, remaining=0}` or `nil, reason`. Consumes the WHOLE
+  stack or refuses (never partial — see f03 seam above).
+- `smp_orders.open_orders_above(key, unit_cents, [seller_name])` →
+  descending-unit-price open orders with remaining > 0; own orders
+  skipped when `seller_name` is given (f02 §6).
+- `smp_orders.absorb_from_sell(order, player_or_name, key, qty)` →
+  `accepted_count, cents_paid` (f02 §6; their adapter reads the two-value
+  shape). Key may be M0 or M1 (`to_m1` normalises).
+- `smp_orders.au.listings_at_or_below(key, unit_price)` — forwards to
+  `smp_ah.listings_at_or_below(key, unit_price, os.time())`, `{}` when
+  smp_ah is absent (`TODO(f03)`).
+- `smp_orders.au.consume_listing(listing_id, buyer, price)` — forwards to
+  `smp_ah.consume_listing(listing_id, buyer, price, "routed")`.
+
+**T13 approach:** delivery uses a **detached inventory**
+(`smp_orders_deliver_<name>`, owner-only callbacks). Contents are returned
+on menu close without confirm (quit field), on confirm-failure-with-items,
+and on `leaveplayer`; the inventory is then removed. Matched/consumed
+items are annihilated into the order's virtual `delivered` count — nothing
+is materialised until `collect()` (T12).
+
+**PROPOSED decisions worth surfacing:** plural rule ("X of Y" pluralises
+the first word, otherwise the last), quantity lower-casing
+(`300k requested` vs observed `300K`), the "skip oversized listing" sweep
+rule, the whole-stack `fill_from_stack` rule, `orders.page_size = 45`,
+`orders.min_price = $1` (observed `Minimum: $ 1`), `orders.default
+slot 9`, order manage/collect/cancel UI (`Collect Items` / `Cancel Order`
+/ `Escrow: $ @1` / `@1 collected` / `New Order` / `Click to manage`,
+house style after f09), creation rate limit 1/s (R9), and every unobserved
+refusal message (`You reached order limits`, `This item cannot be
+ordered`, `You cannot deliver to your own order`, `This order has
+changed`, `Nothing matched this order`, `Order created`, `Order
+cancelled, @1 refunded`, …). The `⚠` warning triangle on prompt titles is
+omitted — no Mineclonia texture exists and its meaning is unresolved
+(V-28).
