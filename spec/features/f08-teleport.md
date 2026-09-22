@@ -361,3 +361,12 @@ end
 | V-65 | Does `/rtpqueue` still exist post-beta, and what are its matchmaking rules? |
 | V-66 | Does `/spawn` open a menu of named lobbies on the current server, and what are they called? |
 | V-67 | Does `/world` chain (multiple history entries) or hold exactly one? |
+
+### Implementation notes (f08 implementer, 2026-09-22)
+
+| Id | Note |
+|---|---|
+| Q-1 | **Engine bug found while testing: pattern-mode `string.find`/`string.match` is unreliable in the current LuaJIT build** (`/opt/homebrew/bin/luajit`, 2.1.1767980792). Repro: `("ab-cd"):find("b-c")` returns `4` (correct: `2 4`); `("friedcake/dev-tests/x"):find("dev-tests")` returns `nil` (the substring is present); `("1.7,0.8;"):find("%.%d+,%.%d+")` returns `nil`. Plain-mode find (fourth arg `true`) is always correct. smp_tp/smp_rtpqueue ship **no pattern-mode calls in their own code paths** (trim and lobby-field parsing use byte/sub operations); dev-tests use plain-mode find. Existing smp_core/smp_economy pattern uses (`^%s*(.-)%s*$`, `@(%d+)`) were spot-checked and currently work, but this should be investigated at the engine level — it can silently break any mod code. |
+| Q-2 | `mcl_title.set`'s `stay` is in Minecraft ticks (20/s). The spec example's `stay = 1` would vanish after 50 ms; smp_tp uses `stay = 20` re-issued once per second for the countdown. |
+| Q-3 | Ender-pearl-on-death (§4.6) is intentionally **not** implemented in f08: it requires hooking the mcl_throwing pearl entity's death and is low priority. Flagged for a later phase. |
+| Q-4 | `/smp test <feature>` (dispatcher in smp_economy, f01's file) is hardcoded to `smp_core` — same issue f03 and f04 hit. smp_tp and smp_rtpqueue both ship `test.lua`; `/smp test smp_tp` reports "Unknown test target" until the dispatcher is generalized. **Proposed shared change:** the dispatcher maps `<target>` → `core.get_modpath(<target>) .. "/test.lua"` for any loaded mod. |
