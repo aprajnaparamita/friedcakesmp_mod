@@ -135,6 +135,7 @@ local function normalise(rec)
 	rec.stack    = rec.stack or ""
 	rec.key      = rec.key or ""
 	rec.key_m1   = rec.key_m1 or ""
+	rec.key_m2   = rec.key_m2 or rec.key or ""
 	rec.name     = rec.name or ""
 	rec.count    = math.floor(tonumber(rec.count) or 1)
 	for _, f in ipairs(INT_FIELDS) do
