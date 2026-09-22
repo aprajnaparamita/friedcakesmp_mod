@@ -243,12 +243,12 @@ function smp_quickbuy.formspec.warn(player, session)
 	out[#out + 1] = string.format("label[2,0.6;" .. esc(S("Item: @1", title)) .. "]")
 	out[#out + 1] = string.format("label[2,1.2;" .. esc(S("Amount: @1",
 		entry and smp_core.fmt_qty(entry.qty) or "1")) .. "]")
-	out[#out + 1] = string.format("label[2,1.8;" .. esc(S("Shown price: $ @1",
-		smp_core.fmt_money(shown, "inline"))) .. "]")
-	out[#out + 1] = string.format("label[2,2.4;" .. esc(S("Current price: $ @1",
-		smp_core.fmt_money(cost, "inline"))) .. "]")
-	out[#out + 1] = string.format("label[2,3.0;" .. esc(S("Total: $ @1",
-		smp_core.fmt_money(cost, "inline"))) .. "]")
+	out[#out + 1] = string.format("label[2,1.8;" .. esc(S("Shown price: @1",
+		smp_core.fmt_money(shown, "body"))) .. "]")
+	out[#out + 1] = string.format("label[2,2.4;" .. esc(S("Current price: @1",
+		smp_core.fmt_money(cost, "body"))) .. "]")
+	out[#out + 1] = string.format("label[2,3.0;" .. esc(S("Total: @1",
+		smp_core.fmt_money(cost, "body"))) .. "]")
 	out[#out + 1] = "label[2,3.8;" .. esc(S(
 		"The price rose beyond three times what was shown. Confirm to buy anyway.")) .. "]"
 
