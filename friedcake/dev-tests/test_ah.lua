@@ -713,6 +713,12 @@ end)
 
 section("T10", "slot limits", function()
 	wipe()
+	-- f13 (smp_ranks) is authoritative per f13 §4.2.4; stub it out so this
+	-- isolation test exercises smp_ah's own config-driven fallback path.
+	local saved_ah_limit = smp_ranks.ah_limit
+	local saved_limit    = smp_ranks.limit
+	smp_ranks.ah_limit = nil
+	smp_ranks.limit    = nil
 	local saved_default = smp_ah.cfg.slots.default
 	smp_ah.cfg.slots.default = 2
 
@@ -789,6 +795,8 @@ section("T10", "slot limits", function()
 
 	smp_ah.cfg.slots.default = saved_default
 	smp_ah.cfg.slots.tier1 = 45
+	smp_ranks.ah_limit = saved_ah_limit
+	smp_ranks.limit    = saved_limit
 end)
 
 ----------------------------------------------------------------------
