@@ -248,3 +248,70 @@ end
 | V-33 | Is there a teleport warm-up, and is it displayed? None visible |
 | V-34 | What is the default home icon? |
 | V-35 | Is the `Choose Icon` list every registered item, or a curated subset? 19 alphabetical entries were visible, all vanilla |
+| V-88 | Delete confirmation (implementation choice while V-31 stays open): a prompt titled `Delete @1?` with `Cancel` (red, left) and `Delete` (red text, right); confirming chats `Home deleted` and returns to the `Homes` row. The intermediate screen, its title and the return target are **PROPOSED** — never observed |
+| V-89 | Name/usage refusals (**PROPOSED**, no refusal was ever observed): `Home name is too long`, `Home name cannot be empty`, `Usage: /delhome <id>` |
+| V-90 | `Choose Icon` paging (**PROPOSED**): `Prev` / `Next` buttons, and the title gains `(Page @1)` only when page > 1 — the observed screen was page 1 with the plain title [F0066] |
+| V-91 | Home names are not required to be unique; ids are. `/homes <key>` matches a numeric id first, then the first case-insensitive name match (**PROPOSED**) |
+| V-92 | `/sethome <name>` where a home of that name already exists creates a NEW home rather than moving the old one (**PROPOSED**; never observed) |
+| V-93 | `Show More` (implementation choice while V-32 stays open): re-renders the tab row with ALL home tabs (`item_image_button` per home, wrapped 7 per row) and hides `Show More` itself. No second page mechanism (**PROPOSED**) |
+
+## 11. Proposed shared changes
+
+The f09 agent's edit surface is `friedcake/mods/smp_tp/homes.lua`,
+`friedcake/mods/smp_tp/test_homes.lua` and
+`friedcake/dev-tests/test_homes.lua` (plus this file). The following
+integration edits are needed and are **not** made by the f09 agent:
+
+1. **`friedcake/mods/smp_tp/init.lua`** (owned by f08) — load the
+   subsystem, after the `commands.lua` line:
+
+   ```lua
+   dofile(core.modpath("homes.lua"))
+   ```
+
+   ⚠ Engine note for the integrator: `smp_tp/init.lua` currently calls
+   `core.modpath(...)`, which does **not exist** in Luanti (the engine
+   provides only `core.get_modpath(modname)` — verified against
+   `~/dev/luanti`; the dev-test harness defines `core.modpath` itself,
+   which is why `test_tp.lua` passes). All `dofile(core.modpath(...))`
+   calls in `init.lua` must become
+   `dofile(core.get_modpath("smp_tp") .. "/" .. ...)` before `smp_tp`
+   can load in-game. f09 does not edit f08's file; flagging here.
+
+2. **`friedcake/mods/smp_tp/mod.conf`** (owned by f08) — homes read and
+   write player records, so declare the dependency:
+
+   ```
+   depends = smp_core, smp_store, mcl_worlds, mcl_spawn
+   optional_depends = mcl_title, mcl_vars, smp_ranks
+   ```
+
+   (`smp_ranks` is optional: `smp_tp.homes.home_limit` falls back to the
+   §4.1 slot table with a `TODO(f13)` until `smp_ranks.home_limit`
+   exists.)
+
+3. **`spec/shared/08-ui-strings.md`** (integrator mirror) — the
+   observed homes strings are already catalogued there (§8.1, §8.2,
+   §8.5, §8.6). The new **PROPOSED** strings this implementation adds
+   and should be listed as PROPOSED, not observed:
+
+   | String | Screen / use |
+   |---|---|
+   | `Home name is too long` | `/sethome`, `Rename` validation (V-89) |
+   | `Home name cannot be empty` | `Rename` validation (V-89) |
+   | `Usage: /delhome <id>` | `/delhome` with no argument (V-89) |
+   | `Delete @1?` | delete confirmation title (V-88) |
+   | `Prev`, `Next` | `Choose Icon` paging (V-90) |
+   | `Choose Icon (Page @1)` | `Choose Icon` title on page > 1 (V-90) |
+
+4. **`/smp test` loader** (f01/f04 concern) — `test_homes.lua` follows
+   the `{passed, failed, lines}` contract and is already executed by
+   `friedcake/dev-tests/test_homes.lua`; wire it into `/smp test` when
+   the generic loader lands.
+
+No changes are needed to `spec/shared/02-architecture.md`,
+`04-ui-kit.md`, `05-command-reference.md` (the `/homes`, `/home`,
+`/sethome`, `/delhome` rows already exist) or `06-config-reference.md`
+(`homes.*` rows already exist; this implementation honours
+`homes.slots`, `homes.name_max`, `homes.tabs_before_more`,
+`homes.default_icon`, `homes.delete_confirm`).
