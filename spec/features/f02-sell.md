@@ -185,4 +185,67 @@ end
 | V-54 | What is the green pane's tooltip? Never legible |
 | V-55 | Is there a receipt screen? `$ 189` appears on the HUD but no breakdown was shown |
 | V-56 | Is routing surfaced to the seller at all, or is it silent? |
-| V-57 | Does the `Sell` grid accept any item, rejecting on confirm, or refuse ineligible items on drop? |
+| V-57 | **Closed (PROPOSED).** The grid accepts any item on drop and rejects ineligible items on confirm, returning them — the §4.1 "returned, not consumed" reading. Drop-time refusal was rejected because it contradicts T3/T6 (there would be nothing to return) and because the price table is reloadable, so eligibility can change while a menu is open. |
+| V-88 | **[NEW, PROPOSED]** The cobblestone "6" and cobblestone-wall "7" prices in [S2] state no unit. `prices_default.lua` reads them as **dollars** (600/700 cents), matching the inflated Donut economy seen elsewhere (`$30K` totems, `$ 4M` helmets). |
+| V-89 | **[NEW, PROPOSED]** Money rounding when `sell.multiplier` is fractional: unit value = `floor(base × multiplier + 0.5)` (round to the nearest cent). §0.7 only pins rounding for *fees*; a price rounding rule is not specified. |
+| V-90 | **[NEW, PROPOSED]** The §5 history schema stores only quantities and totals. To render `/sellhistory` lines without re-deriving unit prices, smp_sell adds two per-line fields, `server_cents` and `order_cents`. They are additive to the §5 schema. |
+| V-91 | **[NEW]** The §4.8 house-style sell result (`You sold … and received …`) renders money with `smp_core.fmt_money(cents, "body")`, i.e. `$ 30K` with a space, per §0.6. The observed delivery message `You delivered 1 Totem of Undying and received $30K` [F0227] shows the suffixed form *without* a space — a direct contradiction of §0.6 that f04's string also trips over. Needs an integrator ruling for the whole modpack. |
+| V-92 | **[NEW, PROPOSED]** The confirm pane tooltip is `Confirm` / `Click to sell items`, without the parenthesised amount that the delivery confirm carries [F0222]. Showing a live total would require re-rendering the formspec on every container change, which risks cancelling an in-flight drag. |
+| V-93 | **[NEW, PROPOSED]** Routing is surfaced in chat only: `You sold @1 @2 to an open order and received @3`, emitted only when routing actually happened. V-56's "silent" alternative is retained for the HUD (no routing breakdown appears in any frame). |
+| V-94 | **[NEW]** Sell history currently lives in `smp_sell`'s own mod-storage namespace, not in a `smp_store` table (shared §2.2), because `smp_store` has no such API and its sqlite/postgres backends persist exactly six nested player blobs. The smp_store extension is proposed in §11 below; the seam is local (`history.lua` `_read`/`_write`). |
+
+## 11. Proposed shared changes (for the integrator)
+
+Flagging per AGENTS.md rule 1; none of these are required for smp_sell to ship
+standalone — every one degrades gracefully at runtime.
+
+1. **`smp_store` sell-history table.** `smp_sell` keeps history in its own
+   mod storage (V-94). Proposed API, mirroring the existing ledger helpers:
+   `smp_store.api.append_sell_history(name, entry) -> id` and
+   `smp_store.api.sell_history_for(name, page, size) -> {entries, total_pages}`
+   with a monotonic per-player id. Until merged, `history.lua` is the
+   implementation.
+2. **`smp_store.api.add_money` item detail.** The ledger row a sale writes
+   uses reason `sell` with the item key and quantity in `ref`
+   (`"sell:<key>:<qty>"`) because `add_money` has no `item_key`/`qty`
+   parameters. Proposing an `opts` table (`add_money(name, cents, reason,
+   ref, { item_key = …, qty = … })`) so the ledger columns are populated
+   directly (X4 reconstruction).
+3. **`smp_items` key format + plainness.** smp_sell delegates M0/M1/M2 keys
+   to `smp_items.key(stack, level)` when present (owner: f04) and keeps
+   its own equivalent when smp_items is still the stub. Two proposals:
+   (a) `smp_items.named()` should not treat a derived tooltip `description`
+   meta as a custom name — Mineclonia's `tt.reload_itemstack_description`
+   sets it on enchanted tools and shulker boxes, which would reject them at
+   M1; (b) a `sell.meta_exempt` exemption (amethyst `smp:expires_at` timers,
+   §4.1 [S9]) needs a way into the shared plainness check, e.g. a
+   `ctx`/`exempt` parameter on `smp_items.plain`/`key`.
+4. **Glass-pane itemstrings.** shared/04-ui-kit.md §4.3 lists
+   `mcl_core:glass_pane_lime`, which does not exist in Mineclonia. The real
+   names (verified against `~/dev/mineclonia-git` `mcl_panes`) are
+   `mcl_panes:pane_lime_flat` / `mcl_panes:pane_lime` (and `_silver` for the
+   light-grey `List` pane). smp_sell resolves the pane at runtime from a
+   candidate list, so the shared table can be corrected without breaking it.
+
+## 12. Implementation status (agent/f02-sell)
+
+Implemented under `friedcake/mods/smp_sell/` and `friedcake/dev-tests/test_sell.lua`:
+
+- Observed `Sell` container: detached inventory, 9×5 grid (44 drop slots +
+  the lime confirm pane in the bottom-right cell [F0094]), `Inventory`
+  4×9 below, Mineclonia chest geometry. `sell.mode = "button"` default,
+  `"close"` clone mode kept [C1].
+- `/sell`, `/sell hand`, `/sell all`, `/sellhistory [page]`, `/worth [item]`.
+- M0/M1/M2 keys, plainness, and the shulker codec (compressed + empty key),
+  with runtime delegation to `smp_items` and a `smp_orders` routing adapter.
+- Crash-safe container: contents mirrored to mod storage on every change and
+  recovered on the next join (R6/R12 spirit); returns on confirm, close,
+  leave, death and shutdown. Full inventory drops at the player's feet (T8).
+- Integer cents throughout; `smp_core.fmt_money` for all rendering;
+  `core.get_translator` for every string.
+- `/smp reload` (wrapped, not edited) re-reads the price table; `/smp test
+  smp_sell` runs `test.lua`.
+
+All ten acceptance tests (T1–T10) pass in `friedcake/dev-tests/test_sell.lua`
+under `luajit`, and the in-game `test.lua` (64 assertions) passes under the
+dev harness.
