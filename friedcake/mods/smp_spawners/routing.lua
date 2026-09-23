@@ -56,13 +56,6 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 		return false, S("Selling is not available yet")
 	end
 
-	-- Remove from storage, then hand the lots to f02 (shared §2.3:
-	-- source value first, no yields in between).
-	for _, lot in ipairs(lots) do
-		state.store[lot.name] = (state.store[lot.name] or 0) - lot.count
-	end
-	smp_spawners.write_state(state)
-
 	local stacks = {}
 	for _, lot in ipairs(lots) do
 		local stack = ItemStack(lot.name)
@@ -70,8 +63,19 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 		stacks[#stacks + 1] = stack
 	end
 
-	-- f02 routes better-paying orders first, then the server [S2].
-	smp_sell.sell(player, stacks)
+	-- f02 routes better-paying orders first, then the server [S2]. It owns
+	-- the money/item movement; we remove from storage only when it reports
+	-- success (f02 §6: `true` = "every stack was consumed and paid for").
+	-- On `false` the stacks were left untouched, so nothing is lost.
+	local ok = smp_sell.sell(player, stacks)
+	if not ok then
+		return false, S("Spawner output could not be sold")
+	end
+
+	for _, lot in ipairs(lots) do
+		state.store[lot.name] = (state.store[lot.name] or 0) - lot.count
+	end
+	smp_spawners.write_state(state)
 
 	return true, S("Spawner output sent to sell routing (@1 items)",
 		smp_core.fmt_qty(total))

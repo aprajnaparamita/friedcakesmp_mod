@@ -706,7 +706,7 @@ end)
 -- no ABMs, bounded per-step work).
 local flush_timer = 0
 local expire_timer = 0
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	flush_timer = flush_timer + dtime
 	if flush_timer >= cfg.flush_interval then
 		flush_timer = 0

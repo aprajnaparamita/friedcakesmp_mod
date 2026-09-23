@@ -15,16 +15,22 @@ smp_tp = {}
 smp_tp.S = S
 smp_tp.cfg = {}
 
+-- `core.get_modpath(modname)` returns this mod's directory; join the
+-- filename ourselves (the engine takes a modname, not a path).
+local modpath = core.get_modpath("smp_tp")
+
 -- Load order matters only where a file extends smp_tp at require time.
-dofile(core.modpath("config.lua"))
+dofile(modpath .. "/config.lua")
 smp_tp.cfg.finalize()
-dofile(core.modpath("bridge.lua"))
-dofile(core.modpath("state.lua"))
-dofile(core.modpath("warmup.lua"))
-dofile(core.modpath("rtp.lua"))
-dofile(core.modpath("requests.lua"))
-dofile(core.modpath("formspec.lua"))
-dofile(core.modpath("commands.lua"))
+dofile(modpath .. "/bridge.lua")
+dofile(modpath .. "/state.lua")
+dofile(modpath .. "/warmup.lua")
+dofile(modpath .. "/rtp.lua")
+dofile(modpath .. "/requests.lua")
+dofile(modpath .. "/formspec.lua")
+dofile(modpath .. "/commands.lua")
+-- f09 homes: a subsystem of smp_tp, wired by the integrator (f09 §11).
+dofile(modpath .. "/homes.lua")
 
 ----------------------------------------------------------------------
 -- Leave/death bookkeeping (f08 §4.4.6, §8: re-validate at fire time;

@@ -313,11 +313,11 @@ core.register_globalstep = function(fn)
 	callbacks.globalstep[#callbacks.globalstep + 1] = fn
 end
 -- smp_store (f01, not editable by this feature) calls
--- core.register_on_globalstep, which does not exist in the engine
+-- core.register_globalstep, which does not exist in the engine
 -- (lua_api.md: core.register_globalstep only). The harness aliases it
 -- so the stack loads; the discrepancy is surfaced in f10 §10 for the
 -- integrator.
-core.register_on_globalstep = core.register_globalstep
+core.register_globalstep = core.register_globalstep
 core.register_on_shutdown = function() end
 core.register_on_player_receive_fields = function(formname, fn)
 	callbacks.receive_fields[formname] = fn

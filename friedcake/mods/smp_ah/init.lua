@@ -1273,7 +1273,7 @@ log("action", "loaded " .. tostring(loaded) .. " listing(s) from storage")
 
 local flush_t, sweep_t = 0, 0
 
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	dtime = tonumber(dtime) or 0
 	flush_t = flush_t + dtime
 	if flush_t >= cfg.flush_interval then

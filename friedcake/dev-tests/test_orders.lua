@@ -300,7 +300,7 @@ core = {
 	end,
 	register_on_joinplayer = function() end,
 	register_on_shutdown = function() end,
-	register_on_globalstep = function() end,
+	register_globalstep = function() end,
 	get_gametime = function() return gametime end,
 	registered_aliases = {},
 	item_drop = function(stack, pos)

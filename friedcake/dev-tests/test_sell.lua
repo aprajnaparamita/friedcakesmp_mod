@@ -682,7 +682,7 @@ core = {
 	register_on_joinplayer = function(f) handlers.join[#handlers.join + 1] = f end,
 	register_on_shutdown = function(f) handlers.shutdown[#handlers.shutdown + 1] = f end,
 	register_on_mods_loaded = function(f) handlers.mods_loaded[#handlers.mods_loaded + 1] = f end,
-	register_on_globalstep = function(f) handlers.globalstep[#handlers.globalstep + 1] = f end,
+	register_globalstep = function(f) handlers.globalstep[#handlers.globalstep + 1] = f end,
 	register_on_chatcommand = function(f) handlers.chatcommand[#handlers.chatcommand + 1] = f end,
 	register_on_punchplayer = function() end,
 	register_on_respawnplayer = function() end,

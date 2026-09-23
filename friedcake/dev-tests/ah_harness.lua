@@ -779,7 +779,7 @@ function H.boot(opts)
 		register_on_player_receive_fields = function(cb) H.on_receive[#H.on_receive + 1] = cb end,
 		register_on_leaveplayer = function(cb) H.on_leave[#H.on_leave + 1] = cb end,
 		register_on_joinplayer = function(cb) H.on_join[#H.on_join + 1] = cb end,
-		register_on_globalstep = function(cb) H.on_globalstep[#H.on_globalstep + 1] = cb end,
+		register_globalstep = function(cb) H.on_globalstep[#H.on_globalstep + 1] = cb end,
 		register_on_shutdown = function(cb) H.on_shutdown[#H.on_shutdown + 1] = cb end,
 		register_on_mods_loaded = function(cb) H.on_mods_loaded[#H.on_mods_loaded + 1] = cb end,
 		register_on_newplayer = function() end,

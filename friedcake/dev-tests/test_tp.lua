@@ -97,7 +97,6 @@ local core = {
 	log = function(_, ...) end,
 	get_translator = S_factory,
 	get_current_modname = function() return "smp_tp" end,
-	modpath = function(f) return MODROOT .. f end,
 	after = function(sec, fn)
 		fake.pending[#fake.pending + 1] = { at = now + math.max(1, math.floor(sec)), fn = fn }
 	end,
@@ -193,7 +192,7 @@ for _, c in ipairs({
 	if readable(c .. "config.lua") then MODROOT = c break end
 end
 assert(MODROOT, "run this test as friedcake/dev-tests/test_tp.lua from the repo root (or inside it)")
-core.modpath = function(f) return MODROOT .. f end
+core.get_modpath = function(m) return MODROOT:sub(1, -2) end
 
 dofile(MODROOT .. "../smp_core/init.lua")
 dofile(MODROOT .. "init.lua")

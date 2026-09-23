@@ -225,7 +225,7 @@ do
 		register_tool = function(name, def) core.registered_items[name] = def end,
 		register_item = function(name, def) core.registered_items[name] = def end,
 		register_on_joinplayer = function() end,
-		register_on_globalstep = function() end,
+		register_globalstep = function() end,
 		register_on_pickup = function() end,
 		get_connected_players = function() return {} end,
 		chat_send_player = function(name, msg)

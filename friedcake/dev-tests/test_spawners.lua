@@ -181,7 +181,9 @@ core = {
 	get_modpath = function(m) return ROOT .. "/friedcake/mods/" .. m end,
 	settings = {
 		get = function(_) return "" end,
-		get_bool = function(_) return nil end,
+		-- Mimic the engine: `Settings:get_bool(key, default)` is called with
+		-- `self` as the first argument, so the default is the THIRD.
+		get_bool = function(_, _, default) return default end,
 	},
 	log = function(level, msg)
 		if level == "error" then print("[engine error] " .. tostring(msg)) end
@@ -293,7 +295,7 @@ core = {
 	end,
 	register_on_joinplayer = function() end,
 	register_on_shutdown = function() end,
-	register_on_globalstep = function() end,
+	register_globalstep = function() end,
 	register_chatcommand = function() end,
 	register_privilege = function() end,
 	get_gametime = function() return now end,
@@ -735,6 +737,7 @@ do
 	smp_sell = {
 		sell = function(player, stacks)
 			routed = { player = player, stacks = stacks }
+			return true
 		end,
 	}
 	local player = make_player("p9sell", 10, 65, 10)

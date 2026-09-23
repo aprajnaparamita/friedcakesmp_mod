@@ -192,6 +192,7 @@ function smp_store.api.ensure_player(name)
 		first_join = os.time(),
 		money = 0,
 		shards = 0,
+		shards_for_playtime = 0,
 		playtime = 0,
 		rank = {},
 		homes = {},
@@ -348,7 +349,7 @@ core.register_on_shutdown(function()
 end)
 
 local flush_timer = 0
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	flush_timer = flush_timer + dtime
 	if flush_timer >= cfg.flush_interval then
 		flush_timer = 0

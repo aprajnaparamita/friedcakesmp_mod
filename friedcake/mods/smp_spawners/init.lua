@@ -37,7 +37,10 @@ local function str(key, default)
 	return v
 end
 local function bool(key, default)
-	return core.settings:get_bool(key) or default
+	-- `get_bool(key, default)` returns default only when the key is unset,
+	-- so a default-true key CAN be turned off. The old `get_bool(key) or
+	-- default` never let `false` through (`false or default == default`).
+	return core.settings:get_bool(key, default)
 end
 
 smp_spawners.cfg = {

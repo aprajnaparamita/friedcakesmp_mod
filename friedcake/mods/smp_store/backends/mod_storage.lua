@@ -143,17 +143,21 @@ function driver.ledger_for(actor, page, size)
 	end
 	table.sort(ids, function(a, b) return a > b end)
 
-	local entries = {}
-	local total = 0
-	local start = (page - 1) * size + 1
-	for i, id in ipairs(ids) do
+	-- Collect the actor-filtered set newest-first, THEN page over it. The
+	-- previous code paged by the global id position while filtering by
+	-- actor, so pages ≥ 2 could duplicate or omit rows.
+	local all = {}
+	for _, id in ipairs(ids) do
 		local e = read_json("ledger:" .. string.format("%010d", id))
 		if e and (actor == nil or actor == "" or e.actor == actor) then
-			total = total + 1
-			if i >= start and #entries < size then
-				entries[#entries + 1] = e
-			end
+			all[#all + 1] = e
 		end
+	end
+	local total = #all
+	local start = (page - 1) * size + 1
+	local entries = {}
+	for i = start, math.min(start + size - 1, total) do
+		entries[#entries + 1] = all[i]
 	end
 	return entries, math.max(1, math.ceil(total / size))
 end

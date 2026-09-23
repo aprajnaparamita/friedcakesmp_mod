@@ -56,7 +56,7 @@ end
 local acc, flush_acc = 0, 0
 smp_stats._playtime_acc = function() return acc end -- test seam
 
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	acc = acc + dtime
 	flush_acc = flush_acc + dtime
 	if acc >= 1 then

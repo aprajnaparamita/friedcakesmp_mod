@@ -251,7 +251,7 @@ core = {
 	registered_chatcommands = commands,
 	register_privilege = function(_, _) end,
 	register_on_shutdown = function(_) end,
-	register_on_globalstep = function(_) end,
+	register_globalstep = function(_) end,
 	register_on_leaveplayer = function(_) end,
 	register_on_joinplayer = function(fn) join_handlers[#join_handlers + 1] = fn end,
 	register_on_player_receive_fields = function(fn)

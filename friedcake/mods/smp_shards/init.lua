@@ -259,7 +259,7 @@ core.register_chatcommand("shardsadmin", {
 -- Lifecycle
 ----------------------------------------------------------------------
 
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	smp_shards.on_step(dtime)
 end)
 

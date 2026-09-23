@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS players (
   first_join    INTEGER NOT NULL,
   money         INTEGER NOT NULL DEFAULT 0,
   shards        INTEGER NOT NULL DEFAULT 0,
+  shards_for_playtime INTEGER NOT NULL DEFAULT 0,
   playtime      INTEGER NOT NULL DEFAULT 0,
   rank_json     TEXT NOT NULL DEFAULT '{}',
   homes_json    TEXT NOT NULL DEFAULT '{}',
@@ -133,6 +134,7 @@ local function new_record(name)
 		first_join = os.time(),
 		money = 0,
 		shards = 0,
+		shards_for_playtime = 0,
 		playtime = 0,
 		rank = {},
 		homes = {},
@@ -157,13 +159,23 @@ function driver.migrate()
 			if err then die("schema exec failed: " .. tostring(err) .. " for: " .. s) end
 		end
 	end
+	-- Migration for pre-`shards_for_playtime` tables: add the column if it is
+	-- missing, so a world created before this field existed does not drop the
+	-- shard-award counter on every upsert.
+	local has_col = false
+	for row in db:nrows("PRAGMA table_info(players)") do
+		if row.name == "shards_for_playtime" then has_col = true end
+	end
+	if not has_col then
+		db:exec("ALTER TABLE players ADD COLUMN shards_for_playtime INTEGER NOT NULL DEFAULT 0")
+	end
 	return true
 end
 
 function driver.get_player(name)
 	if not name or name == "" then return nil end
 	local s = prepare(
-		"SELECT first_join, money, shards, playtime, "
+		"SELECT first_join, money, shards, shards_for_playtime, playtime, "
 		.. "rank_json, homes_json, stats_json, social_json, quickbuy_json, keys_json "
 		.. "FROM players WHERE name = ?")
 	s:bind(1, name)
@@ -176,13 +188,14 @@ function driver.get_player(name)
 	r.first_join = s:get_value(0) or r.first_join
 	r.money     = s:get_value(1) or 0
 	r.shards    = s:get_value(2) or 0
-	r.playtime  = s:get_value(3) or 0
-	r.rank      = from_json(s:get_value(4))
-	r.homes     = from_json(s:get_value(5))
-	r.stats     = from_json(s:get_value(6))
-	r.social    = from_json(s:get_value(7))
-	r.quickbuy  = from_json(s:get_value(8))
-	r.keys      = from_json(s:get_value(9))
+	r.shards_for_playtime = s:get_value(3) or 0
+	r.playtime  = s:get_value(4) or 0
+	r.rank      = from_json(s:get_value(5))
+	r.homes     = from_json(s:get_value(6))
+	r.stats     = from_json(s:get_value(7))
+	r.social    = from_json(s:get_value(8))
+	r.quickbuy  = from_json(s:get_value(9))
+	r.keys      = from_json(s:get_value(10))
 	s:reset()
 	return r
 end
@@ -191,13 +204,14 @@ function driver.upsert_player(record)
 	if not record or not record.name then return end
 	local s = prepare([[
 		INSERT INTO players
-		  (name, first_join, money, shards, playtime,
+		  (name, first_join, money, shards, shards_for_playtime, playtime,
 		   rank_json, homes_json, stats_json, social_json, quickbuy_json, keys_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 		  first_join    = excluded.first_join,
 		  money         = excluded.money,
 		  shards        = excluded.shards,
+		  shards_for_playtime = excluded.shards_for_playtime,
 		  playtime      = excluded.playtime,
 		  rank_json     = excluded.rank_json,
 		  homes_json    = excluded.homes_json,
@@ -210,13 +224,14 @@ function driver.upsert_player(record)
 	s:bind(2,  record.first_join or os.time())
 	s:bind(3,  math.floor(record.money or 0))
 	s:bind(4,  math.floor(record.shards or 0))
-	s:bind(5,  math.floor(record.playtime or 0))
-	s:bind(6,  to_json(record.rank))
-	s:bind(7,  to_json(record.homes))
-	s:bind(8,  to_json(record.stats))
-	s:bind(9,  to_json(record.social))
-	s:bind(10, to_json(record.quickbuy))
-	s:bind(11, to_json(record.keys))
+	s:bind(5,  math.floor(record.shards_for_playtime or 0))
+	s:bind(6,  math.floor(record.playtime or 0))
+	s:bind(7,  to_json(record.rank))
+	s:bind(8,  to_json(record.homes))
+	s:bind(9,  to_json(record.stats))
+	s:bind(10, to_json(record.social))
+	s:bind(11, to_json(record.quickbuy))
+	s:bind(12, to_json(record.keys))
 	local _, err = s:step()
 	s:reset()
 	if err then die("upsert_player failed: " .. tostring(err)) end

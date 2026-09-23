@@ -275,7 +275,7 @@ local core = {
 	register_privilege = function() end,
 	register_on_player_hpchange = function(fn) fake.hpchange = fn end,
 	register_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
-	register_on_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
+	register_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
 	register_on_leaveplayer = function(fn) fake.leaves[#fake.leaves + 1] = fn end,
 	register_on_dieplayer = function(fn) fake.die[#fake.die + 1] = fn end,
 	register_on_shutdown = function() end,
@@ -352,7 +352,6 @@ end
 assert(BASE, "run as friedcake/dev-tests/test_homes.lua from the repo root (or inside it)")
 local MODROOT = BASE .. "friedcake/mods/smp_tp/"
 
-core.modpath = function(f) return MODROOT .. f end
 core.get_modpath = function(m) return BASE .. "friedcake/mods/" .. m end
 
 ----------------------------------------------------------------------
@@ -383,10 +382,9 @@ end
 
 dofile(BASE .. "friedcake/mods/smp_core/init.lua")
 dofile(BASE .. "friedcake/mods/smp_store/init.lua")
+-- init.lua now wires homes.lua itself (f09 §11 integrator edit), so the
+-- harness no longer loads the subsystem directly.
 dofile(MODROOT .. "init.lua")
--- The integrator will wire this into smp_tp/init.lua (f09 §11); until
--- then the harness loads the subsystem directly.
-dofile(MODROOT .. "homes.lua")
 
 ----------------------------------------------------------------------
 -- Test harness helpers

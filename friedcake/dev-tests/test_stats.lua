@@ -256,7 +256,7 @@ core = {
 	end,
 	register_privilege = function() end,
 	register_on_shutdown = function(fn) shutdown_handlers[#shutdown_handlers + 1] = fn end,
-	register_on_globalstep = function(fn) globalstep_handlers[#globalstep_handlers + 1] = fn end,
+	register_globalstep = function(fn) globalstep_handlers[#globalstep_handlers + 1] = fn end,
 	register_on_joinplayer = function(fn) join_handlers[#join_handlers + 1] = fn end,
 	register_on_leaveplayer = function(fn) leave_handlers[#leave_handlers + 1] = fn end,
 	register_on_dieplayer = function(fn) die_handlers[#die_handlers + 1] = fn end,

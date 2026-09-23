@@ -176,7 +176,7 @@ core.register_on_joinplayer(function(player)
 	-- Refresh descriptions of any amethyst items carried on join.
 	local inv = player:get_inventory()
 	if inv then
-		for list in ipairs({ "main", "offhand" }) do
+		for _, list in ipairs({ "main", "offhand" }) do
 			local size = inv:get_size(list)
 			for i = 0, size - 1 do
 				local st = inv:get_stack(list, i)
@@ -190,7 +190,7 @@ core.register_on_joinplayer(function(player)
 	for _, fn in ipairs(join_hooks) do fn(player) end
 end)
 
-core.register_on_globalstep(function(dtime)
+core.register_globalstep(function(dtime)
 	sweep_tick = sweep_tick + dtime
 	if sweep_tick >= cfg.sweep_interval then
 		sweep_tick = 0
