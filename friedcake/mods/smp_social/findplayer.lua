@@ -19,10 +19,10 @@
 local S = core.get_translator(core.get_current_modname())
 
 local DIMENSION_NAMES = {
-	overworld = "Overworld",
-	nether    = "Nether",
-	["end"]   = "The End",
-	void      = "Void",
+	overworld = S("Overworld"),
+	nether    = S("Nether"),
+	["end"]   = S("The End"),
+	void      = S("Void"),
 }
 
 local function player_exists(name)
@@ -40,9 +40,9 @@ local function region_of(x, z)
 	end
 	local ns = axis(z)
 	local ew = axis(x)
-	local ns_name = ns == 1 and "South" or (ns == -1 and "North" or "")
-	local ew_name = ew == 1 and "East" or (ew == -1 and "West" or "")
-	if ns_name == "" and ew_name == "" then return "Center" end
+	local ns_name = ns == 1 and S("South") or (ns == -1 and S("North") or "")
+	local ew_name = ew == 1 and S("East") or (ew == -1 and S("West") or "")
+	if ns_name == "" and ew_name == "" then return S("Center") end
 	if ns_name ~= "" and ew_name ~= "" then return ns_name .. "-" .. ew_name end
 	return ns_name ~= "" and ns_name or ew_name
 end
@@ -60,10 +60,10 @@ local function dimension_of(pos)
 	if type(mcl_worlds) == "table" and mcl_worlds.pos_to_dimension then
 		local ok, dim = pcall(mcl_worlds.pos_to_dimension, pos)
 		if ok and type(dim) == "string" then
-			return DIMENSION_NAMES[dim] or "Overworld"
+			return DIMENSION_NAMES[dim] or S("Overworld")
 		end
 	end
-	return "Overworld" -- no mcl_worlds: permissive fallback
+	return S("Overworld") -- no mcl_worlds: permissive fallback
 end
 
 local function location_of(target)
@@ -72,7 +72,7 @@ local function location_of(target)
 	local dx, dz = pos.x - spawn.x, pos.z - spawn.z
 	local radius = smp_social.cfg.findplayer.spawn_radius
 	if dx * dx + dz * dz <= radius * radius then
-		return "Spawn"
+		return S("Spawn")
 	end
 	return dimension_of(pos) .. " – " .. region_of(dx, dz)
 end

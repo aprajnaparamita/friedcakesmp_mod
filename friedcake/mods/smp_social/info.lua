@@ -53,7 +53,7 @@ local function show_formspec(name, title, content)
 		"label[0.5,0.6;" .. core.formspec_escape(title) .. "]",
 		"textarea[0.5,1.4;8,4.6;info_text;;"
 			.. core.formspec_escape(content) .. "]",
-		"button[3.7,6.1;1.6,0.8;info_back;Back]",
+		"button[3.7,6.1;1.6,0.8;info_back;" .. S("Back") .. "]",
 	}, ""))
 end
 
@@ -116,7 +116,7 @@ smp_social.register_cmd("help", {
 			end
 			return smp_social.say(name, S("This command does not exist"))
 		end
-		show_formspec(name, "Help",
+		show_formspec(name, S("Help"),
 			get_info("info.help") ~= "" and get_info("info.help") or auto_help())
 		return true
 	end,
@@ -128,32 +128,32 @@ smp_social.register_cmd("help", {
 
 register_info("rules", {
 	key = "info.rules",
-	title = "Rules",
+	title = S("Rules"),
 	description = S("Show the server rules"),
 })
 
 register_info("discord", {
-	key = "info.discord", title = "Discord", link = true,
+	key = "info.discord", title = S("Discord"), link = true,
 	description = S("Show the server's Discord link"),
 })
 
 register_info("media", {
-	key = "info.media", title = "Media", link = true,
+	key = "info.media", title = S("Media"), link = true,
 	description = S("Show the server's media link"),
 })
 
 register_info("link", {
-	key = "info.link", title = "Link", link = true,
+	key = "info.link", title = S("Link"), link = true,
 	description = S("Show the server's main link"),
 })
 
 register_info("buy", {
-	key = "info.store", title = "Store", link = true,
+	key = "info.store", title = S("Store"), link = true,
 	description = S("Show the server's store link"),
 }, { "store" })
 
 register_info("website", {
-	key = "info.website", title = "Website", link = true,
+	key = "info.website", title = S("Website"), link = true,
 	description = S("Show the server's website"),
 })
 
@@ -161,13 +161,13 @@ register_info("website", {
 -- already registered its perk-table screen (§10).
 if not core.registered_chatcommands["ranks"] then
 	register_info("ranks", {
-		key = "info.ranks", title = "Ranks",
+		key = "info.ranks", title = S("Ranks"),
 		description = S("Show information about the server ranks"),
 	})
 end
 
 register_info("medal", {
-	key = "info.medal", title = "Medal", link = true,
+	key = "info.medal", title = S("Medal"), link = true,
 	description = S("Show the server's MedalTV link"),
 })
 

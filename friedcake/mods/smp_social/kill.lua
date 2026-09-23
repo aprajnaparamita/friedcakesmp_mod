@@ -21,11 +21,11 @@ local function confirm_formspec()
 		"formspec_version[6]",
 		"size[6,3.8]",
 		"bgcolor[#000000C0]",
-		"label[0.6,0.7;Kill]",
-		"label[0.6,1.7;Are you sure you want to kill yourself?]",
+		"label[0.6,0.7;" .. S("Kill") .. "]",
+		"label[0.6,1.7;" .. S("Are you sure you want to kill yourself?") .. "]",
 		"style[kill_cancel;bgcolor=red]",
-		"button[0.6,2.6;2.4,0.8;kill_cancel;Cancel]",
-		"button[3.0,2.6;2.4,0.8;kill_confirm;Kill]",
+		"button[0.6,2.6;2.4,0.8;kill_cancel;" .. S("Cancel") .. "]",
+		"button[3.0,2.6;2.4,0.8;kill_confirm;" .. S("Kill") .. "]",
 	}, "")
 end
 
