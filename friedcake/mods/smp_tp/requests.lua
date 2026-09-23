@@ -41,7 +41,9 @@ function smp_tp.cancel_requests_of(name)
 			if core.player_exists(sender) then
 				core.chat_send_player(sender,
 					S("Teleport request to @1 cancelled", name))
-				smp_tp.drop_request(sender, name, t)
+				-- The sender's mirror of this request lives in their OUTBOX
+				-- (requests_out), not their inbox.
+				smp_tp.drop_request_out(sender, name, t)
 			end
 		end
 	end

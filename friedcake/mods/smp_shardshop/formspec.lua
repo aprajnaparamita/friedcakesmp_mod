@@ -88,8 +88,8 @@ function fs.shop_form(balance)
 		"formspec_version[6]",
 		"size[" .. c(G.w) .. "," .. c(G.h) .. "]",
 		"label[0,0," .. F(S("Shard Shop")) .. "]",
-		string.format("label[8.35,0.05,Shards: %s]",
-			F(smp_core.fmt_qty(balance or 0))),
+		string.format("label[8.35,0.05,%s]",
+			F(S("Shards: @1", smp_core.fmt_qty(balance or 0)))),
 	}
 	for i, offer in ipairs(cat.offers) do
 		local col = (i - 1) % G.cols + 1

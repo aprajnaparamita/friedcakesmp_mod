@@ -17,6 +17,10 @@ smp_tp.fs = {}
 
 local FORMNAME = "smp_tp:request"
 
+-- U+26A0 warning triangle, as homes.lua renders it (the correct three-byte
+-- UTF-8 sequence, not the lone \241 byte the old label carried).
+local TRIANGLE = "\226\154\160"
+
 function smp_tp.show_request_dialog(target, sender, type)
 	local session = smp_core.open_session(target, FORMNAME, {
 		sender = sender,
@@ -32,12 +36,12 @@ function smp_tp.show_request_dialog(target, sender, type)
 		"formspec_version[6]",
 		"size[4,2.6]",
 		"bgcolor[#000000C0]",
-		"label[1.4,0.1;Teleport Request \241]",  -- warning triangle, §4.2
+		"label[1.4,0.1;" .. S("Teleport Request") .. " " .. TRIANGLE .. "]",
 		"label[0.4,0.8;" .. line .. "]",
 		"style[deny;bgcolor=red]",
 		"style[accept;bgcolor=green]",
-		"button[0.2,1.8;1.7,0.8;deny;Deny]",
-		"button[2.1,1.8;1.7,0.8;accept;Accept]",
+		"button[0.2,1.8;1.7,0.8;deny;" .. S("Deny") .. "]",
+		"button[2.1,1.8;1.7,0.8;accept;" .. S("Accept") .. "]",
 	})
 	smp_core.show_formspec(target, FORMNAME, fs)
 end
@@ -89,7 +93,7 @@ function smp_tp.show_spawn_menu(name)
 	}
 	local y = 0.8
 	-- main first (world spawn), then configured lobbies.
-	local rows = { { id = "main", label = "Main" } }
+	local rows = { { id = "main", label = S("Main") } }
 	for id in pairs(lobbies) do
 		rows[#rows + 1] = { id = id, label = id:sub(1, 1):upper() .. id:sub(2) }
 	end

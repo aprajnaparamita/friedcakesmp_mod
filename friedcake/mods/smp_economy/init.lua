@@ -196,6 +196,14 @@ core.register_chatcommand("pay", {
 		if target == player_name then
 			return false, S("You cannot pay yourself.")
 		end
+		-- f01 §4.2.1: reject recipients who have blocked the payer (and
+		-- vice-versa) without revealing which privacy rule fired.
+		if smp_social and type(smp_social.blocks) == "function" then
+			if smp_social.blocks(target, player_name)
+			   or smp_social.blocks(player_name, target) then
+				return false, S("You cannot send money to @1.", target)
+			end
+		end
 		local cents, perr = smp_core.parse_amount(amount_raw)
 		if not cents then
 			return false, S("Invalid amount: @1", perr or "?")

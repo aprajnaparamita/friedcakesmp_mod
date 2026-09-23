@@ -76,9 +76,16 @@ cfg.rtp.zone = {
 -- Named regions: rectangular areas in the Overworld, mapped from the
 -- reference server's proxy regions [S1]. {} = whole world. PROPOSED.
 cfg.rtp.regions = {}
--- Spawn-protection exclusion radius (f15 owns protection; RTP must
--- land outside it, shared §X10). 0 = no exclusion.
-cfg.rtp.spawn_protect_radius = tonumber(setting("rtp.spawn_protect_radius", 0))
+-- Spawn-protection exclusion radius (f15 owns protection; RTP must land
+-- outside it, shared §X10). Reads the f15 key `world.spawn_protect_radius`
+-- (default 128) directly — it is not namespaced under `smp_tp.`.
+cfg.rtp.spawn_protect_radius = 128
+if core.settings and core.settings.get then
+	local v = core.settings:get("world.spawn_protect_radius")
+	if v ~= "" and v ~= nil then
+		cfg.rtp.spawn_protect_radius = tonumber(v) or 128
+	end
+end
 
 ----------------------------------------------------------------------
 -- Teleport requests (§4.4)
@@ -135,11 +142,11 @@ function smp_tp.cfg.finalize()
 	-- This Luanti fork has no core.get_world_border binding; fall back
 	-- to 30000 until one is added.
 	local border = 30000
-	smp_tp._border = math.floor(border)
 	if core.get_world_border then
 		local ok, b = pcall(core.get_world_border)
 		if ok and type(b) == "number" and b > 0 then border = b end
 	end
+	smp_tp._border = math.floor(border)
 	local mr = math.floor(border) - 500
 	cfg.rtp.max_radius = math.max(mr, cfg.rtp.min_radius + 1)
 end
