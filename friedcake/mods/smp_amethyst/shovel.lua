@@ -10,10 +10,24 @@
 local S = core.get_translator(core.get_current_modname())
 local am = smp_amethyst
 
--- Dirt-family check: group shovely (PROPOSED). Kept in one place so the
--- operator can tighten or widen it in config later.
-local function is_shovel_node(groups)
-	return (groups and (groups.shovely or 0) > 0) or false
+-- Dirt-family check: group shovely (PROPOSED) OR explicit node name
+-- from `amethyst.shovel_nodes` (F06-5). The config key is a
+-- comma-separated list of node names; when unset/empty, only the group
+-- check applies (backward compatible).
+local shovel_node_set = {}
+do
+	local raw = am.cfg.shovel_nodes or ""
+	for name in raw:gmatch("[^,%s]+") do
+		shovel_node_set[name] = true
+	end
+end
+
+local function is_shovel_node(groups, nodename)
+	-- Group check (default/fallback)
+	if groups and (groups.shovely or 0) > 0 then return true end
+	-- Explicit node name list (F06-5)
+	if nodename and shovel_node_set[nodename] then return true end
+	return false
 end
 smp_amethyst.is_shovel_node = is_shovel_node
 
@@ -57,7 +71,7 @@ core.register_tool("smp_amethyst:shovel", {
 			if not node or node.name == "air" then return false end
 			local def = core.registered_nodes[node.name]
 			if not def or not def.diggable then return false end
-			if not is_shovel_node(def.groups) then return false end
+			if not is_shovel_node(def.groups, node.name) then return false end
 			if core.is_protected(pos, name) then return false end
 			if am.dig_blacklisted(pos) then return false end
 			return true

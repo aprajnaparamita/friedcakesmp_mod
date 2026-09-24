@@ -238,36 +238,53 @@ assert(not msgs[1]:match("%.+$"), "T1 no terminal full stop")
 ----------------------------------------------------------------------
 -- T2: a restart does not double-count.
 --
--- Simulate a restart by dropping the in-memory pending map state: the
--- record is already persisted. Continue the same session for another
--- 599 s — floor(1199/600) is still 1, so no new award. Then one more
--- second brings the total to exactly 2 shards / 2 messages.
+-- Simulate a real restart by reloading the module: the persisted record
+-- (playtime, shards_for_playtime) is re-read, the in-memory pending map
+-- is fresh, and the award logic continues from the persisted counters.
+-- This ensures the floor(playtime/interval) - shards_for_playtime formula
+-- works across restarts without double-counting.
 ----------------------------------------------------------------------
 
-connected = {}   -- "server restart": nobody online
+-- First, advance to 1199 s (still only 1 shard owed)
 connected = { fake_player("alice") }
-
 for _ = 1, 599 do
 	smp_shards.on_step(1)
 end
+smp_shards.flush_player("alice")
 rec = smp_store.api.get_player("alice")
-assert(rec.shards == 1, "T2 no double count: got " .. tostring(rec.shards))
-count = 0
-for _, m in ipairs(chat["alice"] or {}) do
-	if m == AWARD then count = count + 1 end
-end
-assert(count == 1, "T2 still one message: got " .. count)
+assert(rec.shards == 1, "T2 pre-restart: 1 shard at 1199 s")
+assert(rec.playtime == 1199, "T2 playtime persisted: " .. rec.playtime)
+assert(rec.shards_for_playtime == 1, "T2 counter: " .. rec.shards_for_playtime)
 
-smp_shards.on_step(1)
-smp_shards.on_step(1)
+-- SIMULATE RESTART: reload the module (clears pending, re-reads settings)
+-- The store_data persists across the reload.
+package.loaded["smp_shards"] = nil
+_G.smp_shards = nil
+load("smp_shards")
+
+-- After restart, player is back online. Continue from 1199 s.
+connected = { fake_player("alice") }
+for _ = 1, 599 do  -- advance to 1798 s; floor(1798/600)=2, owed=1
+	smp_shards.on_step(1)
+end
+smp_shards.flush_player("alice")
 rec = smp_store.api.get_player("alice")
-assert(rec.shards == 2, "T2 second award after 1200 s: got " .. tostring(rec.shards))
+assert(rec.shards == 2, "T2 no double count after restart: got " .. tostring(rec.shards))
+assert(rec.shards_for_playtime == 2, "T2 counter advanced to 2")
+
+-- One more second crosses 1800 s (3 intervals): exactly one more shard.
+smp_shards.on_step(1)
+smp_shards.on_step(1)
+smp_shards.flush_player("alice")
+rec = smp_store.api.get_player("alice")
+assert(rec.shards == 3, "T2 third award at 1800 s: got " .. tostring(rec.shards))
+assert(rec.shards_for_playtime == 3, "T2 counter at 1800 s")
 count = 0
 for _, m in ipairs(chat["alice"] or {}) do
 	if m == AWARD then count = count + 1 end
 end
-assert(count == 2, "T2 exactly two messages total: got " .. count)
-print("T2 ok: no double count across a restart")
+assert(count == 3, "T2 exactly three messages total: got " .. count)
+print("T2 ok: no double count across a module reload (restart)")
 
 ----------------------------------------------------------------------
 -- Burst: 25 minutes at once pays out 2 shards and 2 messages.
@@ -288,6 +305,15 @@ print("burst ok")
 -- /shardsadmin
 ----------------------------------------------------------------------
 
+-- Reset alice for admin tests (T2 left her with 3 shards)
+do
+	local rec = smp_store.api.ensure_player("alice")
+	rec.shards = 0
+	rec.playtime = 0
+	rec.shards_for_playtime = 0
+	smp_store.api.upsert_player(rec)
+end
+
 local cmd = commands["shardsadmin"]
 assert(cmd, "/shardsadmin registered")
 
@@ -297,12 +323,12 @@ assert(r == false and msg:find("Usage"), "shardsadmin usage")
 r, msg = cmd.func("staff", "give alice 250k")
 assert(r == true, "shardsadmin give: " .. tostring(msg))
 rec = smp_store.api.get_player("alice")
-assert(rec.shards == 250002, "shardsadmin give 250k: got " .. tostring(rec.shards))
+assert(rec.shards == 250000, "shardsadmin give 250k: got " .. tostring(rec.shards))
 
 r, msg = cmd.func("staff", "take alice 100")
 assert(r == true, "shardsadmin take")
 rec = smp_store.api.get_player("alice")
-assert(rec.shards == 249902, "shardsadmin take 100: got " .. tostring(rec.shards))
+assert(rec.shards == 249900, "shardsadmin take 100: got " .. tostring(rec.shards))
 
 r, msg = cmd.func("staff", "take alice 99999999")
 assert(r == false and msg:find("does not have"), "shardsadmin overdraft refused")

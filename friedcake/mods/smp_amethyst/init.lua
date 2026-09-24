@@ -45,6 +45,10 @@ local cfg = {
 		["mcl_core:realm_barrier"] = true,
 		["mcl_mobspawners:spawner"] = true,
 	},
+	-- PROPOSED (F06-5): additional node-name list for the shovel's
+	-- multi-block dig, alongside the existing `shovely` group check.
+	-- When unset/empty, only the group check applies (backward compatible).
+	shovel_nodes = core.settings:get("amethyst.shovel_nodes") or "",
 }
 smp_amethyst.cfg = cfg
 
@@ -94,9 +98,11 @@ function smp_amethyst.is_expired(stack, now)
 end
 
 -- Refresh the "Expires in ..." description line (f06 §4.3).
-function smp_amethyst.refresh_description(stack, now)
-	return expiry.refresh_description(stack, S, now)
-end
+-- Callers pass (stack) or (stack, now). The item's description is used
+-- as the display_name fallback for the expiry module.
+-- Direct alias to expiry module; expiry module handles flexible arguments
+-- and resolves translator from core/smp_amethyst automatically.
+smp_amethyst.refresh_description = expiry.refresh_description
 
 -- Remove an expired item from the player's hand with a message.
 -- Returns true if the item was removed.

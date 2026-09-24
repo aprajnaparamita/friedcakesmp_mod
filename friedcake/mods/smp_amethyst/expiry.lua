@@ -14,6 +14,8 @@
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
+io.stderr:write("EXPIRY.LUA LOADED\n")
+
 local M = {}
 
 M.META_KEY = "smp:expires_at"   -- absolute Unix time, seconds
@@ -88,7 +90,59 @@ end
 -- "the description refreshes with remaining time on use and on join").
 -- Returns the description that was set (or nil for items without an
 -- expiry).
+-- Call signature: (stack, now?) or (stack, display_name?, S?, now?)
+-- If S not provided, tries to get translator from core or smp_amethyst.
 function M.refresh_description(stack, display_name, S, now)
+	-- Handle flexible arguments: (stack, now) or (stack, display_name, S, now)
+	if type(display_name) == "number" then
+		-- Called as (stack, now)
+		now = display_name
+		display_name = nil
+		S = nil
+	elseif type(display_name) == "function" then
+		-- Called as (stack, S, now) - unlikely but handle it
+		S = display_name
+		display_name = nil
+	end
+
+	-- Resolve translator
+	if S == nil then
+		print("DEBUG expiry: resolving S, _G.core = " .. tostring(_G.core) .. ", _G.core.get_translator = " .. tostring(_G.core and _G.core.get_translator))
+		-- Try global core (test environment or actual engine)
+		if _G.core and type(_G.core.get_translator) == "function" then
+			S = _G.core.get_translator("smp_amethyst")
+			print("DEBUG expiry: got S from core.get_translator")
+		-- Try smp_amethyst module (actual game)
+		elseif _G.smp_amethyst and type(_G.smp_amethyst) == "table" then
+			-- smp_amethyst doesn't expose S directly, create a fallback
+			S = function(s, ...) 
+				local a = {...}
+				return (s:gsub("@(%d+)", function(n)
+					return tostring(a[tonumber(n)] or "")
+				end))
+			end
+		else
+			-- Final fallback: simple @n substitution
+			S = function(s, ...)
+				local a = {...}
+				return (s:gsub("@(%d+)", function(n)
+					return tostring(a[tonumber(n)] or "")
+				end))
+			end
+		end
+	end
+
+	-- Resolve display_name
+	if display_name == nil then
+		-- Try to get from registered items (needs core)
+		if _G.core and _G.core.registered_items then
+			local def = _G.core.registered_items[stack:get_name()]
+			display_name = def and def.description or stack:get_name()
+		else
+			display_name = stack:get_name()
+		end
+	end
+
 	local rs = M.remaining_str(stack, now)
 	if rs == nil then return nil end
 	local desc
