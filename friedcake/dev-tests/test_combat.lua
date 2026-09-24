@@ -17,6 +17,7 @@
 --   T11 tag state does not survive a restart (in-memory only)
 --   T12 untagging on the death of either party, including a third
 --       party whose opponent died
+--   C1  combat.disable_elytra — elytra flight refused while tagged
 -- plus: explosion ring attribution (TNT, punched crystal, 10 s window),
 -- the spawn safe zone (X10: no PvP tag inside it) and the action-bar
 -- countdown.
@@ -41,6 +42,34 @@ end
 assert(DEV, "run this test as friedcake/dev-tests/test_combat.lua from the repo root (or inside it)")
 
 local H = dofile(DEV .. "harness_f10.lua")
+
+-- C1 (§4.2.5): a stand-in for Mineclonia's playerphysics/elytra.lua
+-- entity def. The harness registers no engine entities, and smp_combat's
+-- hook installs against the prototype table in core.registered_entities
+-- — the same table the engine uses as a luaentity's metatable, which is
+-- why mutating it reaches live entities.
+local attach_log, detach_log = {}, {}
+local elytra_obj = {}
+local elytra_ent = {
+	name = "mcl_armor:elytra_entity",
+	detach = function(self, player)
+		detach_log[#detach_log + 1] = player:get_player_name()
+		self.driver = nil
+		player._attach = nil
+	end,
+}
+elytra_obj.get_luaentity = function() return elytra_ent end
+local elytra_def = {
+	name = "mcl_armor:elytra_entity",
+	object = elytra_obj,
+	attach = function(self, player)
+		attach_log[#attach_log + 1] = player:get_player_name()
+		self.driver = player
+		player._attach = self.object
+	end,
+}
+core.registered_entities = { ["mcl_armor:elytra_entity"] = elytra_def }
+
 H.load_stack()
 
 local punch = H.callbacks.punch[1]
@@ -144,6 +173,64 @@ smp_combat.untag("alice")
 H.no(H.dispatch_chatcommand("alice", "rtp", ""),
 	"T3 untagged players are not blocked")
 punch(alice, bob) -- retag for the combat-log scenario
+
+----------------------------------------------------------------------
+-- C1: combat.disable_elytra — elytra flight refused while tagged
+----------------------------------------------------------------------
+
+-- Enable the key for this test section
+smp_combat.cfg.combat.disable_elytra = true
+
+-- Ensure alice is untagged at start
+smp_combat.untag("alice")
+smp_combat.untag("bob")
+
+-- Reset attach/detach logs
+for i = #attach_log, 1, -1 do attach_log[i] = nil end
+for i = #detach_log, 1, -1 do detach_log[i] = nil end
+
+-- Untagged player: attach should succeed
+local elytra_ent2 = core.registered_entities["mcl_armor:elytra_entity"]
+elytra_ent2.attach(elytra_obj, alice)
+H.eq(#attach_log, 1, "C1 elytra attach allowed when untagged")
+H.eq(attach_log[1], "alice", "C1 attach called with correct player")
+
+-- Now tag alice and try to attach — should be refused with message
+smp_combat.tag("alice", "bob")
+H.yes(smp_combat.is_tagged("alice"), "C1 alice is tagged")
+for i = #attach_log, 1, -1 do attach_log[i] = nil end
+elytra_ent2.attach(elytra_obj, alice)
+H.eq(#attach_log, 0, "C1 elytra attach refused while tagged")
+H.eq(H.last(H.chat.alice), "You cannot use elytra during combat.",
+	"C1 refusal message sent to player")
+
+-- Test force-detach on globalstep when already flying
+-- Simulate alice already attached to elytra
+alice._attach = elytra_obj
+elytra_ent.driver = alice
+for i = #detach_log, 1, -1 do detach_log[i] = nil end
+smp_combat.elytra.step()
+H.eq(#detach_log, 1, "C1 globalstep detaches already-flying tagged player")
+H.eq(detach_log[1], "alice", "C1 detach called with correct player")
+H.eq(H.last(H.chat.alice), "Your elytra flight was ended by the combat tag.",
+	"C1 force-detach message sent")
+
+-- Untag alice — attach should work again
+smp_combat.untag("alice")
+for i = #attach_log, 1, -1 do attach_log[i] = nil end
+elytra_ent2.attach(elytra_obj, alice)
+H.eq(#attach_log, 1, "C1 elytra attach allowed after untag")
+
+-- Disable the key again — attach should work even while tagged
+smp_combat.cfg.combat.disable_elytra = false
+smp_combat.tag("alice", "bob")
+for i = #attach_log, 1, -1 do attach_log[i] = nil end
+elytra_ent2.attach(elytra_obj, alice)
+H.eq(#attach_log, 1, "C1 elytra attach allowed when key is false even if tagged")
+
+-- Cleanup for next tests
+smp_combat.untag("alice")
+smp_combat.untag("bob")
 
 ----------------------------------------------------------------------
 -- Explosion attribution: 10 s (pos, placer) ring

@@ -421,6 +421,7 @@ function H.player(name, pos, ip)
 		_ip = ip,
 		_meta_ints = {},
 		_inv = { main = {}, craft = {}, armor = {}, offhand = {} },
+		_attach = nil,
 	}
 	function p:is_player() return true end
 	function p:get_player_name() return self._name end
@@ -450,6 +451,13 @@ function H.player(name, pos, ip)
 		}
 	end
 	function p:get_luaentity() return nil end
+	function p:get_attach() return self._attach end
+	function p:set_attach(entity, ...)
+		self._attach = entity
+	end
+	function p:set_detach()
+		self._attach = nil
+	end
 	players[name] = p
 	auth[name] = true
 	return p

@@ -119,7 +119,7 @@ H.eq(msg, "You cannot place a bounty on yourself.", "T8 self message")
 
 ok, msg = bounty.func("carol", "add ghost 2000")
 H.no(ok, "T8 unknown target refused")
-H.eq(msg, "Player ghost does not exist.", "T8 unknown-target message")
+H.eq(msg, "Player ghost does not exist", "T8 unknown-target message")
 
 ok, msg = bounty.func("pauper", "add mark 1000")
 H.no(ok, "T8 insufficient funds refused")
