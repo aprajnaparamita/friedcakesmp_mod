@@ -107,9 +107,13 @@ warm-up path. Defaults:
    `mcl_title.set` (`PROPOSED` display, unobserved), the same channel as the
    observed `Delivering...` indicator [F0226].
 2. The origin of every command-initiated teleport MUST be recorded for
-   `/world` before the player moves [S26].
+   `/world` before the player moves [S26] — written on the successful path
+   only, immediately before `set_pos`, so a cancelled warm-up leaves the
+   previous origin alone (fix row TP9).
 3. A warm-up MUST NOT be used to bypass `f10` combat restrictions: tagging
-   either party cancels the teleport.
+   either party cancels the teleport — the mover and the stationary
+   counterparty (`opts.with`, §4.4) are both checked at start, on every
+   countdown tick and again at fire (fix row TP2).
 
 ### 4.2 `/rtp`
 
@@ -161,7 +165,9 @@ players and teleports both to one random safe location [C4]. Specification
    teleporting elsewhere also leaves the queue.
 5. After landing, normal survival rules apply: the first hit starts combat
    tags (`f10`), death drops items.
-6. Players who block each other (`f11`) MUST NOT be paired (`PROPOSED`).
+6. Players who **block** each other (`f11`) MUST NOT be paired
+   (`PROPOSED`). The exclusion is the *block* graph only — `/ignore` does
+   not exclude a pairing (f11 F11-4; fix row TP13).
 
 ### 4.4 Teleport requests
 
@@ -221,14 +227,23 @@ where noted):
 ```lua
 -- per player
 smp_tp.state[name] = {
-  warmup = nil,                  -- {started, from, to, kind} while warming up
-  last_teleport_from = nil,      -- pos, for /world
+  warmup = nil,                  -- mirror of smp_tp.warmup[name]:
+                                 -- {token, kind, name, from, to, started,
+                                 --  duration, with, record_from} while warming
+  last_teleport_from = nil,      -- pos, for /world (written only when the
+                                 -- teleport fires — f08 §4.5, fix row TP9)
   cooldowns = { rtp = 0 },       -- expiry timestamps
   requests_out = {},             -- (target, type) -> expiry
   requests_in  = {},             -- (sender, type) -> expiry
-  rtpqueue = nil,                -- {joined_at} while queued
 }
 ```
+
+Queue membership is **not** part of this schema: `/rtpqueue` keeps its own
+`smp_rtpqueue.members[name] = {joined_at, at}` table inside `smp_rtpqueue`.
+An earlier draft of this schema listed an `rtpqueue = {joined_at}` field that
+no code ever read or written; it is struck so §5 describes the code
+(fix row TP7, §10 Fix-wave record). The OBSERVED queue *behaviour* — the 5 s
+countdown, 16–32 nodes apart, 300 s timeout — is unchanged.
 
 Warp points and lobby spawn points are **configuration**, not player data:
 
@@ -302,18 +317,23 @@ end
 | `smp_tp.tp.cancel_move_distance` | 1 node | PROPOSED |
 | `smp_tp.tp.confirm_menu` | true | CLONE [C1]; the decided substitute for clickable chat |
 | `smp_tp.tp.back_enabled` | false | PROPOSED |
-| `rtp.cooldown_default`, `rtp.cooldown_tier1`, `rtp.cooldown_tier2`, `rtp.cooldown_tier3`, `rtp.cooldown_media` | `{default = 60, tier1 = 30}` s | PROPOSED (Donut: shorter for Donut+ [S27]) |
+| `rtp.cooldown_default` | 60 s | PROPOSED (Donut: shorter for Donut+ [S27]) |
+| `rtp.cooldown_tier1` | 30 s | PROPOSED (Donut: shorter for Donut+ [S27]) |
+| `rtp.cooldown_tier2` | 30 s | PROPOSED (beyond-spec, implemented; the read landed with fix row TP8a) |
+| `rtp.cooldown_tier3` | 30 s | PROPOSED (beyond-spec, implemented; the read landed with fix row TP8a) |
+| `rtp.cooldown_media` | 60 s — falls back to the default when unset | PROPOSED (beyond-spec, implemented; fix row TP8a) |
 | `smp_tp.rtp.min_radius`, `smp_tp.rtp.max_radius` | 500; the border minus 500 | PROPOSED |
 | `smp_tp.rtp.scan.overworld` | y from −32 to 256 (adjust to the world's terrain) | PROPOSED |
 | `smp_tp.rtp.scan.nether` | `mg_nether_min` to a few nodes below `mg_bedrock_nether_top_max` | PROPOSED |
 | `smp_tp.rtp.scan.end` | `mg_end_min` to `mg_end_min + 128` | PROPOSED |
 | `smp_tp.rtp.max_attempts` | 10 | PROPOSED |
-| `smp_tp.rtp.menu_enabled` | false (menu removed 15 June 2026) | LIVE [S14] |
+| `smp_tp.rtp.menu_enabled` | false (menu removed 15 June 2026) | LIVE [S14]; read from settings since fix row TP8b |
 | `smp_tp.rtp.zone_delay` | 3 s | PROPOSED |
 | `smp_tp.rtp.regions` | `{}` | PROPOSED |
+| `world.spawn_protect_radius` | 128 | PROPOSED (f15's key; **consumed** by f08 as the `/rtp` landing exclusion, §4.2.3 — fix row TP5) |
 | `smp_tp.rtpqueue.timeout` | 300 s | PROPOSED |
-| `smp_tp.rtpqueue.min_separation` | 16 nodes | PROPOSED |
-| `smp_tp.rtpqueue.max_separation` | 32 nodes | PROPOSED |
+| `smp_tp.rtpqueue.min_separation` | 16 nodes | PROPOSED (read since fix row TP8c) |
+| `smp_tp.rtpqueue.max_separation` | 32 nodes | PROPOSED (read since fix row TP8c) |
 | `smp_tp.tpa.expiry` | 60 s | PROPOSED |
 
 ## 8. Mineclonia implementation
@@ -322,7 +342,7 @@ end
   `formspec_version[6]`, `bgcolor[#000000C0]`, two coloured buttons
   (`style[accept;bgcolor=green]`, `style[deny;bgcolor=red]`).
 - The warm-up action-bar countdown uses `mcl_title.set(player, "actionbar",
-  {text = ..., stay = 1})` re-issued each second [M1].
+  {text = ..., stay = 20})` re-issued each second [M1].
 - `core.register_on_player_hpchange` covers damage cancellation; movement is
   checked at fire time (§6.1), not polled.
 - `/rtpqueue` lives in `smp_rtpqueue` and depends on both `smp_tp` (safe
@@ -372,3 +392,34 @@ end
 | Q-2 | `mcl_title.set`'s `stay` is in Minecraft ticks (20/s). The spec example's `stay = 1` would vanish after 50 ms; smp_tp uses `stay = 20` re-issued once per second for the countdown. |
 | Q-3 | Ender-pearl-on-death (§4.6) is intentionally **not** implemented in f08: it requires hooking the mcl_throwing pearl entity's death and is low priority. Flagged for a later phase. |
 | Q-4 | `/smp test <feature>` (dispatcher in smp_economy, f01's file) is hardcoded to `smp_core` — same issue f03 and f04 hit. smp_tp and smp_rtpqueue both ship `test.lua`; `/smp test smp_tp` reports "Unknown test target" until the dispatcher is generalized. **Proposed shared change:** the dispatcher maps `<target>` → `core.get_modpath(<target>) .. "/test.lua"` for any loaded mod. |
+| Q-5 | **Fix-wave record (fix brief, 2026-09-25):** see §10.1 below. |
+
+## Proposed shared changes
+
+The following mirror rows should be added to `spec/shared/06-config-reference.md` to match the keys read by `smp_tp` (beyond the existing `smp_tp.tp.*`, `smp_tp.rtp.*`, `smp_tp.rtpqueue.*`, `smp_tp.tpa.*` rows). All defaults are the hardcoded values currently in `cfg.rtp.cooldown` — bare `/rtp` with **no menu** and the 60/30 s cooldowns are Confirmed-OK behaviour and must not shift.
+
+| Key | Default | Status | Spec |
+|---|---|---|---|
+| `rtp.cooldown_tier2` | 30 s | PROPOSED | f08 |
+| `rtp.cooldown_tier3` | 30 s | PROPOSED | f08 |
+| `rtp.cooldown_media` | 60 s — falls back to the default when unset | PROPOSED | f08 |
+
+These three keys are read via `get_num()` in `config.lua:93-97` but were missing from the mirror after P2's rename pass (D7). The other `smp_tp.*` cooldown keys (tpa/spawn/warp/world/back) are **not** read from settings — they are hardcoded in `cfg.tp.cooldown` and therefore do not require mirror rows.
+
+## 10.1 Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence (file:line) |
+|---|---|---|
+| TP1 | VERIFIED | `smp_tp/init.lua:20` uses `core.get_modpath`; no `core.modpath` in `smp_tp`/`smp_rtpqueue` |
+| TP2 | CLOSED | `warmup.lua:75-79` `either_tagged()` checks both parties; `tick_countdown` calls it every tick; `teleport_with_warmup` checks at start (116-117) and fire (167) |
+| TP3 | CLOSED | (a) `requests.lua:181-185` drops request on sender-tagged; `187-191` drops on acceptor-tagged; (b) `requests.lua:44-46` `cancel_requests_of` uses `drop_request_out` for sender's outbox |
+| TP4 | CLOSED | `config.lua:185-192` probes `core.get_world_border` before assigning `smp_tp._border` and `cfg.rtp.max_radius`; fallback 30000 preserved |
+| TP5 | CLOSED | `config.lua:119-125` reads `world.spawn_protect_radius` (default 128) into `cfg.rtp.spawn_protect_radius`; `rtp.lua:170-174` excludes landings inside radius |
+| TP6 | DEFERRED | Spec §4.6 / §10 Q-3 explicitly defers pearls; no code added; cross-ref `fixes/f10-combat.md` `combat.keep_pearls_on_death` has no consumer |
+| TP7 | CLOSED (spec amended) | §5 now states queue state lives in `smp_rtpqueue.members`; struck the phantom `rtpqueue = {joined_at}` field; behaviour unchanged |
+| TP8 | CLOSED | (a) `rtp.cooldown_tier2`, `rtp.cooldown_tier3`, `rtp.cooldown_media` documented as PROPOSED in §7 and proposed in `## Proposed shared changes`; (b) `rtp.menu_enabled` read via `setting()` at `config.lua:75-81`; (c) `rtpqueue.min/max_separation` read at `config.lua:156-159`; other `smp_tp.*` cooldowns are hardcoded, not settings keys |
+| TP9 | CLOSED | `warmup.lua:180-188` writes `last_teleport_from` only on successful fire; cancelled warm-up leaves origin untouched |
+| TP10 | CLOSED | `formspec.lua:22` `TRIANGLE = "\226\154\160"` (U+26A0); test asserts three-byte glyph, no lone `\241` |
+| TP11 | CLOSED | `formspec.lua:39,43,44` `S("Teleport Request")`, `S("Deny")`, `S("Accept")`; `formspec.lua:92,96` `S("Spawn")`, `S("Main")` all through translator |
+| TP12 | CLOSED (spec amended) | §8 line 345 changed to `stay = 20` (docs follow renderer — D5 precedent); `warmup.lua:43` uses `stay = 20`; Q-2 note retained |
+| TP13 | CLOSED | `smp_rtpqueue/init.lua:53-54` `blocked()` calls `smp_tp.bridge.blocks_only`; `bridge.lua:47-55` delegates to `smp_social.blocks_only`; f11-finish merged 2026-09-25, predicate available at dispatch |
