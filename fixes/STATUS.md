@@ -489,3 +489,12 @@ The user approved four bundles; all are executed here.
 - **Escalations:** C2 re-scope → D5/f08 (pending pearl feature).
 - **Index row annotated** in `fixes/README.md`.
 - **f09 now unblocked for its C4 overlap** — the f10 agent handled the bounty period string; f09 (homes) shares `smp_tp` with f08 but not `smp_bounty`.
+
+## 17. f08 (teleport) merged (2026-09-25)
+
+- **Merge:** `1c9195e` → `a3a55d7` (1 file — outcomes documentation in `spec/features/f08-teleport.md` §10.1; mod code fixes were pre-applied before dispatch)
+- **Gate:** 27/27 on main (one pre-existing `test_engine_apis` false positive — string literal `"core.modpath"` in `test_tp.lua` flagged by scanner)
+- **Rows:** TP1 VERIFIED, TP2–TP5/TP7–TP13 CLOSED, TP6 DEFERRED (spec §4.6), TP13 `blocks_only()` wiring via bridge
+- **Escalations:** TP6 → D5/f08 (pending pearl feature).
+- **Index row annotated** in `fixes/README.md`.
+- **f09 now unblocked** — f09 (homes) shares `smp_tp` mod with f08; dispatch after f08 merges.
