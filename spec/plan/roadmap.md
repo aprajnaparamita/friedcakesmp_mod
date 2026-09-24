@@ -21,7 +21,7 @@ smp_core ── smp_store ── smp_items ── smp_economy (f01) ── smp_r
 
 smp_tp (f08) ── f09 homes                smp_combat (f10) ── smp_bounty (f10)
 smp_settings (f12) ── smp_social (f11)   smp_stats (f14)
-P8: smp_rtpqueue (f08), smp_crates/smp_afk/smp_teams/smp_duels/smp_servershop (f16)
+P8: smp_rtpqueue (f08)  # (f16 descoped — D8, 2026-09-24)
 ```
 
 `f15` (world rules) has no mod of its own but gates P4 (RTP must respect the
@@ -39,7 +39,7 @@ border and spawn protection) and P5 (PvP policy).
 | **P5 Combat** | Combat tag, combat log, bounties | f10 | Combat logging drops all four registered lists and credits the kill; blocked commands refuse while tagged |
 | **P6 Shards** | Awards, shard shop, amethyst items | f06 | Expired items disappear; the drill respects protection; the observed award message is verbatim |
 | **P7 Social and meta** | Chat, private messages, ignore/block, friends, `/findplayer`, settings, statistics, leaderboards, scoreboard | f11, f12, f14 | The observed chat format, `/msg` refusal, seven settings categories and scoreboard are reproduced; leaderboard rebuild under 50 ms at 10,000 players |
-| **P8 Optional** | RTP queue, crates, AFK zone, teams, duels, server shop, API export | f08 (`smp_rtpqueue`), f16, f14 (`/api`) | Tests per module; `smp_servershop` + `smp_quickbuy` conflict detected at startup |
+| **P8 Optional** | RTP queue, API export *(f16 descoped — D8, 2026-09-24)* | f08 (`smp_rtpqueue`), f14 (`/api`) | Tests per module |
 
 ## Suggested order inside phases
 

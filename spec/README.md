@@ -70,7 +70,7 @@ One agent per file. Nobody edits a file they do not own.
 | [`features/f13-ranks.md`](features/f13-ranks.md) | `smp_ranks` | P0 | — | 0 | Research only |
 | [`features/f14-stats.md`](features/f14-stats.md) | `smp_stats` | P7 | f01 | 0 | Research only |
 | [`features/f15-world-rules.md`](features/f15-world-rules.md) | server config | P0 | — | 0 | Research only |
-| [`features/f16-legacy.md`](features/f16-legacy.md) | `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` | P8 | various | 0 | Research only |
+| [`features/f16-legacy.md`](features/f16-legacy.md) | `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` | n/a *(f16 descoped — D8, 2026-09-24)* | various | 0 | Research only |
 
 "Frames" counts video frames showing that feature. **A feature with 0 frames
 is unverified against the live server**; its UI layout is a proposal, not an

@@ -108,11 +108,11 @@ onwards are new in v0.2.
 | V-80 | Spawn layout — cross-listed with V-25 | f15 | OPEN |
 | V-81 | Actual entity caps and their Luanti equivalents | f15 | OPEN |
 | V-82 | Is bedrock breaking currently enabled? | f15 | OPEN |
-| V-83 | Exact contents of each crate's seven choices | f16 | OPEN |
-| V-84 | Did crate opening animate? | f16 | OPEN |
-| V-85 | Were team homes separate from personal home limits? | f16 | OPEN |
-| V-86 | Duel arena layouts; did losers' items transfer? | f16 | OPEN |
-| V-87 | Did the AFK zone kick players after a limit? | f16 | OPEN |
+| V-83 | Exact contents of each crate's seven choices | f16 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
+| V-84 | Did crate opening animate? | f16 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
+| V-85 | Were team homes separate from personal home limits? | f16 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
+| V-86 | Duel arena layouts; did losers' items transfer? | f16 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
+| V-87 | Did the AFK zone kick players after a limit? | f16 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
 
 ## Outstanding screenshot placeholders
 
@@ -131,9 +131,9 @@ Features without frame coverage carry `SS-nn` placeholders
 | SS-17 | Bounty list | f10 | V-19, V-71 |
 | SS-19 | `/stats` menu | f14 | V-23 |
 | SS-20 | Leaderboard menu | f14 | V-23 |
-| SS-22 | Crate choice menu (historical — capture from an old video or clone) | f16 | V-83, V-84 |
+| SS-22 | Crate choice menu (historical — capture from an old video or clone) *(f16 descoped — D8, 2026-09-24)* | f16 | V-83, V-84 |
 | SS-24 | `/ranks` menu | f13 | V-73 |
-| SS-30 | Team menu (historical — as SS-22) | f16 | V-85 |
+| SS-30 | Team menu (historical — as SS-22) *(f16 descoped — D8, 2026-09-24)* | f16 | V-85 |
 
 v0.1 placeholders retired by the frame corpus (kept for archival reference):
 SS-01 through SS-07, SS-13 through SS-15, SS-18, SS-21, SS-23, SS-25 through

@@ -27,7 +27,7 @@ numbered X1… and belong to the whole mod set.
 | f13-ranks | T1–T8 | Perk API limits; lazy expiry; grant stacking; grandfathering after expiry; no default chat prefix; offline grants |
 | f14-stats | T1–T11 | Every counter increments exactly; scoreboard shows live balance in lower-case suffix style; ten leaderboard categories; rebuild under 50 ms at 10,000 records; offline players included |
 | f15-world-rules | T1–T7 | Spawn protection via `core.is_protected`; no PvP tag inside it; soft border; `/rtp` respects both; account-per-IP flag; no seed exposure; zero ABMs |
-| f16-legacy | T1–T11 | Crate key spend and seven-choice delivery; keyall; AFK zone exclusivity with `f06`; team limits, permissions and team-home tab; duel arena restore; kill-shard anti-farming; `/shop` conflict detection |
+| f16-legacy | ~~T1–T11~~ | **Descoped (D8, 2026-09-24)** — f16 will never be built |
 
 ## Cross-cutting integration tests
 
@@ -37,7 +37,7 @@ set at every phase boundary.
 
 | Id | Test | Covers |
 |---|---|---|
-| X1 | **Duplication drill.** Put a valuable stack through every menu path (sell, auction list, order delivery, Quick Buy, spawner take, crate choice) and force-quit the client mid-operation. No path may duplicate or destroy the stack | R4–R6, §2.3 |
+| X1 | **Duplication drill.** Put a valuable stack through every menu path (sell, auction list, order delivery, Quick Buy, spawner take) and force-quit the client mid-operation. No path may duplicate or destroy the stack | R4–R6, §2.3 |
 | X2 | **Race drill.** Two clients confirm the same auction purchase and the same order delivery concurrently. Exactly one succeeds; the loser gets `This item was already bought` | R4, f03 §6, f04 §6 |
 | X3 | **Escrow conservation.** Create, partially fill, and cancel orders and bounties; at every step, total money supply changes only by documented sinks | R2, R3 |
 | X4 | **Ledger completeness.** For a scripted day of mixed operations, every balance change has exactly one ledger entry with a valid reason code, and `/ledger <player>` reconstructs each player's history | R3, R11 |

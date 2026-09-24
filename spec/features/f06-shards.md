@@ -172,7 +172,7 @@ end
 | V-22 | Amethyst sell axe behaviour |
 | V-27 | Exact name of the shard balance command |
 | V-60 | Shard shop layout — never opened |
-| V-61 | Are shards awarded while AFK, given the AFK zone was removed? |
+| V-61 | Are shards awarded while AFK, given the AFK zone was removed? **Closed (D8, 2026-09-24): f16 descoped permanently; no AFK zone will ever exist. `shards.require_activity` stays read, default false, documented inert.** |
 
 ## Proposed shared changes
 
