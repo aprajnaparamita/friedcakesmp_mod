@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f02 |
 | Verdict at audit | MOSTLY COMPLETE (2 gaps) · 37/39 OK · T1–T10 green |
 | Branch | `agent/f02-sell-fixes` |
-| Depends on | `00-P0-blockers.md` B4-1 (harness shims — note only, do not re-specify); `01-integrator-decisions.md` **D2** (receipt screen), **D7** (config mirror); an integrator ruling on the sell-history seam (no D-ID — proposed in `f02 §11`) — **ruled 2026-09-24: D2 = A (chat receipt is the design; §6 `receipt:show` replaced + V-55 closed by P1 — F02-2 is pre-applied, verify, don't redo), D7 = A (P2), seam → D12 = one generic `smp_store.api.append_history` (built by P6 — your row is wiring `history.lua` onto it and closing V-94, no longer waiting)** |
+| Depends on | `00-P0-blockers.md` B4-1 (harness shims — note only, do not re-specify); `01-integrator-decisions.md` **D2** (receipt screen), **D7** (config mirror); an integrator ruling on the sell-history seam (no D-ID — proposed in `f02 §11`) — **ruled 2026-09-24: D2 = A (chat receipt is the design; §6 `receipt:show` replaced + V-55 closed by P1 — F02-2 is pre-applied, verify, don't redo), D7 = A (P2), seam → D12 = one generic `smp_store.api.append_history` (built by P6 — your row is wiring `history.lua` onto it and closing V-94, no longer waiting)** — **P5 findings: the `smp_sell ↔ smp_orders` `optional_depends` cycle aborts a real engine boot (mod.conf is yours; f04 shares blame), and `smp_economy.give` must exist (f01's row — coordinate)** |
 
 ---
 

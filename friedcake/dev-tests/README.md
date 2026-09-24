@@ -24,7 +24,7 @@ throw with a clear message and a non-zero exit code.
 | File | Spec test ids |
 |---|---|
 | `test_fmt.lua` | f01 §9 T1, T2, T3, plus the menu session open/get/close cycle |
-| `test_store.lua` | smp_store API contract: upsert, all_player_names, ledger monotonic, ledger_for, flush, close |
+| `test_store.lua` | smp_store API contract: upsert, all_player_names, ledger monotonic, ledger_for, flush, close, append_history (round-trip, FIFO cap, kind/name isolation, offline name) |
 | `test_economy.lua` | f01 §9 T4, T5, T6, T9, T10 |
 
 Together with `/smp test` (in-game) they cover the entire f01 acceptance

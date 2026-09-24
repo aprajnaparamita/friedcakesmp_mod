@@ -177,3 +177,42 @@ The audit above is the *baseline*; this records what happened next.
   left historical on purpose.
 - Push still blocked (SSH key passphrase) — every branch is local; push
   `agent/integrator-decisions` and the three P-branches once keys are loaded.
+
+## 9. Waves 2–3 executed — all six prompts merged (2026-09-24, same session)
+
+- **P2** → `agent/rulings-config-mirror` `17e040d` — D7: mirror reconciled
+  (59 rows added, 20 renamed incl. `tp/rtp/rtpqueue/tpa/homes` → real
+  `smp_tp.*` literals, 5 struck: `settings.categories` + 4 `legacy.*`),
+  §7 tables reconciled in 12 features, new `test_config_mirror.lua`
+  (three-set READ/DECLARED/MIRROR guard; both negative checks fire).
+  DECLARED_ONLY drain (hand-offs): `ah.history` (f03 A6),
+  `orders.slots.*` (f04 O3), `spawners.C.skeleton` (f07 F07-8/9).
+- **P5** → `agent/rulings-integration-test` `617677d` — D11:
+  `test_integration.lua` (1305 lines) with engine-cited topo order
+  (`mods.cpp:43-48`, `mod_configuration.cpp:219-321`), strict 542-name
+  core (0 misses), 23/23 seams OK, degraded pass OK, both R6 negative
+  demos exit 1 with the right messages; seam-policy paragraph landed in
+  `plan/acceptance-tests.md`.
+- **P6** → `agent/rulings-store-history` `a17a8f9` — D12:
+  `smp_store.api.append_history(kind, name, entry, cap?) -> id` with
+  driver parity across mod_storage/sqlite/postgres (id = monotonic per
+  `(kind, name)`, default cap 100 FIFO), 7 new `test_store` cases; f02:139
+  + §11 amended, f03 new §6.3, f02 §10 V-94 annotated by the integrator.
+- **Ratified (agent judgement calls):** P5's engine-wins deviations (real
+  `settings` API list, no `Profiler` stub, documented reverse-alphabetical
+  tie-break stand-in, literal keep-set rule); P6's E1 (f03 §6 never
+  contained the `append_history` line the audit claimed — §6.3 addition is
+  D12's intent), E2 (ledger lives in `init.lua` + backends, no
+  `ledger.lua`), E5 (`test_store` path → worktree-aware `find_root()`).
+- **Handed to feature briefs (recorded on each *Depends on* row):**
+  - f01 — `smp_economy.give` called at four spec sites, defined nowhere.
+  - **Boot-aborting `optional_depends` cycles** (engine treats present
+    optional deps as ordering deps → `ServerError`): `smp_sell ↔ smp_orders`
+    (f02/f04), `smp_orders → smp_shardshop → smp_amethyst → smp_orders`
+    (f04/f06), `smp_stats ↔ smp_combat` (f14 + f10 — f10's brief is
+    missing, GAP-1). P5's harness gate is hard-deps-only, so these are
+    non-gating there but must be fixed in the owning mods' `mod.conf`.
+- Suite after all six merges: **25/25 dev-tests green.** Push still blocked
+  (SSH passphrase): `agent/integrator-decisions` + the six P-branches are
+  all local. Wave-1 worktrees remain under
+  `$TMPDIR/coconut-p1..p6` and can be removed with `git worktree remove`.

@@ -28,7 +28,7 @@ paste it). No other context is required.
 | # | Document | Feature | Target mod(s) | Gaps | Severity | Branch |
 |---|---|---|---|---:|---|---|
 | 00 | [`00-P0-blockers.md`](00-P0-blockers.md) | cross-cutting | `smp_store`, `smp_ah`, `smp_orders`, `smp_shards`, `smp_amethyst`, `smp_stats`, `smp_tp` | 3 classes | **✅ fixed — pack boots** | `agent/p0-engine-apis` |
-| 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 11 decisions | **✅ ruled 2026-09-24 — execution: [prompts/](prompts/)** | `agent/integrator-decisions` |
+| 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 12 decisions | **✅ ruled & executed 2026-09-24 (P1–P6 merged)** | `agent/integrator-decisions` |
 | f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
 | f09 | [`f09-homes.md`](f09-homes.md) ⚠ *brief file missing* | Homes | `smp_tp` (homes) | 4 | **high — feature never loads** | `agent/f09-homes-fixes` |
@@ -84,7 +84,7 @@ rename. Listed under "deliberately absent" in `engine_api_surface.txt`.
 
 ### Row 01 ✅ — ruled 2026-09-24, execution in [prompts/](prompts/)
 
-All eleven decisions are written up with dated rulings, chosen options and
+All twelve decisions are written up with dated rulings, chosen options and
 exact change sites in
 [`01-integrator-decisions.md`](01-integrator-decisions.md) § *Rulings —
 2026-09-24*:
@@ -98,7 +98,8 @@ exact change sites in
 | D5 | **normalise spec to renderer** | D11 | **A** — `test_integration.lua` built |
 | D6 | **`upsert_player`, `mark_dirty` struck** | D12 | **one generic `smp_store.api.append_history`** (was OPEN-1) |
 
-Execution is split into six standalone prompts
+Execution was split into six standalone prompts — **all six executed and
+merged 2026-09-24** (results in [`STATUS.md`](STATUS.md) §8–§9)
 ([`prompts/README.md`](prompts/README.md) — waves, branches, conflict matrix),
 master requirements in [`REQUIREMENTS.md`](REQUIREMENTS.md):
 

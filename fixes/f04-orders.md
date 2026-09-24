@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f04 |
 | Verdict at audit | **MOSTLY COMPLETE (3 gaps)** · 48 OK · T1–T14 green (+ 1 consumer item handed over from f13) |
 | Branch | `agent/f04-orders-fixes` |
-| Depends on | `00-P0-blockers` (B1-3 + harness shim), D7 (slots + flush-interval ruling); consumer row also references the f13 brief `fixes/f13-ranks.md` — **ruled 2026-09-24: D7 = A (slots settled: dotted scalar primary, `orders_slots_default`-style underscore alias — O2/O3 implement the code side; mirror by P2)** |
+| Depends on | `00-P0-blockers` (B1-3 + harness shim), D7 (slots + flush-interval ruling); consumer row also references the f13 brief `fixes/f13-ranks.md` — **ruled 2026-09-24: D7 = A (slots settled: dotted scalar primary, `orders_slots_default`-style underscore alias — O2/O3 implement the code side; mirror by P2)** — **P5 finding: `smp_orders` sits in two boot-aborting `optional_depends` cycles (`↔ smp_sell`, and `→ smp_shardshop → smp_amethyst → smp_orders`) — mod.conf is yours** |
 
 ---
 

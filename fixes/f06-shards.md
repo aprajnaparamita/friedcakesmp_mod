@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f06 |
 | Verdict at audit | MOSTLY COMPLETE (5 gaps) · 30 OK · T1/T3–T6/T8/T9 strong; T2/T4/T7 weak |
 | Branch | `agent/f06-shard-fixes` |
-| Depends on | `00-P0-blockers.md` **B1-4, B1-5** + B4 shims (load blocker — the pack does not boot until it lands); `01-integrator-decisions.md` **D8** (f16 scope / V-61), **D7** (config mirror) — **ruled 2026-09-24: D8 = descoped permanently (f16 never built; V-61 closed by P3 — F06-3 is pre-applied, verify and close; F06-4 loudness warning is still yours), D7 = A (mirror + f06 §7 `require_activity` annotation by P2)** |
+| Depends on | `00-P0-blockers.md` **B1-4, B1-5** + B4 shims (load blocker — the pack does not boot until it lands); `01-integrator-decisions.md` **D8** (f16 scope / V-61), **D7** (config mirror) — **ruled 2026-09-24: D8 = descoped permanently (f16 never built; V-61 closed by P3 — F06-3 is pre-applied, verify and close; F06-4 loudness warning is still yours), D7 = A (mirror + f06 §7 `require_activity` annotation by P2)** — **P5 finding: the `smp_orders → smp_shardshop → smp_amethyst → smp_orders` `optional_depends` chain aborts a real engine boot — shardshop/amethyst mod.conf is yours** |
 
 ---
 

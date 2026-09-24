@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f14 |
 | Verdict at audit | **MOSTLY COMPLETE (4 gaps)** · ~40 OK · T1–T11 green (incl. the 50 ms perf test) — plus the blocking B1-6 site in this mod |
 | Branch | `agent/f14-stats-fixes` |
-| Depends on | `00-P0-blockers` (B1-6/B4-1 — **fix site is yours: fix it here, don't wait**), D4 (`api.mode` default), D11 (integration-harness seam note) — **ruled 2026-09-24: D4 = §7 default corrected to `snapshot` (F14-D5 pre-applied by P1, verify, don't redo), D11 = A (`test_integration.lua` built by P5)** |
+| Depends on | `00-P0-blockers` (B1-6/B4-1 — **fix site is yours: fix it here, don't wait**), D4 (`api.mode` default), D11 (integration-harness seam note) — **ruled 2026-09-24: D4 = §7 default corrected to `snapshot` (F14-D5 pre-applied by P1, verify, don't redo), D11 = A (`test_integration.lua` built by P5)** — **P5 finding: `smp_stats ↔ smp_combat` `optional_depends` cycle aborts a real engine boot — your half; f10 (combat) has no brief file, GAP-1** |
 
 ---
 

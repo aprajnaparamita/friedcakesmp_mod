@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f01 (lines 209–248) |
 | Verdict at audit | **PARTIAL (~14 gaps)** · ~30 rows OK · tests: T1–T4, T9, T10 green; T5/T6 weak; T7/T8 absent (report §5, line 793) |
 | Branch | `agent/f01-economy-fixes` |
-| Depends on | `00-P0-blockers.md` (B1-1, B4-1 — the pack does not boot); `01-integrator-decisions.md` **D1, D7, D9** — **ruled 2026-09-24: D1 = A (race string period-free; f05/`buy.lua` fixed by P1), D7 = A (mirror by P2), D9 = A (`smp_admin.flag` built by P4 — your `/pay` wiring at `smp_economy/init.lua:234-236` is still your row; E-09 verify here)** — **P4 landed 2026-09-24: signature is `flag(kind, detail)` (2 args); `f01:166`'s 4-arg pseudocode must format `detail` itself. D10 = A (mute trio built by P4 — no economy consumer wired, unchanged)** |
+| Depends on | `00-P0-blockers.md` (B1-1, B4-1 — the pack does not boot); `01-integrator-decisions.md` **D1, D7, D9** — **ruled 2026-09-24: D1 = A (race string period-free; f05/`buy.lua` fixed by P1), D7 = A (mirror by P2), D9 = A (`smp_admin.flag` built by P4 — your `/pay` wiring at `smp_economy/init.lua:234-236` is still your row; E-09 verify here)** — **P4 landed 2026-09-24: signature is `flag(kind, detail)` (2 args); `f01:166`'s 4-arg pseudocode must format `detail` itself. D10 = A (mute trio built by P4 — no economy consumer wired, unchanged)** — **P5 finding: `smp_economy.give` is called at f01:161/196 (+ f02:133, f03:282, f04:319) but defined nowhere in the pack — your row** |
 
 ---
 
