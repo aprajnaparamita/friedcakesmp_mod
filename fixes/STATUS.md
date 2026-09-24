@@ -563,3 +563,15 @@ The user approved four bundles; all are executed here.
 - **f13 (ranks):** worktree `coconut-f13`, branch `agent/f13-ranks-fixes`, base `f4c3c7c`.
 - **After these two merge:** all 11 features (f01–f14, excluding f16) will be complete.
 - **Remaining open items:** D13 backlog (5 store/core items), F12-8 (`eco.pay_accept` follow-up), `fixes/00-P0-blockers.md` B1-4/B1-5/B4-1 (F06-10, F06-3).
+
+## 23. f13 (ranks) merged (2026-09-25)
+
+- **Merge:** `68b99a4` → `d25ba74` (3 files: contract tests + hand-off records)
+- **Gate:** 25/27 on main — same 2 pre-existing failures.
+- **Rows:**
+  - R-01: ESCALATED → H1/f04 — `order_limit` contract test added (C1), hand-off to f04 (orders) recorded in §10/§11.3.2
+  - R-02: ESCALATED → H2/f08 — `rtp_cooldown` contract test added (C2), hand-off to f08 (teleport) recorded in §10/§11.3.1
+  - R-03: ESCALATED → H3/D6 — `mark_dirty` pseudocode amended to `upsert_player` per D6 ruling; hand-off to integrator
+- **Escalations:** three hand-off entries (H1/H2/H3) in `spec/features/f13-ranks.md` §10 with §11 annotations.
+- **Index row annotated** in `fixes/README.md`.
+- **Only f02 (sell) remains** — final feature to complete the fix wave.
