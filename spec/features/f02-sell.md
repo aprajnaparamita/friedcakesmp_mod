@@ -136,7 +136,7 @@ function smp_sell.sell(player, stacks)
       end
     end
   end
-  smp_store.append_sell_history(player, receipt)
+  smp_store.api.append_history("sell", player, receipt:to_entry())
   -- The chat receipt is the design (D2); there is no formspec receipt.
   for _, line in ipairs(receipt:messages(cfg.receipt_max_lines)) do    -- receipt.lua:164
     core.chat_send_player(player, line)
@@ -204,12 +204,20 @@ end
 Flagging per AGENTS.md rule 1; none of these are required for smp_sell to ship
 standalone — every one degrades gracefully at runtime.
 
-1. **`smp_store` sell-history table.** `smp_sell` keeps history in its own
-   mod storage (V-94). Proposed API, mirroring the existing ledger helpers:
-   `smp_store.api.append_sell_history(name, entry) -> id` and
+1. **`smp_store` history seam — decided (D12, 2026-09-24): one generic API.**
+   `smp_sell` still keeps history in its own mod storage (V-94); the seam is
+   local (`history.lua` `_read`/`_write`) until the f02 brief wires
+   `history.lua` onto the API. The append half of the proposal is ruled:
+   one generic `smp_store.api.append_history(kind, name, entry, cap) -> id`
+   serves every feature, so the sell call is
+   `smp_store.api.append_history("sell", player, entry)` (see §6) —
+   append-only per `(kind, name)`, FIFO-pruned to `cap` (optional argument,
+   default 100, matching `sell.history_size`), with a monotonic integer id
+   per `(kind, name)` and money inside the entry kept as integer cents. The
+   paged read half of the original proposal —
    `smp_store.api.sell_history_for(name, page, size) -> {entries, total_pages}`
-   with a monotonic per-player id. Until merged, `history.lua` is the
-   implementation.
+   — is **not** covered by D12 and stays proposed for the integrator; until it
+   lands, `history.lua` remains the implementation of reads.
 2. **`smp_store.api.add_money` item detail.** The ledger row a sale writes
    uses reason `sell` with the item key and quantity in `ref`
    (`"sell:<key>:<qty>"`) because `add_money` has no `item_key`/`qty`

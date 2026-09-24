@@ -5,6 +5,8 @@
 --   player:<name>   -> JSON record
 --   ledger:nextid   -> integer string, next id to assign
 --   ledger:NNNNN    -> JSON entry
+--   history:<kind>:<name>:nextid -> integer string, next id for this list
+--   history:<kind>:<name>:NNNNN  -> JSON history entry
 --
 -- All access goes through core.write_json / core.parse_json / get_string /
 -- set_string. Writes are cheap; reads are O(N) over all keys when we need
@@ -160,6 +162,36 @@ function driver.ledger_for(actor, page, size)
 		entries[#entries + 1] = all[i]
 	end
 	return entries, math.max(1, math.ceil(total / size))
+end
+
+function driver.append_history(kind, name, entry, cap)
+	-- One append-only list per (kind, name), keyed exactly like the ledger,
+	-- scoped to the owner. Ids are monotonic per (kind, name): the nextid
+	-- key is never rewound by pruning.
+	cap = math.max(1, math.floor(tonumber(cap) or 100))
+	local prefix = "history:" .. kind .. ":" .. name .. ":"
+	local next_id = read_int(prefix .. "nextid", 1)
+	entry.id = next_id
+	entry.t = entry.t or os.time()
+	write_json(prefix .. string.format("%010d", next_id), entry)
+	write_int(prefix .. "nextid", next_id + 1)
+
+	-- FIFO prune: keep the newest `cap` entries, drop the oldest ids.
+	-- set_string(key, "") removes the key, as the engine does.
+	local ids = {}
+	for _, k in ipairs(mod_storage:get_keys()) do
+		if k:sub(1, #prefix) == prefix then
+			local n = tonumber(k:sub(#prefix + 1))   -- nil for the nextid key
+			if n then ids[#ids + 1] = n end
+		end
+	end
+	if #ids > cap then
+		table.sort(ids)
+		for i = 1, #ids - cap do
+			mod_storage:set_string(prefix .. string.format("%010d", ids[i]), "")
+		end
+	end
+	return next_id
 end
 
 function driver.flush()
