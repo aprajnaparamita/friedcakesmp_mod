@@ -18,9 +18,15 @@
 -- Public predicates (the f08/f10 contract):
 --   smp_social.ignores(a, b)               a has b on their ignore list
 --   smp_social.blocks(a, b)                a blocks OR ignores b
+--   smp_social.blocks_only(a, b)           a blocks b — BLOCK graph only
 --   smp_social.is_blocked(a, b)            a blocks b (strict)
 --   smp_social.is_friend_or_followed(a, b) b is a friend of a, or followed by a
 --   smp_social.follows(a, b), smp_social.is_friend(a, b)
+--
+-- Which predicate owns which effect is the §4.3 table (f11): chat,
+-- messages and teleport requests accept block OR ignore (`blocks`);
+-- payments, follows and RTP-queue pairing are block-only
+-- (`blocks_only`). Decision record: f11 §10.2 (V-48).
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -106,11 +112,27 @@ end
 -- blocks() covers BOTH graphs. f08 gates teleport requests on blocks
 -- alone (smp_tp.bridge.blocks) and the /ignore narration says ignore
 -- covers messages AND teleport requests [F0287], so folding ignore in
--- here is what makes T6 hold. The one consequence: mutually-ignoring
--- players are also excluded from /rtpqueue pairing — a PROPOSED row of
--- f11 §4.3 said otherwise; V-48 is open and this is recorded in §10.
+-- here is what makes T6 hold.
+--
+-- Effects the §4.3 table marks BLOCK-ONLY — payments, follows and
+-- RTP-queue pairing — must NOT fold ignore in: see blocks_only() below.
+-- The RTP consumer still reaches this function through
+-- smp_tp.bridge.blocks (smp_rtpqueue/init.lua:50); switching it to
+-- blocks_only() is ESCALATED to the f08 brief and recorded in f11
+-- §10.2. (An earlier version of this comment asserted that the
+-- ignore/RTP contradiction had already been captured in f11 §10 when
+-- no such entry existed — that assertion was false; §10.2 is the real
+-- entry. Do not restore it.)
 function smp_social.blocks(a, b)
 	return smp_social.is_blocked(a, b) or smp_social.ignores(a, b)
+end
+
+-- Block graph ONLY (no ignore). f11 §4.3: /ignore hides chat and
+-- refuses messages and teleport requests; it does NOT refuse payments,
+-- follows or RTP-queue pairing — only /block does. PROPOSED row, tied
+-- to V-48; decision record in f11 §10.2.
+function smp_social.blocks_only(a, b)
+	return smp_social.is_blocked(a, b)
 end
 
 ----------------------------------------------------------------------

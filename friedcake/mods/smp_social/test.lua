@@ -5,9 +5,12 @@
 --
 -- Covers what is safely re-runnable on a live server: the exact chat
 -- format (T1), the two OBSERVED literals (T3/T5, T8), the coarse
--- /findplayer buckets (T9) and the derived-friendship rules (T10).
--- The delivery paths (T2, T4, T6, T7) need a second player and live in
--- the standalone harness.
+-- /findplayer buckets (T9), the derived-friendship rules (T10) and the
+-- fix-wave block split (F11-2 /pay contract, F11-3 block-vs-follow,
+-- F11-4 blocks_only vs blocks, F11-5 mute bridge delegation).
+-- The delivery paths (T2, T4, T6, T7) and the F11-3 / F11-5 refusal
+-- paths need a second player (or a mute producer) and live in the
+-- standalone harness.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -111,6 +114,67 @@ do
 		smp_social.mutate_social(n, function(soc)
 			soc.following, soc.ignored, soc.blocked = {}, {}, {}
 		end)
+	end
+end
+
+----------------------------------------------------------------------
+-- F11-3 / F11-4 / F11-2 — the block split, against marked records.
+--
+-- follow()'s refusal path also needs the target to exist as a real
+-- player, so it runs end-to-end in dev-tests/test_social.lua; here the
+-- predicates (the contract f08/f01 consume) are what prove in-game.
+----------------------------------------------------------------------
+do
+	local A, B, C, D = "__f11_f3_a", "__f11_f3_b", "__f11_f3_c", "__f11_f3_d"
+	smp_social.mutate_social(A, function(soc)
+		soc.blocked[#soc.blocked + 1] = B
+	end)
+	ok(smp_social.follow_blocked(A, B), "F11-3 blocker -> blocked edge")
+	ok(smp_social.follow_blocked(B, A), "F11-3 both directions")
+	ok(not smp_social.follow_blocked(A, C), "F11-3 no block, no refusal")
+	-- §4.3: ignore refuses messages and teleports, NOT follows.
+	smp_social.mutate_social(C, function(soc)
+		soc.ignored[#soc.ignored + 1] = D
+	end)
+	ok(not smp_social.follow_blocked(C, D), "F11-3 pure ignore does not refuse follows")
+	ok(not smp_social.follow_blocked(D, C), "F11-3 neither direction of a pure ignore")
+
+	local P, Q, R = "__f11_f4_p", "__f11_f4_q", "__f11_f4_r"
+	smp_social.mutate_social(P, function(soc)
+		soc.ignored[#soc.ignored + 1] = Q
+	end)
+	ok(smp_social.blocks(P, Q), "F11-4 blocks() folds ignore (unchanged)")
+	ok(not smp_social.blocks_only(P, Q), "F11-4 blocks_only() is block-graph-only")
+	smp_social.mutate_social(P, function(soc)
+		soc.blocked[#soc.blocked + 1] = Q
+	end)
+	ok(smp_social.blocks_only(P, Q), "F11-4 blocks_only() covers the block graph")
+	-- F11-2: the /pay call shape (smp_economy/init.lua:207-209, f01's).
+	ok(smp_social.blocks(Q, P) or smp_social.blocks(P, Q),
+		"F11-2 blocks() true for a blocker, both directions")
+	ok(not (smp_social.blocks(R, Q) or smp_social.blocks(Q, R)),
+		"F11-2 blocks() false otherwise")
+
+	for _, n in ipairs({ A, B, C, D, P, Q, R }) do
+		smp_social.mutate_social(n, function(soc)
+			soc.following, soc.ignored, soc.blocked = {}, {}, {}
+		end)
+	end
+end
+
+----------------------------------------------------------------------
+-- F11-5 — the mute bridge delegates to smp_admin (D10 = A) when the
+-- producer is present; the no-producer fallback must read false.
+----------------------------------------------------------------------
+do
+	local N = "__f11_mute_probe"
+	eq(smp_social.is_muted(N), false, "F11-5 a never-muted name is not muted")
+	if type(smp_admin) == "table" and type(smp_admin.mute) == "function"
+			and type(smp_admin.unmute) == "function" then
+		smp_admin.mute(N, 60)
+		eq(smp_social.is_muted(N), true, "F11-5 hook reads the live producer")
+		smp_admin.unmute(N)
+		eq(smp_social.is_muted(N), false, "F11-5 unmute clears it")
 	end
 end
 

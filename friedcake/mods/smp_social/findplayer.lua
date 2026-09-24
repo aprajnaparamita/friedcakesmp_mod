@@ -74,7 +74,9 @@ local function location_of(target)
 	if dx * dx + dz * dz <= radius * radius then
 		return S("Spawn")
 	end
-	return dimension_of(pos) .. " – " .. region_of(dx, dz)
+	-- Composition through the translator too (hard rule 7): only the
+	-- translated parts are joined, and the separator may localise.
+	return S("@1 – @2", dimension_of(pos), region_of(dx, dz))
 end
 
 smp_social.register_cmd("findplayer", {
