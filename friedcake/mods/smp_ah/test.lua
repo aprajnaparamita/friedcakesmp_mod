@@ -92,6 +92,40 @@ do
 end
 
 ----------------------------------------------------------------------
+-- Config: ah.sorts parsing and Filter tooltip (A3)
+----------------------------------------------------------------------
+
+do
+	-- Default sorts order
+	eq(smp_ah.cfg.sorts[1], "lowest_price", "cfg.sorts default first")
+	eq(smp_ah.cfg.sorts[2], "highest_price", "cfg.sorts default second")
+	eq(smp_ah.cfg.sorts[3], "recently_listed", "cfg.sorts default third")
+	-- listings.SORTS reflects config
+	eq(listings.SORTS[1], "lowest_price", "listings.SORTS default first")
+	eq(listings.SORTS[2], "highest_price", "listings.SORTS default second")
+	eq(listings.SORTS[3], "recently_listed", "listings.SORTS default third")
+	-- Filter tooltip includes all three in order
+	local board_fs = smp_ah.fs.board({ page = 1, pages = 1, items = {},
+		sort = "lowest_price", total = 0 })
+	has(board_fs, "Lowest Price", "Filter tooltip has Lowest Price")
+	has(board_fs, "Highest Price", "Filter tooltip has Highest Price")
+	has(board_fs, "Recently Listed", "Filter tooltip has Recently Listed")
+end
+
+----------------------------------------------------------------------
+-- Config: ah.history and legacy aliases (A4)
+----------------------------------------------------------------------
+
+do
+	local hp = listings.config().history_page
+	local hps = listings.config().history_pages
+	eq(hp, 100, "default history_page = 100")
+	eq(hps, 10, "default history_pages = 10")
+	local cap = hp * hps
+	eq(cap, 1000, "history cap = per_page * pages")
+end
+
+----------------------------------------------------------------------
 -- T5 record shape (create_listing needs no online player)
 ----------------------------------------------------------------------
 
@@ -129,6 +163,45 @@ eq(S("This item was already bought"),
 	"This item was already bought", "the race-loss string is verbatim [F0037]")
 eq(S("You're going to sell this item for $@1", "1"),
 	"You're going to sell this item for $1", "the confirm tooltip renders verbatim [F0142]")
+
+----------------------------------------------------------------------
+-- A2: Confirm Listing renders Match lowest; activates and rewrites draft price
+----------------------------------------------------------------------
+
+do
+	-- Create a listing to match against
+	local match_rec = smp_ah.create_listing("match_seller", ItemStack("mcl_core:stone 10"), 5000)
+	ok(match_rec ~= nil, "A2 match listing created")
+	-- Open a flow with a stack of the same item
+	local bob = "__smp_ah_test_bob"
+	smp_ah._flows[bob] = { stage = "confirm", stack = ItemStack("mcl_core:stone 5"), price = 10000 }
+	-- Check confirm_listing formspec has Match lowest button
+	local confirm_fs = smp_ah.fs.confirm_listing({ name = "mcl_core:stone", count = 5,
+		display = { name = "Stone" } }, 10000)
+	has(confirm_fs, "Match lowest", "A2 Confirm Listing has Match lowest button")
+	has(confirm_fs, "Click to match lowest price", "A2 Match lowest has tooltip")
+	-- Simulate the match_lowest field handler
+	local v = smp_core.get_session(bob, "smp_ah:view")
+	if not v then v = smp_core.open_session(bob, "smp_ah:view", { view = "confirm_listing", formname = "smp_ah:confirm_listing" }) end
+	v.view = "confirm_listing"
+	v.formname = "smp_ah:confirm_listing"
+	smp_ah.handle_fields(bob, "smp_ah:confirm_listing", { ah_match_lowest = "" })
+	-- Price should be rewritten to match_rec.unit_price * 5 = 500 * 5 = 2500
+	local f = smp_ah._flows[bob]
+	ok(f and f.price == 2500, "A2 Match lowest rewrites draft price to 2500 (got " .. tostring(f and f.price) .. ")")
+	-- Clean up
+	if match_rec then listings.purge(match_rec.id) end
+	smp_ah._flows[bob] = nil
+end
+
+----------------------------------------------------------------------
+-- A1-adjacent: harness registers globalstep under core.register_globalstep
+----------------------------------------------------------------------
+
+do
+	ok(type(core.register_globalstep) == "function", "A1 core.register_globalstep exists")
+	ok(type(core.register_on_globalstep) ~= "function", "A1 no register_on_globalstep")
+end
 
 ----------------------------------------------------------------------
 -- Cleanup: leave the store as we found it.

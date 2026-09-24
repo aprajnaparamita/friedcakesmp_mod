@@ -44,9 +44,6 @@ local MODS_DIR = ROOT .. "friedcake/mods/"
 -- 4 fails this entry as stale until it is removed here (and the drain
 -- list shrinks).
 local DECLARED_ONLY = {
-	-- f03 brief A6 owns the history storage seam: today's reads are
-	-- `ah.history_page` / `ah.history_pages` (smp_ah/init.lua:51-52).
-	["ah.history"] = "f03",
 	-- f04 brief O3: code reads the underscore alias only
 	-- (smp_orders/init.lua:42-45); dotted `orders.slots.*` is the
 	-- documented primary spelling (shared/06 R4).

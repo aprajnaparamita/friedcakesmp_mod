@@ -543,6 +543,14 @@ listings.SORT_LABELS = {
 	recently_listed  = "Recently Listed",
 }
 
+--- Update the sort order from configuration (f03 §7 `ah.sorts`).
+-- @param sorts array of sort ids (validated by caller)
+function listings.set_sorts(sorts)
+	if type(sorts) == "table" and #sorts > 0 then
+		listings.SORTS = sorts
+	end
+end
+
 local function compare(sort)
 	if sort == "highest_price" then
 		return function(a, b)

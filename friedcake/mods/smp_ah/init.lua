@@ -39,6 +39,42 @@ local function num_setting(key, default)
 	return v
 end
 
+--- Parse a comma-separated list, trimming whitespace. Empty entries are dropped.
+local function parse_csv(raw, valid_set)
+	if not raw or raw == "" then return nil end
+	local out = {}
+	for part in raw:gmatch("[^,]+") do
+		local v = part:match("^%s*(.-)%s*$")
+		if v ~= "" then
+			if valid_set and not valid_set[v] then
+				-- Invalid entry: ignore it (fall back to default)
+			else
+				out[#out + 1] = v
+			end
+		end
+	end
+	if #out == 0 then return nil end
+	return out
+end
+
+--- Parse `ah.history` as "per_page,pages" (comma-list). Returns {per_page, pages} or nil.
+local function parse_history(raw)
+	if not raw or raw == "" then return nil end
+	local per_page, pages = raw:match("^%s*(%d+)%s*,%s*(%d+)%s*$")
+	if per_page and pages then
+		local pp = math.floor(tonumber(per_page))
+		local pg = math.floor(tonumber(pages))
+		if pp > 0 and pg > 0 then return { pp, pg } end
+	end
+	return nil
+end
+
+local VALID_SORTS = {
+	lowest_price = true,
+	highest_price = true,
+	recently_listed = true,
+}
+
 local cfg = {
 	-- f03 §7. Money settings are integer cents, like `economy.*` (shared §0.7).
 	page_size        = math.floor(num_setting("ah.page_size", 45)),
@@ -61,9 +97,16 @@ local cfg = {
 		tier2   = math.floor(num_setting("ah.slots.tier2", 90)),
 		tier3   = math.floor(num_setting("ah.slots.tier3", 90)),
 	},
-	-- OBSERVED order of the `Filter` cycle [F0118–F0123].
-	sorts = { "lowest_price", "highest_price", "recently_listed" },
+	-- OBSERVED order of the `Filter` cycle [F0118–F0123]. Configurable via `ah.sorts` (comma-list).
+	sorts = parse_csv(core.settings and core.settings:get("ah.sorts"), VALID_SORTS)
+		or { "lowest_price", "highest_price", "recently_listed" },
 }
+-- Read `ah.history` (comma per_page,pages) with legacy aliases as fallback.
+local hist = parse_history(core.settings and core.settings:get("ah.history"))
+if hist then
+	cfg.history_page = hist[1]
+	cfg.history_pages = hist[2]
+end
 smp_ah.cfg = cfg
 
 local function reload_cfg()
@@ -72,8 +115,7 @@ local function reload_cfg()
 		listing_fee_pct = "ah.listing_fee_pct", sale_tax_pct = "ah.sale_tax_pct",
 		min_price = "ah.min_price", max_price = "ah.max_price",
 		reclaim_days = "ah.reclaim_days", insert_slots = "ah.insert_slots",
-		rate_limit = "ah.rate_limit", history_page = "ah.history_page",
-		history_pages = "ah.history_pages", flush_interval = "store.flush_interval",
+		rate_limit = "ah.rate_limit", flush_interval = "store.flush_interval",
 		sweep_interval = "ah.sweep_interval", sweep_budget = "ah.sweep_budget",
 	}
 	for k, setting in pairs(fresh) do
@@ -85,11 +127,32 @@ local function reload_cfg()
 		local v = tonumber(core.settings and core.settings:get("ah.slots." .. tier))
 		if v then cfg.slots[tier] = math.floor(v) end
 	end
+	-- ah.sorts (comma-list, validated against known sort ids)
+	local sorts_raw = core.settings and core.settings:get("ah.sorts")
+	local sorts = parse_csv(sorts_raw, VALID_SORTS)
+	if sorts then cfg.sorts = sorts end
+	-- ah.history (comma per_page,pages) with legacy aliases as fallback
+	local hist_raw = core.settings and core.settings:get("ah.history")
+	local hist = parse_history(hist_raw)
+	if hist then
+		cfg.history_page = hist[1]
+		cfg.history_pages = hist[2]
+	else
+		-- Legacy aliases (back-compat)
+		local hp = tonumber(core.settings and core.settings:get("ah.history_page"))
+		local hps = tonumber(core.settings and core.settings:get("ah.history_pages"))
+		if hp then cfg.history_page = math.floor(hp) end
+		if hps then cfg.history_pages = math.floor(hps) end
+	end
 	smp_ah.listings.configure({
 		page_size = cfg.page_size, history_page = cfg.history_page,
 		history_pages = cfg.history_pages, listing_duration = cfg.listing_duration,
 		reclaim_days = cfg.reclaim_days,
 	})
+	-- Propagate sorts to listings module for the Filter tooltip
+	if smp_ah.listings.set_sorts then
+		smp_ah.listings.set_sorts(cfg.sorts)
+	end
 end
 
 ----------------------------------------------------------------------
@@ -1093,6 +1156,31 @@ end
 local function confirm_listing_fields(pname, v, fields)
 	if fields.ah_confirm then
 		return smp_ah.commit_listing(pname)
+	elseif fields.ah_match_lowest then
+		-- Quick Auction Sell: "Match lowest" button (f03 §4.12, PROPOSED).
+		-- Replaces the draft price with the current lowest active listing's
+		-- *unit* price for the same item (M1 key), multiplied by the stack count.
+		-- Uses the §4.15 unit-price index — no full scan.
+		local f = flow(pname)
+		if f and f.stack and not f.stack:is_empty() then
+			local m1_key = keys.key(f.stack, "M1")
+			if m1_key then
+				local cheapest = listings.cheapest(m1_key)
+				if cheapest and cheapest.unit_price and cheapest.unit_price > 0 then
+					local count = f.stack:get_count()
+					local new_total = cheapest.unit_price * count
+					-- Clamp to configured bounds; the normal validation path will
+					-- refuse if still out of bounds (no yields between validate/mutate).
+					if new_total < cfg.min_price then new_total = cfg.min_price end
+					if new_total > cfg.max_price then new_total = cfg.max_price end
+					f.price = new_total
+					chat(pname, S("Matched lowest price: @1", fs.money_inline(new_total)))
+				else
+					chat(pname, S("No active listings to match"))
+				end
+			end
+		end
+		return smp_ah.render(pname)
 	elseif fields.ah_cancel or fields.quit then
 		-- Backing out of `Confirm Listing` ends the flow and returns the item.
 		smp_ah.abort_flow(pname)
