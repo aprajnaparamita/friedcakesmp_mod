@@ -382,3 +382,55 @@ ssh vast 'tmux kill-session -t vllm 2>/dev/null; pkill -f "vllm serve" 2>/dev/nu
 # Attach to vLLM log (Ctrl-B D to detach)
 ssh -t vast 'tmux a -t vllm'
 ```
+---
+
+## Session 4 Resumption (2026-09-25) — Fix Wave Status
+
+**Current `main`:** `59e7eaa` (27/27 gate green)
+
+### Merged this session (all gated, no conflicts)
+| Feature | Merge Commit | Files | Gate | Key Outcomes |
+|---|---|---|---|---|
+| f14 (stats) | `36ed1c9` | 7 | 26/26 | S1/S2 verify-only; S3–S7 closed; 4 escalations in §10 |
+| f11-finish (social) | `f528d68` | 8 | 26/26 | `follow_blocked`, `blocks_only`, D10 honesty, contract test; unblocks f08 TP13 |
+| f12 (settings) | `9c57fad` | 6 | 26/26 | F12-1 ⚠ triangle both renders, F12-4 T9 leg in `test_social`, F12-2/3 → D3, F12-7 → D7 |
+| f01 (economy) | `eb2fa2e` | 8 | **27/27** | 18 rows closed (E-01 wiring, E-18 `give` clamp, E-20 M2 codec, E-22 settings chain), 8 escalated; new `test_items.lua` |
+
+### Integrator Decisions Executed (commit `5c6cc81` + `59e7eaa`)
+- **V-48 = block-only payments** — `/pay` calls `smp_social.blocks_only()` (not `blocks()`); `/ignore` no longer refuses. V-48 assertions in `test_economy`.
+- **F-1 = guarded call-only** — no `optional_depends = smp_social` on economy; documented in `shared/02-architecture.md` §2.1.
+- **E-12 fixed** — `/smp_backend` chat output via translator.
+- **E-21 fixed** — `auto` backend probes `lsqlite3` via `sqlite_available()`.
+- **E-05/06/15/17/19 backlogged** as D13 store-hardening.
+- **F-2 accepted** — `shared/05` `/smp` row widened to `reload｜test <mod>｜backend`.
+- **F-3 accepted** — `shared/05` gains `/payto` (PROPOSED, `economy.tab_complete` gate).
+- **F-5 routed** — row **F12-8** added to `fixes/f12-settings.md` (register `eco.pay_accept`).
+- **F-6 split** — quickbuy fixed; orders → new row **O9** in `fixes/f04-orders.md`; bounty → overseer post-f10.
+- **test_economy V-48 assertion corrected** (`59e7eaa`): `-100` cents not `-1` (float precision at 1e15).
+
+### Active Agents (re-dispatched 2026-09-25, same worktrees/bases)
+| Feature | Worktree | Branch | Base | Status |
+|---|---|---|---|---|
+| f07 (spawners) | coconut-f07 | agent/f07-spawner-fixes | 5413d08 | Running |
+| f08 (teleport) | coconut-f08 | agent/f08-teleport-fixes | 2b5f16c | Running (TP13 unblocked) |
+| f06 (shards) | coconut-f06 | agent/f06-shard-fixes | 2b5f16c | Running (owns cycle cut + F06-11) |
+| f03 (auction) | coconut-f03 | agent/f03-auction-fixes | 2b5f16c | Running (owns `ah.history` drain) |
+| f10 (combat) | coconut-f10 | agent/f10-combat-fixes | 2b5f16c | Running (C4 + engine evidence) |
+
+### Deliberately Held
+- **f04 (orders)** → after f06 merges (shares `orders→shardshop→amethyst→orders` cycle)
+- **f09 (homes)** → after f08 merges (same `smp_tp` mod)
+
+### Open Escalations
+| Item | Owner | Next |
+|---|---|---|
+| D13 backlog (5 store/core items) | integrator | Schedule when authorized |
+| f10 C4 + F-6 bounty period | f10 agent / overseer post-f10 | Same file set |
+| f12 F12-8 (`eco.pay_accept`) | follow-up f12 dispatch | f12 already merged once |
+| f08 TP13 (rtpqueue→blocks_only) | f08 agent | Will close when f08 reports |
+
+### Next Steps When Agents Report
+1. Review → merge → 27/27 gate → annotate `fixes/README.md` → STATUS entry
+2. After f06 → dispatch f04
+3. After f08 → dispatch f09
+4. After f10 → overseer sweep (bounty period, F12-8) → wave C (f02, f13)
