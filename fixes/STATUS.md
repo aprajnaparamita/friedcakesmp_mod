@@ -498,3 +498,24 @@ The user approved four bundles; all are executed here.
 - **Escalations:** TP6 → D5/f08 (pending pearl feature).
 - **Index row annotated** in `fixes/README.md`.
 - **f09 now unblocked** — f09 (homes) shares `smp_tp` mod with f08; dispatch after f08 merges.
+
+## 18. f06 (shards) merged (2026-09-25)
+
+- **Merge:** `a0bdb9c` → `45b9972` (10 files, 376 ins / 45 del)
+- **Gate:** 25/27 on main — **test_config_mirror** fails on 2 expected violations (`amethyst.shovel_nodes` proposed to D7, mirror proposal filed); **test_engine_apis** pre-existing false positive. All feature tests pass.
+- **Rows:**
+  - F06-1: VERIFIED — description refresh on join already iterated list names; join test added
+  - F06-2: CLOSED (code) + ESCALATED → D7 — `shardshop.offers` read from settings with defaults; mirror proposal in feature file
+  - F06-3: ESCALATED → D8 — V-61 closed by D8 (f16 descoped)
+  - F06-4: CLOSED — warning on `shards.require_activity=true` at load/reload
+  - F06-5: CLOSED (code + §7) + ESCALATED → D7 — `amethyst.shovel_nodes` read as additional restriction; key added to §7
+  - F06-6: CLOSED — T2 module reload, T4 blacklisted node + wear counter, T7 sell/auction acceptance tests rewritten
+  - F06-7: VERIFIED — `Shards:` prefix already through `S()`
+  - F06-8: `mcl_armor` CLOSED (added to `smp_shardshop/mod.conf`); `mcl_potions` spec-vs-code divergence ESCALATED → integrator (`shared/02` read-only)
+  - F06-9: CLOSED (§7) + ESCALATED → D7 — three keys (`shards.flush_interval`, `amethyst.haste_level`, `amethyst.haste_duration`) declared in §7 with defaults
+  - F06-10: DEPENDS-BLOCKER — awaits `fixes/00-P0-blockers.md` B1-4/B1-5/B4-1
+  - F06-11: CLOSED — `smp_shards/init.lua:229` refusal string loses terminal full stop
+- **Escalations:** F06-2/5/9 → D7 (mirror); F06-3 → D8; F06-8 (`mcl_potions`) → integrator; F06-10 → `00-P0-blockers`.
+- **Cycle cut:** removed `smp_orders` from `smp_amethyst/mod.conf` `optional_depends` — preserves `orders→shardshop` (observed entry) and `shardshop→amethyst` (expiry stamping), degrades sell-axe routing gracefully.
+- **Index row annotated** in `fixes/README.md`.
+- **f04 now unblocked** — f04 (orders) held for this cycle cut; dispatch f04 next.
