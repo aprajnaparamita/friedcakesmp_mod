@@ -204,7 +204,7 @@ end
 | `homes.slots_default`, `homes.slots_tier1`, `homes.slots_tier2`, `homes.slots_tier3` | `{default = 2, tier1 = 9, tier2 = 27, tier3 = 90}` | LIVE [S17]; default LEGACY [S25] |
 | `smp_tp.homes.name_max` | 32 | PROPOSED |
 | `smp_tp.homes.tabs_before_more` | 3 | **OBSERVED** [F0061] (inferred from one layout) |
-| `smp_tp.homes.default_icon` | bed | PROPOSED |
+| `smp_tp.homes.default_icon` | `mcl_beds:bed_red_bottom` | PROPOSED |
 | `smp_tp.homes.delete_confirm` | true | PROPOSED |
 
 ## 8. Mineclonia implementation
@@ -255,6 +255,15 @@ end
 | V-92 | `/sethome <name>` where a home of that name already exists creates a NEW home rather than moving the old one (**PROPOSED**; never observed) |
 | V-93 | `Show More` (implementation choice while V-32 stays open): re-renders the tab row with ALL home tabs (`item_image_button` per home, wrapped 7 per row) and hides `Show More` itself. No second page mechanism (**PROPOSED**) |
 
+## 10. Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence |
+|---|---|---|
+| H1 | VERIFIED | `smp_tp/init.lua:33` `dofile(modpath .. "/homes.lua")` present; `grep -n 'dofile.*homes' friedcake/mods/smp_tp/init.lua` confirms |
+| H2 | VERIFIED | `smp_tp/mod.conf:3-4` `depends = smp_core, smp_store, mcl_worlds, mcl_spawn` / `optional_depends = mcl_title, mcl_vars, smp_ranks` present |
+| H3 | VERIFIED + HARNESS HONESTY | No `core.modpath` in `smp_tp/` (`grep -r 'core\.modpath' friedcake/mods/smp_tp/` → no matches); `test_homes.lua:381` loads `init.lua` which wires `homes.lua` (real load path); test fails if `homes.lua` removed from `init.lua` (registration-count assertion via `cmd("homes")` in `test_homes.lua:188-196`) |
+| H4 | FIXED (code/spec aligned; mirror change proposed) | Code reads 4 keys via `setting()` helper (homes.lua:62-65) → `smp_tp.homes.{name_max,tabs_before_more,default_icon,delete_confirm}`; §7 table updated to match code default for `default_icon` (`mcl_beds:bed_red_bottom`); `shared/06` rows 99-102 have correct prefixed names; mirror default correction proposed in §11.4; `test_config_mirror.lua` passes for homes keys (no violations) |
+
 ## 11. Proposed shared changes
 
 The f09 agent's edit surface is `friedcake/mods/smp_tp/homes.lua`,
@@ -304,7 +313,20 @@ integration edits are needed and are **not** made by the f09 agent:
    | `Prev`, `Next` | `Choose Icon` paging (V-90) |
    | `Choose Icon (Page @1)` | `Choose Icon` title on page > 1 (V-90) |
 
-4. **`/smp test` loader** (f01/f04 concern) — `test_homes.lua` follows
+4. **`spec/shared/06-config-reference.md`** (integrator mirror, D7
+   reconciliation) — the D7 ruling renamed the legacy `homes.*` rows to
+   the `smp_tp.homes.*` keys the code actually reads. The mirror at
+   `06:99-102` now carries the correct prefixed names. One residual
+   mismatch remains: the default for `smp_tp.homes.default_icon` in the
+   mirror is `bed` (marked **OBSERVED** [F0066]), but the code's actual
+   default is the Mineclonia itemstring `mcl_beds:bed_red_bottom` (the
+   default bed is never seen unobscured [§3.6], so the frame cannot
+   confirm the spelling). This implementation uses the valid itemstring.
+   **Proposed mirror change:** update the default cell for
+   `smp_tp.homes.default_icon` from `bed` to `mcl_beds:bed_red_bottom`
+   and change the status from **OBSERVED** to PROPOSED.
+
+5. **`/smp test` loader** (f01/f04 concern) — `test_homes.lua` follows
    the `{passed, failed, lines}` contract and is already executed by
    `friedcake/dev-tests/test_homes.lua`; wire it into `/smp test` when
    the generic loader lands.
@@ -312,6 +334,7 @@ integration edits are needed and are **not** made by the f09 agent:
 No changes are needed to `spec/shared/02-architecture.md`,
 `04-ui-kit.md`, `05-command-reference.md` (the `/homes`, `/home`,
 `/sethome`, `/delhome` rows already exist) or `06-config-reference.md`
-(`homes.*` rows already exist; this implementation honours
-`homes.slots`, `homes.name_max`, `homes.tabs_before_more`,
-`homes.default_icon`, `homes.delete_confirm`).
+beyond the `default_icon` default correction above. The `homes.slots_*`
+rows (without the `smp_tp.` prefix) are read by `smp_ranks`, not by
+`homes.lua`; their renaming to `smp_tp.homes.slots_*` is tracked in the
+D7 follow-up (P2) and is out of f09's direct scope.

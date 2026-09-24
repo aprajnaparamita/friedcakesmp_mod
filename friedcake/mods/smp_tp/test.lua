@@ -2,18 +2,23 @@
 -- Loaded by `/smp test smp_tp` in-game.
 --
 -- In-game-safe slice of spec/features/f08-teleport.md §9 and
--- spec/plan/acceptance-tests.md T1–T13. The state-machine and async
--- behaviours are covered by friedcake/dev-tests/test_tp.lua (which
--- runs against a fake engine); this file checks what can be checked
--- live without teleporting the running player:
---   * every f08 command is registered
---   * T1: rtp.menu_enabled is false (bare /rtp, no menu)
---   * /back is disabled by default (f08 §4.5.4)
---   * the warm-up framework surface (the deliverable f09 rides on)
---   * T2's reject list against an INJECTED node accessor (no world
+-- spec/features/f09-homes.md §9 and
+-- spec/plan/acceptance-tests.md T1–T13 (f08) / T1–T9 (f09). The state-machine
+-- and async behaviours are covered by friedcake/dev-tests/test_tp.lua and
+-- test_homes.lua (which run against a fake engine); this file checks what
+-- can be checked live without teleporting the running player:
+--   * every f08/f09 command is registered
+--   * f08 T1: rtp.menu_enabled is false (bare /rtp, no menu)
+--   * f08 /back is disabled by default (f08 §4.5.4)
+--   * f08 the warm-up framework surface (the deliverable f09 rides on)
+--   * f08 T2's reject list against an INJECTED node accessor (no world
 --     reads, no movement)
---   * the tier-reduced cooldown values (T6, via the smp_ranks bridge)
---   * T7: a /tpa to an unknown player gets the generic refusal
+--   * f08 T6: the tier-reduced cooldown values (via the smp_ranks bridge)
+--   * f08 T7: a /tpa to an unknown player gets the generic refusal
+--   * f09 T1: /sethome at the slot limit is refused
+--   * f09 T2: /sethome below the limit succeeds with verbatim string
+--   * f09 T5: /homes <unknown> produces verbatim refusal
+--   * f09 T9: home data is owner-scoped (no cross-player access)
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -45,6 +50,11 @@ local cmds = {
 }
 for _, c in ipairs(cmds) do
 	ok(core.registered_chatcommands[c] ~= nil, "command /" .. c .. " registered")
+end
+
+-- f09 homes commands
+for _, c in ipairs({ "homes", "home", "sethome", "delhome" }) do
+	ok(core.registered_chatcommands[c] ~= nil, "command /" .. c .. " registered (f09)")
 end
 
 ----------------------------------------------------------------------
@@ -154,6 +164,88 @@ local r = cmd_tpa.func("__t_tp_probe", "__no_such_player_9999")
 ok(r == false, "T7 /tpa to unknown player refused")
 
 ----------------------------------------------------------------------
+-- f09 Homes acceptance tests (spec/features/f09-homes.md §9)
+----------------------------------------------------------------------
+
+-- T1: /sethome at the slot limit is refused
+do
+	local H = smp_tp.homes
+	local TNAME = "__f09_tp_probe"
+	-- Wipe any existing homes
+	smp_store.api.update_player_field(TNAME, "homes", {})
+	-- Set limit to 1 for this test
+	local saved_limit = smp_tp.cfg.homes.slots.default
+	smp_tp.cfg.homes.slots.default = 1
+	-- First home succeeds
+	local cmd_sethome = core.registered_chatcommands["sethome"]
+	local r1 = cmd_sethome.func(TNAME, "")
+	ok(r1 == true, "f09 T1 first /sethome accepted")
+	-- Second home at limit is refused
+	local r2 = cmd_sethome.func(TNAME, "")
+	ok(r2 == true, "f09 T1 second /sethome handled (engine adds no usage error)")
+	-- Verify only one home exists
+	eq(#H.list(TNAME), 1, "f09 T1 limit enforced, only one home stored")
+	smp_tp.cfg.homes.slots.default = saved_limit
+end
+
+-- T2: /sethome below the limit succeeds with verbatim string
+do
+	local H = smp_tp.homes
+	local TNAME = "__f09_tp_probe2"
+	smp_store.api.update_player_field(TNAME, "homes", {})
+	local cmd_sethome = core.registered_chatcommands["sethome"]
+	-- Capture chat output
+	local captured = {}
+	local orig_chat = core.chat_send_player
+	core.chat_send_player = function(name, msg)
+		if name == TNAME then captured[#captured + 1] = msg end
+		return orig_chat(name, msg)
+	end
+	local r = cmd_sethome.func(TNAME, "Test Home")
+	ok(r == true, "f09 T2 /sethome accepted")
+	eq(#captured, 1, "f09 T2 exactly one chat line")
+	eq(captured[1], "Home set", "f09 T2 verbatim Home set")
+	eq(#H.list(TNAME), 1, "f09 T2 one home stored")
+	eq(H.list(TNAME)[1].name, "Test Home", "f09 T2 custom name used")
+	core.chat_send_player = orig_chat
+end
+
+-- T5: /homes <unknown> produces verbatim refusal
+do
+	local TNAME = "__f09_tp_probe3"
+	smp_store.api.update_player_field(TNAME, "homes", {})
+	local cmd_homes = core.registered_chatcommands["homes"]
+	local captured = {}
+	local orig_chat = core.chat_send_player
+	core.chat_send_player = function(name, msg)
+		if name == TNAME then captured[#captured + 1] = msg end
+		return orig_chat(name, msg)
+	end
+	local r = cmd_homes.func(TNAME, "definitely_not_a_home")
+	ok(r == true, "f09 T5 command handled")
+	eq(#captured, 1, "f09 T5 exactly one chat line")
+	eq(captured[1], "Home does not exist", "f09 T5 verbatim refusal")
+	core.chat_send_player = orig_chat
+end
+
+-- T9: home data is owner-scoped (no cross-player access)
+do
+	local H = smp_tp.homes
+	local A = "__f09_owner"
+	local B = "__f09_other"
+	smp_store.api.update_player_field(A, "homes", {})
+	smp_store.api.update_player_field(B, "homes", {})
+	H.do_sethome(A, { x = 100, y = 64, z = 100 }, "Owner Home")
+	ok(#H.list(A) == 1, "f09 T9 owner has home")
+	ok(#H.list(B) == 0, "f09 T9 other has no homes")
+	-- H.get with owner's id from other player's context returns nil
+	ok(H.get(B, 1) == nil, "f09 T9 other cannot access owner's home by id")
+	-- H.resolve with owner's name from other player's context returns nil
+	ok(H.resolve(B, "Owner Home") == nil, "f09 T9 other cannot resolve owner's home by name")
+end
+
+----------------------------------------------------------------------
+
 
 if results.failed == 0 then
 	results.lines[#results.lines + 1] = "All smp_tp tests passed."
