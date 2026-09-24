@@ -98,6 +98,8 @@ All entries are `PROPOSED` except `/eco`, which follows a clone [C1].
 | `/combat` | `untag <player>` | Clear a combat tag | f10 |
 | `/ledger` | `<player> [page]` | Audit trail | f01 |
 | `/smp` | `reload` | Reload configuration | f01 |
+| `/mute` | `<player> [seconds]` | Mute a player (moderation); omitted duration = permanent | f11 |
+| `/unmute` | `<player>` | Clear a mute | f11 |
 
 Privileges `smp_admin` (all administration) and `smp_moderator` (read-only
 audit, mutes) are registered with `core.register_privilege`.
