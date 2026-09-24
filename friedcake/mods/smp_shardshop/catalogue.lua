@@ -9,6 +9,10 @@
 --   confirmed against core.registered_items at runtime.
 -- * Enchantment lists are explicit in this table (PROPOSED — Donut
 --   sources say only "maximally enchanted"; f06 §10 V-20).
+-- * The offers table can be overridden via the `shardshop.offers`
+--   setting (a serialized Lua table), allowing operators to change
+--   enchantment sets without code edits. The hard-coded table below
+--   serves as the default (F06-2).
 --
 -- Prices are SHARD COUNTS (integers), not money.
 --
@@ -43,10 +47,10 @@ end
 M.armor_itemstring = armor_itemstring
 
 ----------------------------------------------------------------------
--- The offers
+-- Default offers (F06-2: used when shardshop.offers is unset)
 ----------------------------------------------------------------------
 
-M.offers = {
+local DEFAULT_OFFERS = {
 	-- Shard items (amethyst) — never enchanted; the self-destruct timer
 	-- is stamped on delivery (smp_amethyst.set_expiry).
 	{
@@ -178,6 +182,30 @@ M.offers = {
 			unbreaking = 3, mending = 1 },
 	},
 }
+
+-- Load offers from settings, with DEFAULT_OFFERS as fallback.
+-- The setting is expected to be a serialized Lua table (same structure).
+local function load_offers()
+	local raw = core.settings:get("shardshop.offers")
+	if raw and raw ~= "" then
+		local fn, err = loadstring("return " .. raw)
+		if fn then
+			local ok, offers = pcall(fn)
+			if ok and type(offers) == "table" then
+				core.log("action", "[smp_shardshop] loaded shardshop.offers from settings (" .. #offers .. " offers)")
+				return offers
+			else
+				core.log("warning", "[smp_shardshop] shardshop.offers parse failed: " .. tostring(offers or err) .. "; using defaults")
+			end
+		else
+			core.log("warning", "[smp_shardshop] shardshop.offers loadstring failed: " .. tostring(err) .. "; using defaults")
+		end
+	end
+	core.log("action", "[smp_shardshop] using default offers (" .. #DEFAULT_OFFERS .. " offers)")
+	return DEFAULT_OFFERS
+end
+
+M.offers = load_offers()
 
 ----------------------------------------------------------------------
 -- Offer lookup and item resolution

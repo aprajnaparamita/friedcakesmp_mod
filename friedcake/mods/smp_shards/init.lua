@@ -38,8 +38,9 @@ local cfg = {
 	-- LIVE [S8]: 1 shard per 600 s of playtime.
 	interval = tonumber(core.settings:get("shards.interval")) or 600,
 	-- PROPOSED: false — Donut pays for presence, not activity. When true
-	-- the award would require f16's AFK tracking, which does not exist yet;
-	-- see f06 §10 V-61.
+	-- the award would require f16's AFK tracking, which does not exist;
+	-- f16 is descoped permanently (D8, 2026-09-24); V-61 closed.
+	-- This key is still read so operators can set it, but it has no effect.
 	require_activity = core.settings:get_bool("shards.require_activity", false),
 	-- PROPOSED: false — shards cannot be transferred between players.
 	transferable = core.settings:get_bool("shards.transferable", false),
@@ -52,11 +53,21 @@ if cfg.interval < 1 then
 	cfg.interval = 600
 end
 
+-- F06-4: loud warning when require_activity is enabled (V-61/D8:
+-- f16 descoped permanently; AFK tracking does not exist).
+if cfg.require_activity then
+	core.log("warning", "[smp_shards] shards.require_activity = true but AFK tracking is unimplemented (V-61/D8: f16 descoped permanently). The key is read but has no effect.")
+end
+
 function smp_shards.reload_cfg()
 	cfg.interval = tonumber(core.settings:get("shards.interval")) or cfg.interval
 	cfg.require_activity = core.settings:get_bool("shards.require_activity", false)
 	cfg.transferable = core.settings:get_bool("shards.transferable", false)
 	cfg.flush_interval = tonumber(core.settings:get("shards.flush_interval")) or cfg.flush_interval
+	-- F06-4: warn on reload too
+	if cfg.require_activity then
+		core.log("warning", "[smp_shards] shards.require_activity = true but AFK tracking is unimplemented (V-61/D8: f16 descoped permanently). The key is read but has no effect.")
+	end
 end
 
 smp_shards.cfg = cfg
@@ -215,7 +226,7 @@ core.register_chatcommand("shardsadmin", {
 		sub = sub:lower()
 		local target = resolve_target(target_raw)
 		if not target then
-			return false, S("Player @1 does not exist.", target_raw)
+			return false, S("Player @1 does not exist", target_raw)
 		end
 		local n, perr = parse_shard_amount(amount_raw)
 		if not n then
