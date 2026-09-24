@@ -73,7 +73,7 @@ Fields follow the official API [S23]:
 | `mobs_killed` | Wrap `on_die` on every `mobs_mc:*` entity definition in `core.register_on_mods_loaded`; Mineclonia calls `self:on_die(pos, mcl_reason)` on death [M1] (verify which `mcl_reason` fields identify the killer) |
 | `money`, `shards` | Current balances, read live from `f01` |
 | `money_made_from_sell` | `f02` (server and order proceeds both count, `f02 §4`) |
-| `money_spent_on_shop` | `f05` (and the legacy `smp_servershop`, `f16`) |
+| `money_spent_on_shop` | `f05` (and the legacy `smp_servershop`, `f16`) — servershop will never ship *(f16 descoped — D8, 2026-09-24)* |
 | `playtime` | Global-step accumulator, persisted every minute |
 
 1. `/stats [player]` shows these fields in a menu (`PROPOSED` layout;

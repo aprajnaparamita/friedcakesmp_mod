@@ -1,11 +1,16 @@
 # f16 — Legacy Features (Removed from the Reference Server)
 
+> **DESCOPED — 2026-09-24 (D8).** These five mods will never be built.
+> Retained as historical documentation of what the reference server had before
+> removal. Do not implement.
+
 ## 1. Status and ownership
 
 | Field | Value |
 |---|---|
 | Mod | `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` — all optional |
-| Phase | P8 |
+| Phase | n/a (descoped) |
+| Status | **DESCOPED** (D8, 2026-09-24) — permanent, not deferred |
 | Depends on | crates: `f01`; afk: `f06`; teams: `f09` (team home), `f10` (friendly fire), `f11` (team chat); duels: `f08`, `f10`; servershop: `f01` |
 | Frame evidence | **0 frames** — everything here was removed from the reference server before the video was recorded |
 | Confidence | **LEGACY throughout.** Documented, but as history. Nothing in this file is verified against the live server; layouts are proposals in the observed grammar. |

@@ -78,10 +78,10 @@ request alias (`f08`). Commands blocked during combat are listed in `f10`.
 
 | Command | Aliases | Arguments | Behaviour | Status | Spec |
 |---|---|---|---|---|---|
-| `/afk` | — | — | Teleport to the AFK zone | LEGACY [S24][S8] | f16 |
-| `/team` | — | subcommands in f16 | Teams | LEGACY [S12] | f16 |
-| `/duel` | — | `<player>`; `draw <player>` | Duels | LEGACY [S13] | f16 |
-| `/warp crates`, `/crates` | — | — | Crates | LEGACY [S11][S25]; `/crates` CLONE [C1] | f16 |
+| `/afk` | — | — | Teleport to the AFK zone | LEGACY [S24][S8] *(f16 descoped — D8, 2026-09-24)* | f16 |
+| `/team` | — | subcommands in f16 | Teams | LEGACY [S12] *(f16 descoped — D8, 2026-09-24)* | f16 |
+| `/duel` | — | `<player>`; `draw <player>` | Duels | LEGACY [S13] *(f16 descoped — D8, 2026-09-24)* | f16 |
+| `/warp crates`, `/crates` | — | — | Crates | LEGACY [S11][S25]; `/crates` CLONE [C1] *(f16 descoped — D8, 2026-09-24)* | f16 |
 
 ## 5.5 Administration
 

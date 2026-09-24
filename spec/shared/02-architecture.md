@@ -25,7 +25,7 @@
 | `smp_social` | Chat format, `/msg`, `/r`, `/ignore`, `/block`, friends, `/findplayer`, `/kill`, `/nv`, informational commands | `smp_settings` | P7 | `f11` |
 | `smp_stats` | Statistics, leaderboards, scoreboard, API export | economy mods | P7 | `f14` |
 | `smp_rtpqueue` | Paired random teleport | `smp_tp`, `smp_combat` | P8 | `f08` |
-| `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` | Legacy modules | various | P8 | `f16` |
+| `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` | Legacy modules | various | n/a *(f16 descoped — D8, 2026-09-24)* | `f16` |
 
 ## 2.2 Persistence
 
