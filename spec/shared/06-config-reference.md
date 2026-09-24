@@ -118,7 +118,9 @@
 | `social.tpa_hint` | true | **OBSERVED** in substituted form [F0270] | f11 |
 | `findplayer.spawn_radius` | 512 | PROPOSED | f11 |
 | `findplayer.region_band` | 2048 | PROPOSED | f11 |
-| `info.help`, `info.rules`, `info.discord`, `info.media`, `info.link`, `info.store`, `info.website`, `info.ranks`, `info.medal` | `""` (unset; the screen shows `This text is not configured`) | PROPOSED | f11 |
+| `info.help` | `""` (empty falls back to the generated command list) | PROPOSED | f11 |
+| `info.rules`, `info.ranks` | `""` (empty answers `This text is not configured`) | PROPOSED | f11 |
+| `info.discord`, `info.media`, `info.link`, `info.store`, `info.website`, `info.medal` | `""` (empty answers `This link is not configured`) | PROPOSED | f11 |
 | `settings.cycle_order` | `{ON, FRIENDS_FOLLOWED, OFF}` | PROPOSED | f12 |
 <!-- struck: D3, 2026-09-24 — structure registered in code, not a config key -->
 | `ranks.grant_days` | 30 | LIVE [S17] | f13 |

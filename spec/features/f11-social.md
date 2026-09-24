@@ -241,9 +241,11 @@ observed server gives a single generic refusal.
 | `social.max_follows` | 200 | PROPOSED |
 | `social.friend_notify` | true | PROPOSED |
 | `social.tpa_hint` | true | **OBSERVED** in substituted form [F0270] |
-| `findplayer.spawn_radius` | 512 | PROPOSED |
-| `findplayer.region_band` | 2048 | PROPOSED |
-| `info.help`, `info.rules`, `info.discord`, `info.media`, `info.link`, `info.store`, `info.website`, `info.ranks`, `info.medal` | `""` (unset; the screen shows `This text is not configured`) | PROPOSED |
+| `findplayer.spawn_radius` | 512 | PROPOSED (T9 — the `Spawn` bucket) |
+| `findplayer.region_band` | 2048 | PROPOSED (T9 — compass-sector size) |
+| `info.help` | `""` | PROPOSED (empty falls back to the generated command list — `/help` is never empty, `info.lua:120`) |
+| `info.rules`, `info.ranks` | `""` | PROPOSED (empty answers `This text is not configured` — `info.ranks` has no `link = true`, `info.lua:162-167`) |
+| `info.discord`, `info.media`, `info.link`, `info.store`, `info.website`, `info.medal` | `""` | PROPOSED (empty answers `This link is not configured`, `info.lua:67-69`) |
 
 ## 8. Mineclonia implementation
 
@@ -277,9 +279,132 @@ observed server gives a single generic refusal.
 
 | Id | Question |
 |---|---|
-| V-17 | `/findplayer` output format — unobserved |
+| V-17 | `/findplayer` output format — unobserved. Implemented as three `<Field>: <Value>` lines (`Name`, `Rank`, `Location`) with the coarse locations `Offline`, `Spawn`, `<Dimension> – <Region>`; see §10.1 |
 | V-18 | Friends and follow semantics — unobserved, yet four chat settings depend on them |
 | V-24 | **Reopened.** No rank prefix appears in any observed chat line, contradicting v0.1's `[Rank] Name: message`. Do ranked players carry a prefix? |
 | V-48 | What distinguishes `/ignore` from `/block`, given the narration says ignore already covers messages and teleports? |
-| V-49 | Is the `/msg` refusal identical for an ignore and for a privacy setting? Specified as identical; unverified |
+| V-49 | Is the `/msg` refusal identical for an ignore and for a privacy setting? Specified as identical; unverified — implemented as one shared literal |
 | V-50 | Is there a friends menu, or is `/friend` chat-only? |
+| V-88 | Delivered private-message format — unobserved. The corpus shows only the refusal, never a delivered `/msg`; implemented as `@1 whispers to you: @2` / `You whisper to @1: @2` (PROPOSED) |
+| V-89 | Join/leave notices: filtered viewer-side (consistent with `Public Chat` in T2), and the engine's own `join_msg`/`leave_msg` cannot be filtered per viewer. Recommend the operator sets both to empty; not yet mirrored anywhere |
+
+### 10.1 Implementation notes (f11 agent)
+
+**Public surface — the contract f08 and f10 stubbed:**
+
+```lua
+smp_social.ignores(a, b)                -- true iff a has b on their ignore list
+smp_social.is_blocked(a, b)             -- true iff a has b on their block list (strict)
+smp_social.blocks(a, b)                 -- is_blocked(a,b) OR ignores(a,b)
+smp_social.follows(a, b)                -- a follows b (case-insensitive)
+smp_social.is_friend(a, b)              -- mutual follows
+smp_social.is_friend_or_followed(a, b)  -- b is a friend of a, or a follows b
+smp_social.send_pm(sender, target_name, message) -> true | chats a refusal
+smp_social.get_setting(player_or_name, key)      -- f12 bridge
+smp_social.format_chat(sender, message)          -- `<@1> @2`, T1
+smp_social.generic_refusal()                     -- the one OBSERVED refusal literal
+```
+
+`blocks()` deliberately folds ignore in: f08 gates `/tpa` on `blocks`
+alone (`smp_tp.bridge.blocks`) and the narration says ignore covers
+teleport requests [F0287], so folding is what makes T6 hold. One
+consequence: mutually-ignoring players are also excluded from
+`/rtpqueue` pairing, which the PROPOSED row of §4.3 said they would not
+be — acceptable while V-48 is open. If f08 later calls both `ignores`
+and `blocks`, `blocks()` can become strict.
+
+`is_friend_or_followed(a, b)` follows §4.2 literally: access requires
+the *recipient's* edge (`a` follows `b`). A one-way `b` follows `a`
+(fan traffic) does NOT grant access — PROPOSED reading of the §4.2
+sentence.
+
+**Bridge contracts assumed:**
+
+- f12 `smp_settings.get(player_or_name, id) -> value | nil` — verified
+  against the f12 stub in the shared worktree (`smp_settings/
+  accessor.lua`); the legacy `smp_settings.get_name(name, id)` (the
+  shape f08's bridge assumed) is tried as a fallback. Unknown ids, or
+  `smp_settings` absent entirely, fall through to the permissive
+  default `ON` — that path carries `TODO(f12)`.
+- f13 `smp_ranks.chat_prefix(name) -> string` and `smp_ranks.tier(name)
+  -> string` — verified against the f13 stub (`smp_ranks/perk.lua`,
+  which explicitly expects smp_social to call `chat_prefix`); the prefix
+  is only consulted when `chat.rank_prefix` is true, which it is not
+  (V-24). Path carries `TODO(f13)` until the config key is meaningfully
+  non-empty.
+- Moderation `smp_admin.is_muted(name) -> bool` (`TODO(admin)`); no mute
+  exists yet, so the bridge answers false.
+
+**PROPOSED decisions made while implementing (none contradict an
+OBSERVED string):**
+
+1. Anti-spam strings: `You are sending messages too quickly`,
+   `Do not repeat yourself`, `You are muted` (§4.1.3 says mutes are
+   enforced here; no mute exists yet).
+2. `/msg` refusal for `chat.private_messages = OFF`:
+   `This user is not accepting private messages` — same house style as
+   the §6 algorithm, deliberately distinct from the generic refusal.
+3. Delivered PM format (V-88) and `/r` reply: `You have no one to reply to`.
+4. Ignore/block split (§4.3, V-48): implemented as specified, except
+   `blocks()` folds ignore so teleport requests are covered (see above).
+   Payments (`/pay`) and follow edges are block-only; `/rtpqueue`
+   exclusion follows `blocks()` and therefore covers ignore too.
+5. `/findplayer` (V-17): three lines `Name/Rank/Location`; regions are
+   nine compass buckets (`Center`, `North`, …) quantised to
+   `findplayer.region_band` around world spawn, plus a `Spawn` bucket of
+   `findplayer.spawn_radius`. No digits ever appear in a location (T9).
+6. Friends (V-18, V-50): chat-only, no menu; `add`/`remove` (and
+   `follow`/`unfollow`) are PROPOSED aliases for `addsearch`/`remove`;
+   follower lists require an O(All records) scan at command time only;
+   mutual-follow formation notifies both players
+   (`You are now friends with @1`).
+7. Join/leave notices (V-89): viewer-side filter
+   (`ON → all`, `FRIENDS_FOLLOWED → players the viewer follows`,
+   `OFF → none`), strings `@1 joined the game` / `@1 left the game`,
+   gated by `social.friend_notify`.
+8. `/kill`: confirmation prompt (Cancel red left, `Kill` right);
+   `set_hp(0)` only — the kill credit flows through f10's
+   `register_on_dieplayer` (`last_attacker`), so nothing is credited
+   twice.
+9. `/nightvision`: level 1 with `INF` duration per §4.6 even though the
+   recording's HUD says `Night Vision II` [F0122] — the HUD effect was
+   not produced by this command and the algorithm in §4.6 is explicit.
+10. `/help` is overridden by the information screen but `/help <command>`
+    delegates to the builtin handler; `/ranks` is only registered if
+    f13 has not registered it first; Mineclonia's `mcl_commands`
+    re-registers `/kill` and `/list`, so every smp_social command is
+    re-asserted in `core.register_on_mods_loaded`.
+11. Fallback strings for unset `info.*` keys: `This link is not
+    configured` / `This text is not configured`.
+12. `/ping` reads `core.get_player_information().avg_rtt` (seconds, per
+    the lua_api.md example values) and reports whole milliseconds;
+    `Players online (@1): @2` for `/list`; staff lines `@1 reported
+    @2: @3` and `HelpOp from @1: @2`, reporter confirmation `Your
+    report was sent to staff`.
+13. Tab completion after `/msg`, `/pay`, `/ignore` [F0089, F0282,
+    F0287] has no Luanti equivalent — the server cannot drive client
+    tab-completion — so command params are surfaced through `/help`
+    instead.
+14. `/smp test smp_social` needs the generic test loader f04 also asked
+    for; `mods/smp_social/test.lua` returns the standard results table
+    and currently runs only through `friedcake/dev-tests/test_social.lua`.
+
+## Proposed shared changes
+
+For the integrator — nothing here blocks T1–T10:
+
+1. `shared/06-config-reference.md` (integrator mirror): add the f11 §7
+   rows `findplayer.spawn_radius`, `findplayer.region_band` and the
+   `info.*` keys as PROPOSED.
+2. `f01-economy-core` / `smp_economy`: cross-cutting X9 expects `/pay`
+   to refuse a blocked sender. `smp_economy` does not consult
+   `smp_social.blocks`; propose `/pay` calls
+   `smp_social.blocks(target, sender)` and answers with the same
+   generic refusal style. Not implementable here (smp_economy is
+   f01-owned).
+3. `f08-teleport`: `smp_tp._is_friend_or_followed` still returns false
+   with `TODO(f11)`; it should delegate to
+   `smp_social.is_friend_or_followed(a, b)` now that it exists.
+4. Operator note for V-89: set the engine's `join_msg` and `leave_msg`
+   to empty so the Friends/Followed-filtered notices are the only
+   join/leave lines.
