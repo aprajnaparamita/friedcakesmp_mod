@@ -476,3 +476,16 @@ The user approved four bundles; all are executed here.
   - A7: VERIFIED — no `TODO(f03)` in `smp_ah` (only in f04's `smp_orders`)
 - **Escalations:** A5 → D7, A6 mirror proposals → D7. `test_config_mirror.lua` DECLARED_ONLY `["ah.history"] = "f03"` removed (read landed).
 - **Index row annotated** in `fixes/README.md`.
+
+## 16. f10 (combat) merged (2026-09-25)
+
+- **Merge:** `439a931` → `3e7241f` (8 files, +elytra.lua new; 217 ins / 15 del)
+- **Gate:** 27/27 on main (one pre-existing `test_engine_apis` failure unrelated; same at base `2b5f16c`)
+- **Rows:**
+  - C1: CLOSED — `combat.disable_elytra` implemented via new `smp_combat/elytra.lua`: hooks `mcl_armor:elytra_entity.attach` to refuse attach while combat-tagged; globalstep force-detaches tagged players; re-attach after untag. Tests in `test_combat.lua` (7 new C1 assertions).
+  - C2: CLOSED (re-scoped) — `combat.keep_pearls_on_death` §7 row updated to `PROPOSED — pending:f08 §4.6`; implementation note 16 records rationale. No production reader exists; only documented consumer is f08's ender pearl retention (spec-deferred).
+  - C3: VERIFIED — stats↔combat cycle stays closed; `smp_combat` keeps `optional_depends = smp_stats` (order-critical: stats leaveplayer runs before combat on_leave, `smp_stats/combat.lua:11-14`); `smp_stats` has no smp_combat edge. No B1-era refs (`register_on_globalstep`, `core.modpath`, `get_player_names`) in combat/bounty.
+  - C4: VERIFIED — `smp_bounty/init.lua:144` and `test_bounty.lua:122` both lose terminal full stop on `Player @1 does not exist`.
+- **Escalations:** C2 re-scope → D5/f08 (pending pearl feature).
+- **Index row annotated** in `fixes/README.md`.
+- **f09 now unblocked for its C4 overlap** — the f10 agent handled the bounty period string; f09 (homes) shares `smp_tp` with f08 but not `smp_bounty`.
