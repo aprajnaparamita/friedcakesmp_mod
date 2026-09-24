@@ -26,6 +26,14 @@ fs.FORMNAME = {
 -- Purple hover, sampled from [F0236]: hue unverified, PROPOSED (§10).
 local PURPLE_HOVER = "#7B2FBE"
 
+-- Yellow warning triangle to the right of the title on both prompt
+-- menus (f12 §3.1/§3.2; shared/04 §4.2, [F0236, F0242]). U+26A0 as
+-- the correct three-byte UTF-8 sequence — the same bytes
+-- smp_tp/homes.lua:72 uses, never a truncated single byte. Its
+-- MEANING is unestablished (open question V-28); §0.5 rule 2 makes
+-- the observed layout normative, so it is drawn regardless.
+local TRIANGLE = "\226\154\160"
+
 -- Centre a plain-text label horizontally (house heuristic: 0.16 units
 -- per character, same as smp_orders' head prompts).
 local function centre_x(w, text)
@@ -64,7 +72,8 @@ function fs.menu()
 		"formspec_version[6]",
 		string.format("size[%f,%f]", w, h),
 		"bgcolor[#000000C0]",
-		string.format("label[%f,0.3;%s]", centre_x(w, title), F(title)),
+		string.format("label[%f,0.3;%s]", centre_x(w, title),
+			F(title) .. " " .. TRIANGLE),
 		string.format("label[%f,0.85;%s]", centre_x(w, subtitle), F(subtitle)),
 	}
 	for i, cat in ipairs(cats) do
@@ -110,7 +119,8 @@ function fs.category(category_key, pname)
 		"formspec_version[6]",
 		string.format("size[%f,%f]", w, h),
 		"bgcolor[#000000C0]",
-		string.format("label[%f,0.3;%s]", centre_x(w, title), F(title)),
+		string.format("label[%f,0.3;%s]", centre_x(w, title),
+			F(title) .. " " .. TRIANGLE),
 	}
 	for i, id in ipairs(ids) do
 		local def = smp_settings.registered[id]

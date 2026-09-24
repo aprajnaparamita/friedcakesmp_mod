@@ -317,6 +317,29 @@ are in the table above (F12-A … F12-D); the rest are settled here.
   `luajit friedcake/dev-tests/test_settings.lua` (T1–T8, plus the
   in-game suite; T9 is f11's).
 
+### Fix-wave record (fix brief, 2026-09-25)
+
+Branch `agent/f12-settings-fixes` (base `2b5f16c`), brief
+`fixes/f12-settings.md`. Every row F12-1…F12-7 with its outcome and
+file:line evidence (line numbers at this commit):
+
+| Row | Outcome | Evidence |
+|---|---|---|
+| **F12-1** | **CLOSED** | The warning triangle is drawn right of the title in **both** renders as the correct three-byte U+26A0 sequence `"\226\154\160"` (same bytes as `smp_tp/homes.lua:72`, never a truncated single byte): constant `friedcake/mods/smp_settings/formspec.lua:35`; category menu `Settings ⚠` `:75-76`; category screen `Settings - Chat ⚠` `:122-123`. The title's x is still `centre_x(w, title)` — the glyph is appended after the title, so no observed pixel moves. Tests assert the element in the category-menu render **and** the `Settings - Chat` render, the exact 3-byte sequence, and the absence of a lone `\241` byte: `friedcake/dev-tests/test_settings.lua:353-370`, in-mod `friedcake/mods/smp_settings/test.lua:199-217`. The glyph's *meaning* stays open at V-28 (out of scope per brief); §0.5 rule 2 makes the observed layout normative. |
+| **F12-2** | **ESCALATED → D3** | `settings.categories` is still never read — the only config read is `settings.cycle_order` (`smp_settings/init.lua:39-45`, key at `:43-44`); the seven categories are registered in code (`init.lua:88-101`, chat at `chat.lua:18-21`). **Code side unchanged by this brief** (never change the F12-2 code). D3 ruled **A** on 2026-09-24 and both halves were applied before this brief: §7 declares only `settings.cycle_order` + `server.name` (`:210-213`), the OBSERVED seven-category list lives in §4.1 prose (`:126-132`), F12-C is annotated decided (`:256`), and the mirror carries the strike marker `spec/shared/06-config-reference.md:125`. Nothing is outstanding for the ruling to land as; those are the single-edit sites if D3 is ever re-opened. |
+| **F12-3** | **ESCALATED → D3** (doc-side only; **no code change**) | The §4.7 amendment this brief asks to draft already landed when D3=A was executed: §4.7 item 7 now reads that the four chat-adjacent settings default to `FRIENDS_FOLLOWED` — "settled by D3, 2026-09-24" (`:144-148`) — and the §5.1 sample shows `default = "FRIENDS_FOLLOWED"` (`:189`); F12-B is annotated decided (`:255`). Code untouched: `chat.lua:41,62,69,76` default `FRIENDS_FOLLOWED`, `chat.lua:34,48,55` default `ON`. T1's observed-value assertions are unchanged: `dev-tests/test_settings.lua:332-340` (`Public Chat: ON`, `Private Messages: Friends/Followed`, …) and in-mod `test.lua:92-100`. |
+| **F12-4** | **CLOSED** | T9 delivered through f11's harness — no second harness built: `friedcake/dev-tests/test_social.lua:647-673` asserts the recipient's `chat.private_messages = FRIENDS_FOLLOWED` (`:650-652`), that the sender is a stranger in both directions (`:653-656`), that `/msg` answers exactly `This user only accepts messages from friends or followed players` (`:660-663`, T9 leg `:668-669`), and that nothing is delivered (`:670-673`); header cross-reference `:29-31`. `luajit friedcake/dev-tests/test_social.lua` exits 0. `dev-tests/test_settings.lua:5-6` points at the leg (T9 stays out of the settings harness). |
+| **F12-5** | **CLOSED** | `smp_settings/init.lua:218` — `description = S("Open the settings menu")`, terminal full stop removed (shared §0.5 rule 4). Asserted at `dev-tests/test_settings.lua:517-522` and in-mod `test.lua:220-226`. |
+| **F12-6** | **CLOSED** | The duplicate `local fs = smp_settings.fs` was removed; exactly one remains in `init.lua` at `:82` (the only other occurrence in the mod is `test.lua:31`, that file's own local). No behaviour change — `fs` is first used at `init.lua:110`. |
+| **F12-7** | **ESCALATED → D7** | `settings.cycle_order` is declared in §7 (`:212`) and read by the code (`init.lua:43-44`). The mirror-addition proposal already exists in `## Proposed shared changes` item 2 below — **referenced, not duplicated** (the brief cites `f12-settings.md:324-329`, which is the same proposal block before P1's D3 edits shifted it). D7 ruled **A** on 2026-09-24 and P2 applied the mirror half before this brief: `spec/shared/06-config-reference.md:124` now carries `settings.cycle_order`. **No hand-edit to `shared/06` was made**, and `dev-tests/test_config_mirror.lua` is green in both directions. |
+
+**fixes/README.md annotation** (this agent may not write there — for the
+overseer to apply):
+
+```text
+- f12-settings — F12-1 closed (⚠ in both renders + byte-exact tests) · F12-2, F12-3 ESCALATED → D3 (ruled A; pre-applied, verified) · F12-4 closed (T9 leg in test_social.lua) · F12-5, F12-6 closed (hygiene) · F12-7 ESCALATED → D7 (mirror applied at shared/06:124, verified)
+```
+
 ## Proposed shared changes
 
 *(for the integrator — this agent does not edit `spec/shared/`)*

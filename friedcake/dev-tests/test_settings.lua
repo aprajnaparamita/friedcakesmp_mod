@@ -2,7 +2,8 @@
 --
 -- Runs under plain luajit, no engine: loads smp_core + smp_settings
 -- over a minimal `core` stub, then walks f12 §9 T1–T8 through the real
--- receive-fields path (T9 is f11's stranger-/msg test, not ours).
+-- receive-fields path (T9 is f11's stranger-/msg test, not ours — the
+-- f12 T9 leg lives in dev-tests/test_social.lua's T3 block, F12-4).
 --   T1 seven categories in observed order (menu buttons)
 --   T2 per-category tooltip `Open <Category> settings`
 --   T3 subtitle `Choose a category to change your <server.name> settings`
@@ -349,6 +350,26 @@ ok(back ~= nil and back > prev, "T4 Back after the last toggle")
 ok(not screen:find(";toggle_privacy", 1, true), "T4 no rows from other categories")
 
 ----------------------------------------------------------------------
+-- F12-1: the yellow warning triangle sits right of the title on BOTH
+-- prompt menus (f12 §3.1/§3.2; shared/04 §4.2, [F0236, F0242]).
+-- Assert the exact three UTF-8 bytes of U+26A0 — never a truncated
+-- single byte — inside the rendered title element of each screen.
+----------------------------------------------------------------------
+local TRIANGLE = "\226\154\160"
+eq(#TRIANGLE, 3, "F12-1 triangle constant is the full 3-byte UTF-8 sequence")
+eq(TRIANGLE:byte(1), 0xE2, "F12-1 U+26A0 byte 1 is 0xE2")
+eq(TRIANGLE:byte(2), 0x9A, "F12-1 U+26A0 byte 2 is 0x9A")
+eq(TRIANGLE:byte(3), 0xA0, "F12-1 U+26A0 byte 3 is 0xA0")
+ok(menu:find("label[", 1, true) ~= nil
+	and menu:find("Settings " .. TRIANGLE, 1, true) ~= nil,
+	"F12-1 triangle element in the category-menu render (right of `Settings`)")
+ok(screen:find("label[", 1, true) ~= nil
+	and screen:find("Settings - Chat " .. TRIANGLE, 1, true) ~= nil,
+	"F12-1 triangle element in the `Settings - Chat` render")
+ok(menu:find("\241", 1, true) == nil and screen:find("\241", 1, true) == nil,
+	"F12-1 no truncated lone 0xF1 byte in either render")
+
+----------------------------------------------------------------------
 print("--- T5: toggle cycles and redraws in place ---")
 screen = spec_of("alice")
 send_fields("alice", { ["toggle_chat.public"] = "true" })
@@ -491,6 +512,14 @@ eq(smp_settings.get("alice", "tp.tpa_enabled"), nil,
 	"unopened-category key not registered")
 eq(smp_settings.get("alice", "combat.keep_pearls_on_death"), nil,
 	"unopened-category key not registered")
+
+----------------------------------------------------------------------
+-- F12-5: /settings description is sentence case with no terminal full
+-- stop (shared §0.5 rule 4 — house style for unobserved strings).
+----------------------------------------------------------------------
+print("--- F12-5: /settings description ---")
+eq(core.registered_chatcommands.settings.description, "Open the settings menu",
+	"F12-5 description is `Open the settings menu` (no terminal full stop)")
 
 ----------------------------------------------------------------------
 print("== in-game test suite (mods/smp_settings/test.lua) ==")
