@@ -4,8 +4,8 @@
 |---|---|
 | Source of authority | [`fixes/01-integrator-decisions.md`](01-integrator-decisions.md) § **Rulings — 2026-09-24** |
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §3.1 (config contract), §3.4 (spec-side), §4 (ESCALATE items) |
-| Status | **Rulings written; execution delegated** to the five prompts in [`fixes/prompts/`](prompts/) |
-| Open items | OPEN-1 (sell-history seam) — see §5 |
+| Status | **Rulings written; execution delegated** to the six prompts in [`fixes/prompts/`](prompts/) |
+| Open items | OPEN-1 was ruled as **D12** (2026-09-24); remaining: GAP-1, NOTE-1 — see §5 |
 
 This document is the master work breakdown: what each ruling requires, which
 files change, who executes it, and in what order. The prompts are
@@ -22,7 +22,8 @@ integrator can audit the whole pack at a glance.
 | P3 | [`prompts/p3-f16-descope.md`](prompts/p3-f16-descope.md) | `agent/rulings-f16-descope` | **1** (parallel) | D8 spec-side: `f16-legacy.md`, `f06` §10, `plan/*`, `spec/README.md`, `shared/02`, `shared/05` f16 mentions |
 | P4 | [`prompts/p4-admin-apis.md`](prompts/p4-admin-apis.md) | `agent/rulings-admin-apis` | **1** (parallel) | D9+D10: `smp_admin/*`, `dev-tests/test_admin.lua`, `shared/05 §5.5` mute rows |
 | P2 | [`prompts/p2-config-mirror.md`](prompts/p2-config-mirror.md) | `agent/rulings-config-mirror` | **2** (after P1+P3) | D7: `shared/06-config-reference.md`, all feature **§7 tables**, `dev-tests/test_config_mirror.lua` |
-| P5 | [`prompts/p5-integration-harness.md`](prompts/p5-integration-harness.md) | `agent/rulings-integration-test` | **3** (after P2+P4) | D11: `dev-tests/test_integration.lua`, seam-policy note in `plan/acceptance-tests.md` |
+| P5 | [`prompts/p5-integration-harness.md`](prompts/p5-integration-harness.md) | `agent/rulings-integration-test` | **3** (after P2+P4, ∥ P6) | D11: `dev-tests/test_integration.lua`, seam-policy note in `plan/acceptance-tests.md` |
+| P6 | [`prompts/p6-store-history.md`](prompts/p6-store-history.md) | `agent/rulings-store-history` | **3** (after P1, ∥ P5) | D12: `smp_store` history API + drivers, `dev-tests/test_store.lua`, `f02` §6:139/§11, `f03` §6 |
 
 Base branch for every unit: the then-current tip of
 **`agent/integrator-decisions`** (it carries `fixes/`, the rulings, and the 00
@@ -32,7 +33,9 @@ engine-API fixes). Push the unit's branch; never `main`.
 mirror, so it must run after P1 has struck `settings.categories` (f12 §7) and
 fixed `api.mode` (f14 §7), and after P3 has annotated f06 §7's
 `require_activity`. P5's seam checklist includes `smp_admin.flag`/`is_muted`
-(P4) and shares `plan/acceptance-tests.md` with P3.
+(P4) and shares `plan/acceptance-tests.md` with P3. P6 edits `f02 §6`
+(adjacent to P1's D2 line) so it must wait for P1 — but is file-disjoint from
+P5, so both run in wave 3 in parallel.
 
 **Conflict matrix (why wave 1 is safe in parallel):**
 
@@ -45,6 +48,8 @@ fixed `api.mode` (f14 §7), and after P3 has annotated f06 §7's
 | `spec/shared/05-command-reference.md` | P3 = f16/legacy annotations outside §5.5; P4 = new `/mute`,`/unmute` rows inside §5.5 (line-disjoint) |
 | `spec/plan/*` | P3 (wave 1), then P5 (wave 3) |
 | `smp_admin/*` | P4 only |
+| `smp_store/*` (code), `dev-tests/test_store.lua` | P6 only |
+| `spec/features/f02-sell.md` §6:139 + §11, `f03-auction.md` §6 | P6 (P1 owns the rest of f02 §6 — different lines, sequential waves) |
 | `fixes/*` | **already annotated by the integrator — no prompt edits `fixes/`** |
 
 **After P1–P5:** the feature briefs (`f01`, `f02`, `f03`, `f04`, `f06`, `f07`,
@@ -191,6 +196,28 @@ agents.
   unknown `core.*` call and on a missing seam.
 - Add the seam-policy paragraph to `plan/acceptance-tests.md`.
 
+### D12 = one generic history API (ruled 2026-09-24; was OPEN-1)
+- New `smp_store.api.append_history(kind, name, entry) -> id`, mirroring the
+  shape of the existing ledger helpers (`smp_store/ledger.lua` — read it and
+  copy its API/driver/test conventions). Append-only, FIFO prune to a
+  caller-supplied `cap` (default 100, matching `sell.history_size`); entries
+  carry `t = os.time()`; any money inside an entry is integer cents.
+- Extend **all three** drivers the same way (`backends/mod_storage.lua`,
+  `backends/sqlite.lua`, `backends/postgres.lua`) — parity is the rule; if the
+  harness cannot reach one, say so and mirror however the ledger is currently
+  tested for it.
+- `spec/features/f02-sell.md` §11: proposal amended to the ruled signature
+  (`append_sell_history` → generic) and marked decided D12; §6 line 139
+  `smp_store.append_sell_history(player, receipt)` → the generic call
+  (P1 was instructed to leave :139 alone — P6 owns that line).
+- `spec/features/f03-auction.md` §6: `append_history(kind, payload)` PROPOSED
+  → ruled D12 final signature with an explicit `name` parameter.
+- Tests: extend `friedcake/dev-tests/test_store.lua` — append returns id,
+  cap/FIFO prune, per-kind and per-name isolation, offline name works, entry
+  round-trip equals what was stored.
+- **Not P6's:** wiring `smp_sell/history.lua` onto the API (closes V-94) and
+  f03's history storage remain the f02/f03 briefs' consumer rows.
+
 ---
 
 ## 3. Cross-cutting requirements (every prompt repeats these)
@@ -220,6 +247,6 @@ agents.
 
 | ID | Item | State |
 |---|---|---|
-| OPEN-1 | f02 §11 / V-94 `append_sell_history` vs f03 §6 `append_history` — one generic `smp_store.api.append_history` would serve both | **Unruled.** f02/f03 briefs keep "record in §10 and wait" |
+| OPEN-1 → **D12** | f02 §11 / V-94 `append_sell_history` vs f03 §6 `append_history` | **Ruled 2026-09-24:** one generic `smp_store.api.append_history(kind, name, entry)` — executed by `p6-store-history.md`; f02/f03 no longer wait, they wire consumers |
 | GAP-1 | `fixes/f08-teleport.md`, `f09-homes.md`, `f10-combat.md` indexed but missing (14 gaps) | Unassigned — must be authored before those features get fix agents |
 | NOTE-1 | E-09 (f01): `run_smp_core_tests` called at `smp_economy/init.lua:473`, declared `:489` | f01 brief's scope — verify there |

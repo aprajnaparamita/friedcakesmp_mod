@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f03 |
 | Verdict at audit | **MOSTLY COMPLETE (4 gaps)** · 44 OK · T1–T10 green |
 | Branch | `agent/f03-auction-fixes` |
-| Depends on | `00-P0-blockers` (B1-2 site + `ah_harness` shim — must land first), D7 (slots-encoding ruling); D1 awareness only (f05's side is the one that must yield) — **ruled 2026-09-24: D7 = A (slots: dotted scalar primary + underscore alias; mirror/§7 by P2 — your A4–A6 code rows remain yours, incl. the `ah.history` `pending:f03` marker), D1 = A (period-free form, applied by P1)** |
+| Depends on | `00-P0-blockers` (B1-2 site + `ah_harness` shim — must land first), D7 (slots-encoding ruling); D1 awareness only (f05's side is the one that must yield) — **ruled 2026-09-24: D7 = A (slots: dotted scalar primary + underscore alias; mirror/§7 by P2 — your A4–A6 code rows remain yours, incl. the `ah.history` `pending:f03` marker), D1 = A (period-free form, applied by P1), D12 = one generic `smp_store.api.append_history` (built by P6, which also finalises §6's signature — your row is wiring your history storage onto it, no longer waiting)** |
 
 ---
 

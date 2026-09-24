@@ -70,6 +70,7 @@ and file-ownership are fixed there so parallel agents cannot collide.
 | **D9** | 2026-09-24 | **A — build the API** | Add `smp_admin.flag(kind, detail)` (persisted ring buffer + `core.log("warning", …)` + notify online staff holding `smp_admin`/`smp_moderator`) with `friedcake/dev-tests/test_admin.lua`. `f01 §4.2.5` unchanged. Wiring at `smp_economy/init.lua:234-236` stays the **f01 brief's** job. | `prompts/p4-admin-apis.md` |
 | **D10** | 2026-09-24 | **A — build the producer** | Add `smp_admin.mute(name, seconds)` / `unmute(name)` / `is_muted(name)` (mod-storage, offline- and restart-safe, lazy expiry) plus `/mute <player> [duration]` and `/unmute <player>` (priv `smp_moderator` or `smp_admin`; duration in seconds, omitted = permanent), rows in `shared/05-command-reference.md §5.5`, tests in `test_admin.lua`. `f11 §4.1.3` unchanged; the probe at `smp_social/bridges.lua:97-104` starts working as written; the honesty/TODO cleanup stays the **f11 brief's** job. | `prompts/p4-admin-apis.md` |
 | **D11** | 2026-09-24 | **A — build the harness** | New `friedcake/dev-tests/test_integration.lua`: load-order dry run of every `load_mod`-enabled mod against the strict recorded surface `dev-tests/engine_api_surface.txt` (542 names), engine-determined per-mod file order (verify against the `~/dev/luanti` clone and cite it), cross-mod seam existence checklist, and a degraded pass with the optional layer removed. Record the seam policy in `plan/acceptance-tests.md`. | `prompts/p5-integration-harness.md` |
+| **D12** | 2026-09-24 | **One generic history API** (was OPEN-1) | Extend `smp_store` with `smp_store.api.append_history(kind, name, entry) -> id`, mirroring the existing ledger helpers and backed by all three drivers; caller-supplied cap (default 100, matching `sell.history_size`), FIFO prune. Amend `f02 §11`'s `append_sell_history` proposal and `f02 §6:139` to the generic call, and `f03 §6`'s `append_history(kind, payload)` to the final signature. Consumer wiring — f02's local `history.lua` `_read`/`_write` seam (V-94) and f03's history storage — stays the **f02/f03 briefs'** rows. | `prompts/p6-store-history.md` |
 
 **OBSERVED preservation notes (AGENTS rule 5 / `spec/README.md:104`):** none of
 these rulings downgrades an OBSERVED row. D3 *moves* the OBSERVED [F0237]
@@ -78,11 +79,11 @@ documented. D7 *renames* key spellings while keeping every Status/Spec cell;
 settings-file spellings were never themselves observed on video. D1/D5 move
 spec text *toward* the observed/rendered form.
 
-**OPEN-1 (not ruled here):** `f02 §11`'s sell-history seam
-(`append_sell_history`, V-94) and `f03 §6`'s `append_history` still await an
-integrator ruling — one generic `smp_store.api.append_history(...)` would serve
-both. The f02/f03 briefs keep their "record in §10 and wait" instruction until
-the integrator rules.
+**OPEN-1 → ruled as D12 (2026-09-24, same session):** the sell-history seam
+(`f02 §11` / V-94 / `f03 §6`) is settled by one generic
+`smp_store.api.append_history(kind, name, entry)` that serves both features —
+executed by `prompts/p6-store-history.md` (wave 3). The f02/f03 briefs no
+longer wait; their remaining row is wiring their consumers onto the API.
 
 ## Acceptance criteria
 

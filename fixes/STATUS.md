@@ -139,17 +139,18 @@ The audit above is the *baseline*; this records what happened next.
   D10=A, D11=A.
 - **Requirements** written to `fixes/REQUIREMENTS.md` (per-decision change
   lists with file:line, cross-cutting rules, conflict matrix, open items).
-- **Five standalone execution prompts** in `fixes/prompts/` (P1–P5), waves:
-  1 ∥ 3 ∥ 4 → 2 → 5; each branches from `agent/integrator-decisions`.
+- **Six standalone execution prompts** in `fixes/prompts/` (P1–P6), waves:
+  1 ∥ 3 ∥ 4 → 2 → 5 ∥ 6; each branches from `agent/integrator-decisions`.
 - **Brief annotations:** every feature brief's *Depends on* row now carries its
   ruling outcome (brief 01 criterion 5); README row 01 → ✅ with prompt links;
   README f16 row → cancelled; README f08/f09/f10 rows marked ⚠ *brief file
   missing* (the broken-link finding above is now visible in the index);
   `fixes/f16-legacy.md` carries a CANCELLED banner; `f06` F06-3 marked
   pre-applied.
-- **Still open:** OPEN-1 — the f02/f03 sell-history seam
-  (`append_sell_history` vs `append_history`; recommendation: one generic
-  `smp_store.api.append_history`) is *not* one of D1–D11 and was not ruled;
-  f02/f03 keep their record-and-wait instruction.
+- **Still open:** nothing in the rulings — OPEN-1 (the f02/f03 sell-history
+  seam) was ruled as **D12** the same session (one generic
+  `smp_store.api.append_history(kind, name, entry)`), executed by the sixth
+  prompt `prompts/p6-store-history.md` (wave 3, parallel with P5). GAP-1
+  (missing f08/f09/f10 briefs) and NOTE-1 (E-09) remain, unchanged from §5.
 - **Unchanged from §5:** merge `agent/p0-engine-apis` first; author the
   f08/f09/f10 briefs; merge `agent/f11-social`.

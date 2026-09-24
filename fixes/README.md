@@ -96,9 +96,9 @@ exact change sites in
 | D3 | **A** — §4.7/§5.1 rewritten, categories struck | D9 | **A** — `smp_admin.flag` built |
 | D4 | **§7 → `snapshot`** | D10 | **A** — mute producer + `/mute`,`/unmute` |
 | D5 | **normalise spec to renderer** | D11 | **A** — `test_integration.lua` built |
-| D6 | **`upsert_player`, `mark_dirty` struck** | OPEN-1 | sell-history seam — *still unruled* |
+| D6 | **`upsert_player`, `mark_dirty` struck** | D12 | **one generic `smp_store.api.append_history`** (was OPEN-1) |
 
-Execution is split into five standalone prompts
+Execution is split into six standalone prompts
 ([`prompts/README.md`](prompts/README.md) — waves, branches, conflict matrix),
 master requirements in [`REQUIREMENTS.md`](REQUIREMENTS.md):
 
@@ -107,8 +107,9 @@ master requirements in [`REQUIREMENTS.md`](REQUIREMENTS.md):
   [P4 admin-apis](prompts/p4-admin-apis.md) (D9+D10)
 - **Wave 2:** [P2 config-mirror](prompts/p2-config-mirror.md) (D7 + mirror
   halves of D3/D8) — after P1 and P3
-- **Wave 3:** [P5 integration-harness](prompts/p5-integration-harness.md)
-  (D11) — after P2 and P4
+- **Wave 3 (parallel):** [P5 integration-harness](prompts/p5-integration-harness.md)
+  (D11) — after P2 and P4; [P6 store-history](prompts/p6-store-history.md)
+  (D12) — after P1
 
 Each feature brief below now carries its ruling outcome on its **Depends on**
 row (criterion 5). Brief `f16` is cancelled. Briefs `f08`, `f09`, `f10` are
