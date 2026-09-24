@@ -353,6 +353,10 @@ The audit above is the *baseline*; this records what happened next.
     cycle and losing an ordering hint. **Sequence: after f06 merges.**
     It also shares `dev-tests/test_config_mirror.lua` (its
     `orders.slots.*` entry) with f03.
+- **f03's first agent was cancelled before writing anything** (worktree
+  clean, no commits, base still `2b5f16c`) and **re-dispatched on the
+  same payload and branch** the same day — one f03 agent at a time, per
+  the one-agent-per-feature rule.
   - **f09 (homes)** — same mod as the running f08 (`smp_tp`; homes are
     teleport destinations, so their file sets overlap), and the spec
     dependency runs f09 → f08. **Sequence: after f08 merges.**
