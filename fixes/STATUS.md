@@ -556,3 +556,10 @@ The user approved four bundles; all are executed here.
 - **Escalations:** O3, O8 → D7 (mirror); O6 (`sell_axe.lua:15`) → f06.
 - **Index row annotated** in `fixes/README.md`.
 - **Wave C now unblocked** — f02 (sell) and f13 (ranks) can dispatch next.
+
+## 22. Wave C dispatched (2026-09-25, from `f4c3c7c`)
+
+- **f02 (sell):** worktree `coconut-f02`, branch `agent/f02-sell-fixes`, base `f4c3c7c`.
+- **f13 (ranks):** worktree `coconut-f13`, branch `agent/f13-ranks-fixes`, base `f4c3c7c`.
+- **After these two merge:** all 11 features (f01–f14, excluding f16) will be complete.
+- **Remaining open items:** D13 backlog (5 store/core items), F12-8 (`eco.pay_accept` follow-up), `fixes/00-P0-blockers.md` B1-4/B1-5/B4-1 (F06-10, F06-3).
