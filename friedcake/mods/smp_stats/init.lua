@@ -30,8 +30,11 @@ smp_stats.S = core.get_translator(MODNAME)
 local S = smp_stats.S
 
 ----------------------------------------------------------------------
--- Configuration (f14 §7). `api.mode` defaults to `snapshot` per
--- claim-f14 (spec §7's table says `off`; recorded in §10 F14-D5).
+-- Configuration (f14 §7). `api.mode` defaults to `snapshot` — §7 was
+-- corrected to `snapshot` by D4 (2026-09-24; F14-D5 resolved), code
+-- unchanged. Exposed as resolve_api_mode() (fix-brief S3) so the
+-- dev-test can pin the unset-vs-invalid split without reloading the
+-- mod.
 ----------------------------------------------------------------------
 
 local function setting_number(key, default)
@@ -40,14 +43,25 @@ local function setting_number(key, default)
 	return default
 end
 
-local api_mode = core.settings:get("api.mode")
-if type(api_mode) ~= "string" or api_mode == "" then
-	api_mode = "snapshot"
-elseif api_mode ~= "off" and api_mode ~= "snapshot" and api_mode ~= "push" then
-	core.log("warning", "[smp_stats] unknown api.mode=" .. tostring(api_mode)
-		.. " — falling back to snapshot")
-	api_mode = "snapshot"
+-- Unset (nil) defaults silently; set-but-invalid — empty string, wrong
+-- type, unknown word — logs a warning naming the value and the
+-- fallback, then falls back. Never a hard crash over a config string.
+function smp_stats.resolve_api_mode(raw)
+	if raw == nil then return "snapshot" end -- unset: silent default
+	if type(raw) ~= "string" or raw == "" then
+		core.log("warning", "[smp_stats] invalid api.mode=\""
+			.. tostring(raw) .. "\" — falling back to snapshot")
+		return "snapshot"
+	end
+	if raw ~= "off" and raw ~= "snapshot" and raw ~= "push" then
+		core.log("warning", "[smp_stats] unknown api.mode=" .. raw
+			.. " — falling back to snapshot")
+		return "snapshot"
+	end
+	return raw
 end
+
+local api_mode = smp_stats.resolve_api_mode(core.settings:get("api.mode"))
 
 smp_stats.cfg = {
 	-- §7 (all PROPOSED except scoreboard.enabled, OBSERVED [F0287]).
@@ -103,7 +117,7 @@ local fs = smp_stats.fs
 
 core.register_chatcommand("stats", {
 	params = S("[player]"),
-	description = S("Show statistics for a player."),
+	description = S("Show statistics for a player"),
 	func = function(player_name, param)
 		param = param and param:match("^%s*(.-)%s*$") or ""
 		local target = param ~= "" and param or player_name
@@ -116,7 +130,7 @@ core.register_chatcommand("stats", {
 
 core.register_chatcommand("leaderboard", {
 	params = S("[category]"),
-	description = S("Show the leaderboards."),
+	description = S("Show the leaderboards"),
 	func = function(player_name, param)
 		param = (param or ""):lower():match("^%s*(.-)%s*$")
 		if param == "" then
@@ -131,7 +145,7 @@ core.register_chatcommand("leaderboard", {
 
 core.register_chatcommand("lb", {
 	params = S("[category]"),
-	description = S("Alias for /leaderboard."),
+	description = S("Alias for /leaderboard"),
 	func = function(player_name, param)
 		return core.registered_chatcommands.leaderboard.func(player_name, param)
 	end,
@@ -139,7 +153,7 @@ core.register_chatcommand("lb", {
 
 core.register_chatcommand("leaderboards", {
 	params = S("[category]"),
-	description = S("Alias for /leaderboard."),
+	description = S("Alias for /leaderboard"),
 	func = function(player_name, param)
 		return core.registered_chatcommands.leaderboard.func(player_name, param)
 	end,

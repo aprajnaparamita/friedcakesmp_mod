@@ -259,9 +259,45 @@ records; `sell` and `shop` read `stats.money_made_from_sell` and
   already `snapshot`),
   menu layouts (V-23), `/baltop` override, display details, T11 budget.
 - **Acceptance:** T1–T11 all green under `luajit
-  friedcake/dev-tests/test_stats.lua` (186 assertions) plus the in-game
-  suite `mods/smp_stats/test.lua` (71 assertions); T8 measured 10.8 ms
-  at 10,000 synthetic records against the 50 ms gate.
+  friedcake/dev-tests/test_stats.lua` (now 234 assertions; 186 before the
+  fix-brief pass) plus the in-game suite `mods/smp_stats/test.lua`
+  (now 82 assertions; 71 before the fix-brief pass — no regression); T8
+  measured 10.8 ms at 10,000 synthetic records against the 50 ms gate.
 - **Proposed shared changes: none.** No `spec/shared/` edit is required:
   the `/baltop` data-source swap and the `scoreboard.show` registration
   are local integrations recorded above (F14-D4, F14-D7).
+
+### §10 fix-brief closure record (`fixes/f14-stats.md`, branch `agent/f14-stats-fixes`, 2026-09-25)
+
+| ID | Outcome | Evidence |
+|---|---|---|
+| S1 | **CLOSED — pre-fixed on `main`, verified only** | `smp_stats/playtime.lua:59` reads `core.register_globalstep`; the dev-test harness captures it under the same name and the new S1 assertions pin it (+1 globalstep handler at load, callable, stepped by T11). Zero matches for the nonexistent name across `friedcake/mods/` (grep clean). The rename at `dev-tests/test_stats.lua` and the "stub must not fake it" guard were done under **B4-1** before this branch (`fixes/STATUS.md` §3) — that literal now lives only in `dev-tests/test_engine_apis.lua`, by design; this branch's own S1 check avoids it so the B4-1/B4-3 guard stays green. |
+| S2 | **CLOSED by D4 (pre-applied, verified only)** | §7's `api.mode` default cell already reads `snapshot` (D4, 2026-09-24; F14-D5 annotated resolved above); code unchanged. Not redone. |
+| S3 | **CLOSED** | `init.lua` → `smp_stats.resolve_api_mode()`: unset (`nil`) defaults silently; set-but-invalid (`""`, non-string, unknown word) logs `core.log("warning", …)` naming the bad value **and** the fallback, then falls back as today; valid values pass through; never a hard crash over a config string. Default unchanged (`snapshot`, per D4). Dev-test S3 block asserts all four branches incl. load-time silence. |
+| S4 | **CLOSED** | `counters.lua` `add()` rejects `value < 0` with `nil, err` (`"counters are monotonic: negative increment"`) in the validate phase — before `ensure_player`, so a rejection never touches the store (shared §2.3). Monotonicity is enforced, not conventional; F14-D1's live-field refusals (`money`/`shards`/`playtime`) unchanged; all shipped callers pass positives. Asserted in `dev-tests/test_stats.lua` (S4: unchanged counter + `nil, err` + positive path + live fields) and in in-mod `test.lua` (S4 block, rejection-only → stays a pure check). |
+| S5 | **CLOSED — honest labelling + D11 seam note, mirrored here** | T4/T5 in `dev-tests/test_stats.lua` are **contract-shape tests**: they verify `rec.stats` field agreement with f02's and f05's write *shape*, **not** a live `/sell` or Quick Buy flow. File header, section label and assertions say so explicitly; the ids T4/T5 are kept (they are `plan/acceptance-tests.md`'s merge gate) and no end-to-end claim is made anywhere. **Seam note:** the real f02/f05 flows land with **D11's** integration harness (`dev-tests/test_integration.lua`, ruled A 2026-09-24; seam policy recorded in `plan/acceptance-tests.md`) — this is that note, in my file as required. |
+| S6 | **CLOSED — verified/kept** | `api.lua` load-time `push` warning fires (proven by re-running the chunk under `api.mode=push`: exactly one `warning:` naming `push` and "PROPOSED stub"); `off` loads silently; `/api` refuses with the explanatory message in **both** `off` and `push` (T10 assertions kept green; push message content now asserted too). No partial push implementation — §4.4 option 2 stays PROPOSED. |
+| S7 | **CLOSED (this mod only)** | Terminal full stops stripped at every listed site, all still inside `core.get_translator`: `init.lua` `/stats`, `/leaderboard`, `/lb`, `/leaderboards` descriptions; `api.lua` `/api` description; all four `formspec.lua` `Player @1 does not exist` refusals. None of them appears in `spec/shared/08-ui-strings.md` (verified), so no OBSERVED string changed. |
+
+**Escalations (outside this brief's edit scope — overseer/feature owners):**
+
+1. **`fixes/README.md` f14 row annotation (brief DoD 6) not applied** — this
+   agent's dispatch rules forbid writing anywhere under `fixes/`. Intended
+   text: *S1 verify-only (fixed on `main`), S2 → D4, S3/S4/S5/S6/S7 closed
+   on `agent/f14-stats-fixes`.*
+2. **Same `Player @1 does not exist.` §0.5 drift in other mods:**
+   `smp_economy/init.lua:110,200` (f01), `smp_shards/init.lua:218` (f06),
+   `smp_bounty/init.lua:144` (f10 — its dev-test asserts the period at
+   `dev-tests/test_bounty.lua:122`, so that test must move with the
+   string). One-agent-per-feature: not edited here.
+3. **`api.lua` refusal strings beyond the brief's listed sites** —
+   `The public API is disabled on this server.`,
+   `The public API push mode is not configured yet.`, `API key revoked.`,
+   `You have no API key.` also carry terminal full stops (same §0.5 class,
+   PROPOSED wording, unobserved). Deliberately **not** touched: they are
+   not among the brief's seven listed sites — flagged for a follow-up
+   sweep so scope stays auditable.
+4. **`dev-tests/test_integration.lua:1047` cites the wrong spec path** for
+   the `smp_stats.add` seam: `spec/features/f07-stats.md:55` — this
+   feature is `f14-stats.md` (seam contract F14-D1, `counters.lua:42`).
+   P5-owned file; not edited here.

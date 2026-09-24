@@ -117,7 +117,7 @@ end
 
 core.register_chatcommand("api", {
 	params = S("[delete]"),
-	description = S("Issue or revoke your personal API key."),
+	description = S("Issue or revoke your personal API key"),
 	func = function(player_name, param)
 		param = (param or ""):lower():match("^%s*(.-)%s*$")
 		local mode = smp_stats.cfg.api_mode
