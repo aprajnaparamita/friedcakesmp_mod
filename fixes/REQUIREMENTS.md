@@ -248,5 +248,5 @@ agents.
 | ID | Item | State |
 |---|---|---|
 | OPEN-1 → **D12** | f02 §11 / V-94 `append_sell_history` vs f03 §6 `append_history` | **Ruled 2026-09-24:** one generic `smp_store.api.append_history(kind, name, entry)` — executed by `p6-store-history.md`; f02/f03 no longer wait, they wire consumers |
-| GAP-1 | `fixes/f08-teleport.md`, `f09-homes.md`, `f10-combat.md` indexed but missing (14 gaps) | Unassigned — must be authored before those features get fix agents |
+| GAP-1 | `fixes/f08-teleport.md`, `f09-homes.md`, `f10-combat.md` indexed but missing (14 gaps) | **CLOSED 2026-09-24** — all three authored by the overseer (13 + 4 + 2 rows) with pre-fixed rows marked verify-don't-redo; dispatchable |
 | NOTE-1 | E-09 (f01): `run_smp_core_tests` called at `smp_economy/init.lua:473`, declared `:489` | f01 brief's scope — verify there |

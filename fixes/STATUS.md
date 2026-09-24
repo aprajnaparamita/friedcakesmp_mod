@@ -263,8 +263,17 @@ The audit above is the *baseline*; this records what happened next.
   cut instead. The remaining cycles (`sell↔orders`,
   `orders→shardshop→amethyst→orders`) stay with their owning briefs
   (f02/f04, f04/f06 — each owns its own `mod.conf`).
-- **Still open, unchanged:** GAP-1 (f08/f09/f10 briefs), NOTE-1 (E-09,
-  f01's), `smp_economy.give` (f01's P5 finding), the two remaining
+- **GAP-1 CLOSED (2026-09-24):** `fixes/f08-teleport.md` (13 rows — 8 audit
+  gaps + 4 deviations + the F11-4 queue hand-off), `fixes/f09-homes.md`
+  (4 rows), `fixes/f10-combat.md` (2 gaps + verify context) authored by the
+  overseer from the audit's §4 sections, with the P0-B3, D7 and pack-level
+  resolutions baked in as **verify-don't-redo** rows and each *Depends on*
+  row carrying its ruling outcomes (brief 01 criterion 5). The 14
+  unassigned gaps are assigned; `fixes/README.md` index rows no longer
+  carry the ⚠ marker. f08's TP13 (queue block-only pairing) depends on the
+  f11 branch's `blocks_only` — dispatch f08 **after** f11-finish merges.
+- **Still open, unchanged:** NOTE-1 (E-09, f01's),
+  `smp_economy.give` (f01's P5 finding), the two remaining
   `optional_depends` cycles (f02/f04 = `sell ↔ orders`; f04/f06 =
   `orders → shardshop → amethyst → orders`), push blocked (SSH
   passphrase).
