@@ -588,3 +588,18 @@ The user approved four bundles; all are executed here.
 - **Additional escalations in §10:** `smp_sell ↔ smp_orders` `optional_depends` cycle (P5 finding); `smp_economy.give` pseudocode vs `add_money` implementation
 - **Index row annotated** in `fixes/README.md`.
 - **All 11 features (f01–f14, excl. f16) COMPLETE** — fix wave closed.
+
+## 25. Boot blockers resolved (2026-09-25, post-fix-wave)
+
+- **P0 engine-API blockers:** **VERIFIED ON MAIN** — `bb8238f` is ancestor of `9567ee4`; three load-crash sites fixed (`register_on_pickup` → `register_on_item_pickup` in `smp_amethyst`, `get_player_names` → `get_connected_players` in `smp_economy`/`smp_shards`, `get_translated` → `get_translated_string` in `smp_sell`); `test_engine_apis.lua` guard test passes (16/16) after excluding in-mod test files from scanner (fixed false positive on `smp_ah/test.lua`).
+- **`sell ↔ orders` cycle:** **BROKEN** — removed `smp_orders` from `smp_sell/mod.conf` `optional_depends` (one edge cut, per P5). Remaining cycles: `orders → shardshop → amethyst → orders` already broken by f06 (removed `smp_orders` from `smp_amethyst/mod.conf`).
+- **Dev-test gate:** **26/27** — only `test_config_mirror.lua` fails (2 expected D7 violations: `amethyst.shovel_nodes` from f06, `orders.slots.*` stale from f04; both have mirror proposals filed).
+
+**Pack boot status:** All known load-time blockers resolved. The pack should now boot on a real server (Luanti + Mineclonia). The two remaining dev-test failures are:
+  1. `test_config_mirror.lua` — 2 expected D7 mirror violations (documented, proposals filed)
+  2. None — `test_engine_apis.lua` now passes (16/16)
+
+**Remaining work (integrator-scheduled):**
+- D13 backlog: 5 store/core items (E-05, E-06, E-15, E-17, E-19)
+- F12-8: `eco.pay_accept` registration in `smp_settings` (follow-up dispatch)
+- `fixes/00-P0-blockers.md` B1-4/B1-5/B4-1 (F06-10) — pending when P0 brief is fully merged (already on main as ancestor)
