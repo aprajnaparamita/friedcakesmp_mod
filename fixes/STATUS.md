@@ -575,3 +575,16 @@ The user approved four bundles; all are executed here.
 - **Escalations:** three hand-off entries (H1/H2/H3) in `spec/features/f13-ranks.md` §10 with §11 annotations.
 - **Index row annotated** in `fixes/README.md`.
 - **Only f02 (sell) remains** — final feature to complete the fix wave.
+
+## 24. f02 (sell) merged (2026-09-25)
+
+- **Merge:** `40e8ec4` → `ce3c23d` (2 files: `smp_sell/history.lua` + `spec/features/f02-sell.md`)
+- **Gate:** 25/27 on main — same 2 pre-existing failures.
+- **Rows:**
+  - F02-1: ESCALATED → D12 — sell history wired to `smp_store.api.append_history` with dual-write fallback; V-94 updated
+  - F02-2: VERIFIED — D2 ruled chat receipt is the design (no formspec receipt); V-55 closed
+  - F02-3: ESCALATED → D7 — `sell.base_prices` config key read; mirror proposal in §11
+  - F02-4: DEPENDS-BLOCKER → B4-1 — `test_sell.lua` shim for `register_on_globalstep` awaits P0 blockers
+- **Additional escalations in §10:** `smp_sell ↔ smp_orders` `optional_depends` cycle (P5 finding); `smp_economy.give` pseudocode vs `add_money` implementation
+- **Index row annotated** in `fixes/README.md`.
+- **All 11 features (f01–f14, excl. f16) COMPLETE** — fix wave closed.
