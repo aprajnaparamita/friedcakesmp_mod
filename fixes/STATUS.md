@@ -154,3 +154,26 @@ The audit above is the *baseline*; this records what happened next.
   (missing f08/f09/f10 briefs) and NOTE-1 (E-09) remain, unchanged from §5.
 - **Unchanged from §5:** merge `agent/p0-engine-apis` first; author the
   f08/f09/f10 briefs; merge `agent/f11-social`.
+
+## 8. Wave 1 executed and merged (2026-09-24, same session)
+
+- **P1** → `agent/rulings-spec-text` `5de444f` — D1–D6, 7 files, suite 22/22.
+- **P3** → `agent/rulings-f16-descope` `c0f8ae8` — D8 spec side, 9 files, 22/22.
+- **P4** → `agent/rulings-admin-apis` `2b95c66` — D9+D10; `smp_admin`
+  26→226 lines, new `dev-tests/test_admin.lua` (70 assertions) + in-mod
+  `test.lua`; suite 23/23; `bridges.lua:97-104` probe verified resolving.
+- All three merged into `agent/integrator-decisions` (zero conflicts); suite
+  green at **23 files**.
+- **Escalations resolved by the integrator in this commit:** P3's five
+  wording/status sites — `shared/00:18` LEGACY definition, `shared/01:45-46`
+  + `:66` G4, `plan/open-questions.md` V-61 row (mirrors f06's closure),
+  `f06:50` §4.1 pointer, `shared/05` §5.4 heading — all annotated per D8;
+  P4's f01 flag-signature heads-up (`flag(kind, detail)`, 2 args vs f01:166's
+  4-arg pseudocode) recorded on f01's *Depends on* row.
+- **Ratified (P4, spec-silent):** server console (`caller == ""`) may run
+  `/mute`/`/unmute`, mirroring the engine's console privilege bypass.
+- **Not acted on:** `SPEC-CONFORMANCE-REPORT.md` (:226, :53, :224, :705, :899)
+  still describes pre-ruling states — it is a point-in-time audit record;
+  left historical on purpose.
+- Push still blocked (SSH key passphrase) — every branch is local; push
+  `agent/integrator-decisions` and the three P-branches once keys are loaded.

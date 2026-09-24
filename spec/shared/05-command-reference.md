@@ -74,7 +74,7 @@ request alias (`f08`). Commands blocked during combat are listed in `f10`.
 | `/ping`, `/list` | `/who`, `/online` (for `/list`) | — | Latency; online players | CLONE [C1] | f11 |
 | `/report`, `/helpop` | `/ac` (for `/helpop`) | `<player> <reason>`; `<message>` | Reports and messages to staff | CLONE [C1] | f11 |
 
-## 5.4 Legacy (optional modules)
+## 5.4 Legacy (optional modules — permanently descoped, D8 2026-09-24, never to be built)
 
 | Command | Aliases | Arguments | Behaviour | Status | Spec |
 |---|---|---|---|---|---|

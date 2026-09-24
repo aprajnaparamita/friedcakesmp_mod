@@ -43,7 +43,8 @@ Buy, shard shop, timed shard tools), virtual spawners, teleportation (random
 teleport, RTP queue, teleport requests, homes, spawn, warps), combat tagging
 and combat logging, bounties, chat and social systems, ranks, statistics and
 leaderboards, player settings, world rules, and legacy modules (crates, AFK
-zone, teams, duels, kill rewards, fixed-price shop).
+zone, teams, duels, kill rewards, fixed-price shop) — documentation only,
+permanently descoped (D8, 2026-09-24), never to be built.
 
 **Out of scope:**
 
@@ -63,7 +64,7 @@ zone, teams, duels, kill rewards, fixed-price shop).
 | G1 | **Lag-free.** No mob entities in the spawner economy, no ABMs, lazy O(1) state updates, bounded per-step work |
 | G2 | **Economic integrity.** Atomic transactions, escrowed commitments, an append-only ledger, duplication-resistant menus. Donut SMP's own first season ended because of inflation and duplication [S1] |
 | G3 | **Configuration-driven.** Every price, rate, limit and timer is a configuration value (`06-config-reference.md`) |
-| G4 | **Modular.** One mod per feature; legacy features are optional mods |
+| G4 | **Modular.** One mod per feature; legacy features were planned as optional mods — permanently descoped (D8, 2026-09-24), never to be built |
 | G5 | **Traceable fidelity.** Reproduce observed behaviour exactly, reproduce documented behaviour faithfully, and label every assumption |
 
 G5 is the goal this version strengthens. 141 frames of interface evidence mean

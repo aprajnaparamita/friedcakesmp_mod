@@ -47,7 +47,7 @@ The shop screen itself was never opened.
 3. Each award emits exactly `You earned 1 Shard for playing the server`
    (`OBSERVED`).
 4. A `shards` leaderboard exists [S23].
-5. Legacy earning (AFK zone at 1 per minute, 10 per player kill) is in `f16`.
+5. Legacy earning (AFK zone at 1 per minute, 10 per player kill) is in `f16` (f16 descoped permanently — D8, 2026-09-24; never ships).
 
 ### 4.2 Shard Shop
 

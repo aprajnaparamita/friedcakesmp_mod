@@ -15,7 +15,7 @@ inference. The tags are ordered: prefer the strongest available.
 |---|---|---|
 | `OBSERVED` | Directly visible in the source video. Cited with a frame id. The verbatim string or layout is a **requirement**, not a suggestion. | 1 (strongest) |
 | `LIVE` | Documented as current Donut SMP behaviour (September 2026) in a wiki, the official API or a community reference. Not seen on screen. | 2 |
-| `LEGACY` | Documented Donut SMP behaviour that has since been removed. Specified as an optional module. | 3 |
+| `LEGACY` | Documented Donut SMP behaviour that has since been removed. Specified as an optional module; the legacy modules are permanently descoped (D8, 2026-09-24) and will never be built. | 3 |
 | `CLONE` | Not documented for Donut SMP. Taken from Donut-style clone plugins. Plausible, not authoritative. | 4 |
 | `PROPOSED` | A default or design decision introduced by this specification. Replace with a measured value where possible. | 5 (weakest) |
 | `N/A` | No practical Luanti equivalent. Listed for completeness. | — |

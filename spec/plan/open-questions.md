@@ -86,7 +86,7 @@ onwards are new in v0.2.
 | V-58 | Does Quick Buy buy across multiple listings to fill a quantity? | f05 | OPEN |
 | V-59 | Is the 3× guard per purchase or per entry? | f05 | OPEN |
 | V-60 | Shard shop layout | f06 | OPEN |
-| V-61 | Are shards awarded while AFK? | f06 | OPEN |
+| V-61 | Are shards awarded while AFK? | f06 | CLOSED (moot) *(f16 descoped — D8, 2026-09-24)* |
 | V-62 | Is the spawner diminishing-returns curve exponential as modelled? | f07 | OPEN |
 | V-63 | Is there a visible `/rtp` warm-up countdown? | f08 | OPEN |
 | V-64 | Does `/rtp` announce the arrival? | f08 | OPEN |
