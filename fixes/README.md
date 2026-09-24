@@ -41,7 +41,7 @@ paste it). No other context is required.
 | f12 | [`f12-settings.md`](f12-settings.md) | Settings | `smp_settings` | 7 | **✅ merged 2026-09-25 (`ffb6a08`) — F12-1 closed (⚠ in both renders + byte-exact tests) · F12-2, F12-3 ESCALATED → D3 (ruled A; pre-applied, verified) · F12-4 closed (T9 leg in `test_social.lua`) · F12-5, F12-6 closed (hygiene) · F12-7 ESCALATED → D7 (mirror already at `shared/06:124`, verified)** | merged → `agent/integrator-decisions` |
 | f10 | [`f10-combat.md`](f10-combat.md) | Combat | `smp_combat`, `smp_bounty` | 4 | **✅ merged 2026-09-25 (`439a931`) — C1 elytra disable implemented (new elytra.lua), C2 keep_pearls_on_death re-scoped to pending:f08, C3 cycle verified (stats↔combat order-critical edge kept), C4 bounty string style fixed; 27/27 on main (pre-existing test_engine_apis failure)** | merged → `agent/integrator-decisions` |
 | f02 | [`f02-sell.md`](f02-sell.md) | Sell | `smp_sell` | 2 | low | `agent/f02-sell-fixes` |
-| f13 | [`f13-ranks.md`](f13-ranks.md) | Ranks | `smp_ranks` | 2 (consumer-side) | low — coordination | `agent/f13-ranks-fixes` |
+| f13 | [`f13-ranks.md`](f13-ranks.md) | Ranks | `smp_ranks` | 3 | **✅ merged 2026-09-25 (`68b99a4`) — R-01→H1/f04 (order_limit contract test), R-02→H2/f08 (rtp_cooldown contract test), R-03→H3/D6 (upsert_player hand-off); 25/27 on main (pre-existing failures)** | merged → `agent/integrator-decisions` |
 | f16 | [`f16-legacy.md`](f16-legacy.md) | Legacy | *(none exist)* | 37 | **❌ cancelled — descoped permanently (D8, 2026-09-24), never to be built** | — |
 
 ### Row 00 ✅ — closed on `agent/p0-engine-apis`
