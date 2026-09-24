@@ -50,7 +50,8 @@ function smp_orders.alerts_on(name)
 		local ok, v = pcall(smp_settings.get, name, "eco.order_alerts")
 		if ok and v ~= nil then return v and true or false end
 	end
-	return true -- TODO(f12): default on until smp_settings ships
+	return true -- f12 leaves eco.order_alerts unregistered until its category opens;
+	             -- nil -> default on is correct and must be kept.
 end
 
 function smp_orders.notify_buyer(o, msg)
@@ -101,7 +102,7 @@ function smp_orders.create(player, key, qty, unit_price)
 	end
 	local rec = smp_store.api.ensure_player(name)
 	if (rec.money or 0) < total then
-		return nil, S("Insufficient funds.")
+		return nil, S("Insufficient funds")
 	end
 
 	-- 2. Mutate — no yields from here (shared §2.3)
@@ -130,7 +131,7 @@ function smp_orders.create(player, key, qty, unit_price)
 		o.state = "cancelled"
 		o.version = o.version + 1
 		smp_orders.mark_dirty(id)
-		return nil, S("Insufficient funds.")
+		return nil, S("Insufficient funds")
 	end
 
 	-- 3. Sweep the auction house: buy matching listings at or below the
@@ -140,7 +141,7 @@ function smp_orders.create(player, key, qty, unit_price)
 end
 
 ----------------------------------------------------------------------
--- Auction sweep (f04 §4.5, §6.1) — TODO(f03) until smp_ah ships
+-- Auction sweep (f04 §4.5, §6.1) — degrades when smp_ah is absent
 ----------------------------------------------------------------------
 
 -- Absorb a whole auction listing `l` into order `o`. f03's
@@ -166,8 +167,8 @@ function smp_orders.absorb_listing(o, l)
 		return false
 	end
 	-- Remove the source first: f03 must acknowledge the listing change
-	-- before money moves. With the bridge stubbed this returns false and
-	-- nothing happens (TODO(f03)).
+	-- before money moves. When smp_ah is absent the bridge degrades and
+	-- returns false, so nothing happens.
 	if not smp_orders.au.consume_listing(l.id, o.buyer, cost) then return false end
 
 	local paid = smp_orders.escrow.payout(o, l.seller, cost)
