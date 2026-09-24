@@ -519,3 +519,9 @@ The user approved four bundles; all are executed here.
 - **Cycle cut:** removed `smp_orders` from `smp_amethyst/mod.conf` `optional_depends` — preserves `orders→shardshop` (observed entry) and `shardshop→amethyst` (expiry stamping), degrades sell-axe routing gracefully.
 - **Index row annotated** in `fixes/README.md`.
 - **f04 now unblocked** — f04 (orders) held for this cycle cut; dispatch f04 next.
+
+## 19. f09 (homes) + f04 (orders) dispatched (2026-09-25, from `481839f`)
+
+- **f09 (homes):** worktree `coconut-f09`, branch `agent/f09-homes-fixes`, base `481839f` (f08 merged, so `smp_tp` mod is current). Brief rows H1–H3 are **verify-don't-redo** (B3 fixes pre-applied); H4 (config) is the only in-scope implementation.
+- **f04 (orders):** worktree `coconut-f04`, branch `agent/f04-orders-fixes`, base `481839f` (f06 merged, cycle cut done). New row O9 (terminal full stop on `Insufficient funds.` + `test_orders.lua:828` literal). O2/O3/O8 remain ESCALATE → D7.
+- **Still open after these:** f02 (sell), f13 (ranks) — wave C, dispatch after f04/f09 merge. D13 backlog (5 store/core items), V-48 already ruled, F12-8 (`eco.pay_accept`), F-6 bounty period (overseer post-f10, done).
