@@ -26,7 +26,9 @@
 --   F11-4  blocks_only() is block-graph-only, blocks() unchanged
 --   F11-5  load-time mute warning + the `You are muted` path end to
 --          end with a stub smp_admin.is_muted (D10 = A)
---   f12 T9 leg (stranger /msg refusal) is asserted in the T3 block.
+--   F12-4 / f12 T9 leg (recipient FRIENDS_FOLLOWED setting, stranger
+--          edge both ways, verbatim refusal, nothing delivered) is
+--          asserted in the T3 block.
 --
 -- The builtin chat pipeline (command dispatch, on_chatcommand
 -- callbacks, default broadcast) is reproduced faithfully from
@@ -642,6 +644,17 @@ local dana = make_player("dana")
 local eve = make_player("eve")
 set_setting("dana", "chat.private_messages", "FRIENDS_FOLLOWED")
 
+-- f12 T9 preconditions, asserted explicitly (fixes/f12-settings.md
+-- row F12-4): the recipient's setting is FRIENDS_FOLLOWED and the
+-- sender is a stranger in both directions (no friend, no follow).
+eq(smp_social.get_setting(fake.players["dana"], "chat.private_messages"),
+	"FRIENDS_FOLLOWED",
+	"f12 T9: recipient's chat.private_messages is FRIENDS_FOLLOWED")
+eq(smp_social.is_friend_or_followed("dana", "eve"), false,
+	"f12 T9: recipient has no friend/follow edge to the sender (stranger)")
+eq(smp_social.is_friend_or_followed("eve", "dana"), false,
+	"f12 T9: sender has no friend/follow edge to the recipient (stranger)")
+
 reset_chat()
 run_command("eve", "/msg dana supersecret")
 eq(last_chat("eve"), REFUSAL, "T3 refusal is verbatim")
@@ -650,11 +663,14 @@ eq(last_chat("eve"),
 	"T3 refusal matches the OBSERVED literal")
 -- This same case is f12's T9 leg (fixes/f12-settings.md points here —
 -- one harness, not two): a stranger /msg under Private Messages:
--- Friends/Followed gets the exact observed refusal.
+-- Friends/Followed gets the exact observed refusal, verbatim, and
+-- nothing is delivered.
 eq(last_chat("eve"), REFUSAL,
 	"f12 T9 leg: stranger /msg under Friends/Followed refused verbatim")
 ok(not chat_contains("dana", "supersecret"), "T3 nothing delivered")
 eq(#chat_log("dana"), 0, "T3 recipient is not notified at all")
+eq(count_chat("eve", "supersecret"), 0,
+	"f12 T9 leg: the message text reaches nobody's chat log")
 
 ----------------------------------------------------------------------
 -- T4 — /msg to a friend of a FRIENDS_FOLLOWED recipient is delivered

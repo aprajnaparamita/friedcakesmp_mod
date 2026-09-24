@@ -1,7 +1,9 @@
 -- FriedcakeSMP — smp_settings / test.lua
 -- In-game test suite (run by /smp test once the generic loader lands;
 -- also executed headlessly by dev-tests/test_settings.lua).
--- Covers f12 §9 T1–T8 (T9 is f11's stranger-/msg test).
+-- Covers f12 §9 T1–T8 (T9 is f11's stranger-/msg test; its f12 leg
+-- runs in dev-tests/test_social.lua), plus fix rows F12-1 (the title
+-- warning triangle on both renders) and F12-5 (description style).
 -- Pure checks: does not mutate the calling player's settings.
 
 local results = { passed = 0, failed = 0, lines = {} }
@@ -191,6 +193,37 @@ do
 	local menu = fs.menu()
 	ok(has(menu, "style[cat_chat:hovered;bgcolor=#7B2FBE]"),
 		"purple hover style on cat_chat")
+end
+
+----------------------------------------------------------------------
+-- F12-1: the yellow warning triangle sits right of the title on both
+-- prompt menus (f12 §3.1/§3.2; shared/04 §4.2). U+26A0 as the exact
+-- three UTF-8 bytes, never a truncated single byte.
+do
+	local TRIANGLE = "\226\154\160"
+	eq(#TRIANGLE, 3, "F12-1 triangle is the full 3-byte UTF-8 sequence")
+	eq(TRIANGLE:byte(1), 0xE2, "F12-1 U+26A0 byte 1")
+	eq(TRIANGLE:byte(2), 0x9A, "F12-1 U+26A0 byte 2")
+	eq(TRIANGLE:byte(3), 0xA0, "F12-1 U+26A0 byte 3")
+
+	local menu = fs.menu()
+	ok(has(menu, "Settings " .. TRIANGLE),
+		"F12-1 triangle in the category-menu title")
+	local screen = fs.category("chat", nil)
+	ok(has(screen, "Settings - Chat " .. TRIANGLE),
+		"F12-1 triangle in the `Settings - Chat` title")
+	ok(not has(menu, "\241") and not has(screen, "\241"),
+		"F12-1 no truncated lone 0xF1 byte in either render")
+end
+
+----------------------------------------------------------------------
+-- F12-5: /settings description is sentence case, no terminal full
+-- stop (shared §0.5 rule 4).
+do
+	local def = core.registered_chatcommands
+		and core.registered_chatcommands.settings
+	eq(def and def.description, "Open the settings menu",
+		"F12-5 /settings description has no terminal full stop")
 end
 
 return results

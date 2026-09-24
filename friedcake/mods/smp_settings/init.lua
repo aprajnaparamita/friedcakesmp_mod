@@ -100,8 +100,6 @@ for _, c in ipairs(CATEGORIES) do
 	})
 end
 
-local fs = smp_settings.fs
-
 ----------------------------------------------------------------------
 -- Presentation (f12 §4.2/§4.3): open a screen through an smp_core
 -- menu session, so quitting the interface closes the session (§4.8).
@@ -217,7 +215,7 @@ end)
 
 core.register_chatcommand("settings", {
 	params = "",
-	description = S("Open the settings menu."),
+	description = S("Open the settings menu"),
 	func = function(pname, _)
 		smp_settings.show_menu(pname)
 		return true
