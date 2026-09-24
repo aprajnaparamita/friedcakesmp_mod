@@ -6,8 +6,15 @@
 --   T1  dig/place hooks increment broken_blocks/placed_blocks once
 --   T2  kill/death attribution incl. the f10 combat-log credit path
 --   T3  mobs_mc:* on_die wrapping credits mobs_killed for the killer
---   T4  f02's direct rec.stats write and add() agree (money_made_from_sell)
---   T5  f05's ObjectRef add() lands in rec.stats (money_spent_on_shop)
+--   T4  CONTRACT-SHAPE, not end-to-end: f02's rec.stats write shape and
+--       add() agree on money_made_from_sell (field agreement only —
+--       this does NOT drive a live /sell flow)
+--   T5  CONTRACT-SHAPE, not end-to-end: f05's ObjectRef add() shape
+--       lands in rec.stats (money_spent_on_shop) (field agreement only
+--       — this does NOT drive a live Quick Buy flow)
+--       [S5 seam note: the real f02/f05 flows land with D11's
+--        integration harness, dev-tests/test_integration.lua —
+--        see spec/features/f14-stats.md §10]
 --   T6  scoreboard HUD: lower-case suffix, hud_change on balance change
 --   T7  ten official leaderboard categories, claim labels
 --   T8  10,000-record rebuild under 50 ms (also in mods/smp_stats/test.lua)
@@ -379,10 +386,69 @@ load_mod("smp_core")
 load_mod("smp_store")
 load_mod("smp_economy")
 load_mod("smp_settings")
+local gs_before_stats = #globalstep_handlers
 load_mod("smp_stats")
 ok(smp_stats ~= nil, "smp_stats loaded")
+-- S1: the playtime accumulator registers under the engine-real name,
+-- captured by the harness stub (fix-brief S1, B1 #6). The guard that
+-- the stub never fakes a nonexistent engine name lives in
+-- dev-tests/test_engine_apis.lua (B4-1), not here.
+ok(core.register_globalstep ~= nil,
+	"S1 harness stubs core.register_globalstep (engine-real name)")
+eq(#globalstep_handlers, gs_before_stats + 1,
+	"S1 playtime accumulator registered via core.register_globalstep")
+ok(type(globalstep_handlers[#globalstep_handlers]) == "function",
+	"S1 the captured handler is callable (T11 steps it)")
 eq(#afters, 1, "initial rebuild scheduled via core.after(2)")
 eq(afters[1].t, 2, "first rebuild at t=2s (outside globalstep, §8)")
+
+----------------------------------------------------------------------
+-- S3: `api.mode` validation (f14 §7 / D4): unset defaults silently,
+-- set-but-invalid warns naming value + fallback, valid passes through.
+do
+	local function warn_count()
+		local n = 0
+		for _, l in ipairs(logs) do
+			if l:find("^warning:") and l:find("api.mode", 1, true) then
+				n = n + 1
+			end
+		end
+		return n
+	end
+	-- Load-time: unset in this harness, so nothing may have warned.
+	eq(warn_count(), 0, "S3 unset api.mode logs nothing at load")
+
+	eq(smp_stats.resolve_api_mode(nil), "snapshot",
+		"S3 unset defaults to snapshot silently")
+	eq(warn_count(), 0, "S3 unset stays silent")
+	eq(smp_stats.resolve_api_mode("off"), "off", "S3 off passes through")
+	eq(smp_stats.resolve_api_mode("push"), "push", "S3 push passes through")
+	eq(smp_stats.resolve_api_mode("snapshot"), "snapshot",
+		"S3 snapshot passes through")
+	eq(warn_count(), 0, "S3 valid values log nothing")
+
+	eq(smp_stats.resolve_api_mode(""), "snapshot",
+		"S3 set-but-empty falls back to snapshot")
+	eq(warn_count(), 1, "S3 empty string warns (set-but-invalid)")
+	ok(logs[#logs]:find('api.mode=""', 1, true) ~= nil,
+		"S3 warning names the bad value: " .. tostring(logs[#logs]))
+	ok(logs[#logs]:find("falling back to snapshot", 1, true) ~= nil,
+		"S3 warning names the fallback")
+
+	eq(smp_stats.resolve_api_mode("banana"), "snapshot",
+		"S3 unknown value falls back to snapshot")
+	eq(warn_count(), 2, "S3 unknown value warns")
+	ok(logs[#logs]:find("api.mode=banana", 1, true) ~= nil,
+		"S3 warning names the unknown value: " .. tostring(logs[#logs]))
+	ok(logs[#logs]:find("falling back to snapshot", 1, true) ~= nil,
+		"S3 unknown-value warning names the fallback")
+
+	eq(smp_stats.resolve_api_mode(42), "snapshot",
+		"S3 non-string value falls back to snapshot")
+	eq(warn_count(), 3, "S3 non-string value warns")
+	ok(logs[#logs]:find('api.mode="42"', 1, true) ~= nil,
+		"S3 warning names the non-string value: " .. tostring(logs[#logs]))
+end
 
 -- Engine calls register_on_mods_loaded after every mod is in.
 core.registered_entities = {
@@ -513,7 +579,21 @@ local not_mc = core.registered_entities["mcl_items:chest"]
 ok(not_mc._stats_wrapped == nil, "T3 non-mobs_mc entities untouched")
 
 ----------------------------------------------------------------------
-print("--- T4/T5: f02/f05 data paths agree ---")
+-- T4/T5 are CONTRACT-SHAPE tests: they drive smp_stats' own surface
+-- with f02's and f05's write *shape* (rec.stats field agreement), not
+-- a live /sell or Quick Buy flow. The real cross-mod flows land with
+-- D11's integration harness (dev-tests/test_integration.lua); seam
+-- note mirrored in spec/features/f14-stats.md §10 (fix-brief S5).
+local T45_SECTION = "--- T4/T5 (contract-shape, not end-to-end): "
+	.. "f02/f05 rec.stats field agreement — simulated writes; "
+	.. "D11 seam note in f14 §10 ---"
+print(T45_SECTION)
+ok(T45_SECTION:find("T4/T5", 1, true) ~= nil,
+	"S5 section keeps the ids T4/T5 (plan merge gate)")
+ok(T45_SECTION:find("contract-shape", 1, true) ~= nil,
+	"S5 section is labelled contract-shape")
+ok(T45_SECTION:find("not end-to-end", 1, true) ~= nil,
+	"S5 section makes no end-to-end claim")
 -- f02 (agent/f02-sell sell.lua): writes rec.stats directly.
 local rec = smp_store.api.ensure_player("alice")
 rec.stats.money_made_from_sell = (tonumber(rec.stats.money_made_from_sell) or 0) + 1234
@@ -544,6 +624,36 @@ eq(smp_stats.add(alice, "playtime", 1), nil,
 eq(smp_stats.add(nil, "kills", 1), nil, "add() refuses no player")
 eq(smp_stats.add(alice, "", 1), nil, "add() refuses no key")
 eq(smp_stats.get("nobody", "kills"), 0, "get() of an unknown record is 0")
+
+----------------------------------------------------------------------
+print("--- S4: monotonic counters (f14 §4.1.2) ---")
+-- A negative increment cannot decrease a counter: rejected with
+-- `nil, err` in the validate phase, before the store is touched. The
+-- positive path and the live-field refusals above are unchanged.
+local mono = "mono_counter_check"
+eq(smp_stats.get(mono, "kills"), 0, "S4 fresh record starts at 0")
+eq(smp_stats.add(mono, "kills", 3), 3, "S4 positive path unchanged")
+local neg, negerr = smp_stats.add(mono, "kills", -5)
+eq(neg, nil, "S4 add(name, key, -5) rejected")
+ok(type(negerr) == "string" and negerr ~= "",
+	"S4 rejection returns the documented nil, err shape (got "
+	.. tostring(negerr) .. ")")
+eq(smp_stats.get(mono, "kills"), 3, "S4 counter unchanged after rejection")
+eq(smp_stats.add(mono, "kills", -0.5), nil, "S4 fractional negative rejected")
+eq(smp_stats.get(mono, "kills"), 3, "S4 counter still unchanged")
+eq(smp_stats.add(mono, "kills", -math.huge), nil, "S4 -inf rejected")
+eq(smp_stats.get(mono, "kills"), 3, "S4 counter still 3 after -inf")
+eq(smp_stats.add(mono, "kills", 2), 5, "S4 positive add still increments")
+-- Rejection never creates or mutates a record (shared §2.3: validate
+-- before mutate).
+eq(smp_stats.add("never_created_neg", "kills", -5), nil,
+	"S4 rejection on an unknown record returns nil, err")
+eq(smp_store.api.get_player("never_created_neg"), nil,
+	"S4 rejection never touches the store")
+-- Live-field semantics of F14-D1 are untouched by the sign check.
+eq(smp_stats.add(mono, "money", -1), nil, "S4 money still refused (live)")
+eq(smp_stats.add(mono, "shards", -1), nil, "S4 shards still refused (live)")
+eq(smp_stats.add(mono, "playtime", -1), nil, "S4 playtime still refused (live)")
 
 ----------------------------------------------------------------------
 print("--- T6: scoreboard HUD ---")
@@ -667,7 +777,8 @@ r, m = api_cmd.func("alice", "")
 local key2 = smp_stats.api.key_of("alice")
 ok(key2 and key2 ~= key1, "T10 re-issue produces a new key")
 
--- mode-dependent behaviour (T10): off and push refuse.
+-- mode-dependent behaviour (T10): off and push refuse, each with the
+-- explanatory message (fix-brief S6).
 smp_stats.cfg.api_mode = "off"
 r, m = api_cmd.func("alice", "")
 eq(r, false, "T10 off mode refuses")
@@ -676,7 +787,42 @@ ok(tostring(m):find("disabled", 1, true) ~= nil,
 smp_stats.cfg.api_mode = "push"
 r, m = api_cmd.func("alice", "")
 eq(r, false, "T10 push mode is a warned stub")
+ok(tostring(m):find("push", 1, true) ~= nil,
+	"T10 push message says why: " .. tostring(m))
 smp_stats.cfg.api_mode = "snapshot"
+
+----------------------------------------------------------------------
+-- S6: the push stub warns at load time (f14 §4.4 option 2 stays a
+-- PROPOSED stub — refused cleanly, never half-implemented). Re-run
+-- api.lua's chunk with api.mode=push to prove the load-time warning
+-- fires; the refusals above are the runtime half.
+do
+	local chunk, cerr = loadfile(ROOT .. "/friedcake/mods/smp_stats/api.lua")
+	ok(chunk ~= nil, "S6 api.lua reloads: " .. tostring(cerr))
+	local saved_mode = smp_stats.cfg.api_mode
+	local before = #logs
+	smp_stats.cfg.api_mode = "push"
+	local ran = false
+	if chunk then ran = pcall(chunk) end
+	smp_stats.cfg.api_mode = saved_mode
+	ok(ran, "S6 api.lua runs under push mode without erroring")
+	eq(#logs, before + 1, "S6 push logs exactly one load-time warning")
+	local entry = logs[#logs] or ""
+	ok(entry:find("warning:", 1, true) == 1,
+		"S6 the load-time entry is a warning: " .. entry)
+	ok(entry:find("push", 1, true) ~= nil, "S6 warning names push")
+	ok(entry:find("PROPOSED stub", 1, true) ~= nil,
+		"S6 warning says the stub is PROPOSED: " .. entry)
+
+	-- `off` is a legitimate mode: no load-time warning for it.
+	local before_off = #logs
+	smp_stats.cfg.api_mode = "off"
+	local ran_off = false
+	if chunk then ran_off = pcall(chunk) end
+	smp_stats.cfg.api_mode = saved_mode
+	ok(ran_off, "S6 api.lua runs under off mode without erroring")
+	eq(#logs, before_off, "S6 off logs nothing at load")
+end
 
 -- Snapshot files land in the world directory after a rebuild.
 smp_stats.rebuild()

@@ -194,11 +194,11 @@ end
 
 function fs.show_stats(viewer, target)
 	if not smp_store.api.get_player(target) then
-		return false, S("Player @1 does not exist.", target)
+		return false, S("Player @1 does not exist", target)
 	end
 	local pname = smp_stats.name_of(viewer)
 	if not pname or not core.get_player_by_name(pname) then
-		return false, S("Player @1 does not exist.", tostring(viewer))
+		return false, S("Player @1 does not exist", tostring(viewer))
 	end
 	smp_core.open_session(pname, fs.FORMNAME.stats, {})
 	smp_core.show_formspec(pname, fs.FORMNAME.stats, fs.stats(pname, target))
@@ -208,7 +208,7 @@ end
 function fs.show_picker(viewer)
 	local pname = smp_stats.name_of(viewer)
 	if not pname or not core.get_player_by_name(pname) then
-		return false, S("Player @1 does not exist.", tostring(viewer))
+		return false, S("Player @1 does not exist", tostring(viewer))
 	end
 	smp_core.open_session(pname, fs.FORMNAME.pick, {})
 	smp_core.show_formspec(pname, fs.FORMNAME.pick, fs.picker())
@@ -222,7 +222,7 @@ function fs.show_board(viewer, cat_key, page)
 	end
 	local pname = smp_stats.name_of(viewer)
 	if not pname or not core.get_player_by_name(pname) then
-		return false, S("Player @1 does not exist.", tostring(viewer))
+		return false, S("Player @1 does not exist", tostring(viewer))
 	end
 	local session = smp_core.open_session(pname, fs.FORMNAME.board, {})
 	session.cat = cat_key

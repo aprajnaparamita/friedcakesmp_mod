@@ -1,9 +1,9 @@
 -- FriedcakeSMP — smp_stats / test.lua
 -- In-game test suite (run by /smp test once the generic loader lands;
 -- also executed headlessly by dev-tests/test_stats.lua).
--- Covers f14 §9 T6/T7/T8/T9 at the pure-function level; the hook-driven
--- tests (T1–T5, T10, T11) live in dev-tests/test_stats.lua, which
--- drives the real handlers over a stubbed engine.
+-- Covers f14 §9 T6/T7/T8/T9 at the pure-function level plus the S4
+-- monotonic rule (rejections only, no mutation); hook-driven tests
+-- (T1–T5, T10, T11) live in dev-tests/test_stats.lua (stubbed engine).
 -- Pure checks: no store mutation, no HUD, safe to run at any time.
 
 local results = { passed = 0, failed = 0, lines = {} }
@@ -198,6 +198,36 @@ do
 	eq(#key, 6 + 40, "T10 key is 46 chars")
 	local key2 = smp_stats.api.make_key("alice")
 	ok(key2 ~= key, "T10 keys are unique per call")
+end
+
+----------------------------------------------------------------------
+-- S4: monotonic counters (f14 §4.1.2) plus the F14-D1 refusals.
+-- Every case here is rejected in the validate phase, before the store
+-- is touched — no record is created or mutated, so the block stays
+-- pure and safe for live re-run (the perf test above is untouched).
+do
+	local probe = "smp_stats_pure_check"
+	local v, err = smp_stats.add(probe, "kills", -5)
+	eq(v, nil, "S4 negative increment rejected")
+	ok(type(err) == "string" and #err > 0,
+		"S4 rejection carries a reason (nil, err)")
+	eq(smp_stats.add(probe, "kills", -0.5), nil,
+		"S4 fractional negative rejected")
+	eq(smp_stats.add(probe, "kills", -math.huge), nil,
+		"S4 -inf rejected")
+	eq(smp_store.api.get_player(probe), nil,
+		"S4 rejection never creates a record")
+
+	eq(smp_stats.add(probe, "money", -1), nil,
+		"S4 money refused (live field, F14-D1)")
+	eq(smp_stats.add(probe, "shards", 1), nil,
+		"S4 shards refused (live field, F14-D1)")
+	eq(smp_stats.add(probe, "playtime", 1), nil,
+		"S4 playtime refused (live field, F14-D1)")
+	eq(smp_stats.add(nil, "kills", -5), nil, "S4 no player rejected")
+	eq(smp_stats.add(probe, "", -5), nil, "S4 no key rejected")
+	eq(smp_stats.get(probe, "kills"), 0,
+		"S4 unknown record still reads 0 after the rejections")
 end
 
 return results

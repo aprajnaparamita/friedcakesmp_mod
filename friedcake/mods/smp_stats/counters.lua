@@ -13,6 +13,12 @@
 -- unflushed pending seconds), add() refuses them — money moves through
 -- smp_store.api, playtime through add_playtime.
 --
+-- Counters are monotonic (f14 §4.1.2): add() rejects negative
+-- increments with `nil, err` before touching the store, so a counter
+-- can never decrease — the rule is enforced, not conventional (S4).
+-- Every shipped caller passes a positive delta, so behaviour is
+-- unchanged.
+--
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
@@ -48,6 +54,9 @@ function smp_stats.add(player_or_name, key, value)
 	if not value or value ~= value or value == math.huge then
 		return nil, "not a number"
 	end
+	-- Monotonic (f14 §4.1.2): a counter never decreases. Rejected in
+	-- the validate phase, before ensure_player — no store touch (S4).
+	if value < 0 then return nil, "counters are monotonic: negative increment" end
 	local rec = smp_store.api.ensure_player(name)
 	rec.stats = rec.stats or {}
 	local new = math.floor((tonumber(rec.stats[key]) or 0) + value)
