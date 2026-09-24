@@ -184,7 +184,7 @@ records; `sell` and `shop` read `stats.money_made_from_sell` and
 | `scoreboard.enabled` | true | **OBSERVED** [F0287] |
 | `scoreboard.title` | `server.name` | PROPOSED (observed title `Voire` unexplained, V-76) |
 | `stats.persist_interval` | 60 s | PROPOSED |
-| `api.mode` | `off` (`off`, `snapshot`, `push`) | PROPOSED |
+| `api.mode` | `snapshot` (`off`, `snapshot`, `push`) | PROPOSED |
 
 ## 8. Mineclonia implementation
 
@@ -234,7 +234,7 @@ records; `sell` and `shop` read `stats.money_made_from_sell` and
 | F14-D2 | V-79 answered (engine-verified @ `~/dev/mineclonia-git`): `mcl_damage.from_punch` sets `mcl_reason.direct` = the punching object and `mcl_reason.source` = `luaentity._source_object` for projectiles (the shooter); `finish_reason` folds `source = source or direct`. Wrapper reads `source or direct`, then `name_from_object` walks player -> `_source_object` -> `entity.owner` (tamed wolf credits its owner). `on_die(self, pos, mcl_reason)` only fires when the def defines it (`mcl_mobs/physics.lua:217`, which treats a `true` return as "death handled") — so `register_on_mods_loaded` wraps every `mobs_mc:*` def, preserving the original's return. Player kills: `reason.object`, then `reason._mcl_reason` source/direct. With `f10` present (optional dep) our dieplayer hook credits only `deaths` (f10's `credit_kill` owns `kills`), and our leave hook — registered first, since `smp_combat` depends on `smp_stats` — credits `deaths` to a tagged logger under exactly the condition f10 credits the attacker's kill. |
 | F14-D3 | Scoreboard formatter (V-53): local `smp_stats.fmt_scoreboard(cents)` — the third convention (f01 §3.2), lower-case `k/m/b/t` at `fmt_money`'s thresholds, no `$` (the HUD renders `title` + newline + `$ ` + readout, choosing F0287's `Voire $ 754k` form over F0055's), dollars with cents below $1,000 (`7`, `5.50`). `smp_core.fmt_money` is untouched — chat stays `$ 754K`. T6 pins both. |
 | F14-D4 | f12 wiring (V-78): when `smp_settings` is present, `scoreboard.show` (`ON`/`OFF`, default `ON`, label `Scoreboard`) is registered into the observed `Scoreboard` category from `register_on_mods_loaded`. PROPOSED — the category's contents are unobserved (f12 V-36). `scoreboard.enabled` (§7, OBSERVED) remains a separate config gate. `smp_settings` exposes no change callback, so a toggle applies at the next balance update or rejoin; `/stats`'s own display is unaffected. |
-| F14-D5 | `api.mode` default: §7's table says `off`, claim-f14 instructs `snapshot` — implemented **`snapshot`** (the JSON-snapshot path is option 1, §4.4's stated default). `push` is a warned stub (needs `core.request_http_api()` + an external key service); `off` refuses. `/api` issues `fcsmp_ .. sha1` once (`rec.api_key = {key, created}`, §5), re-shows the existing key, `/api delete` revokes, re-issue mints a new key (T10). Message wording PROPOSED (unobserved). Snapshots: `<worldpath>/friedcake_api/leaderboards.json` + `players.json`, rewritten after every rebuild. |
+| F14-D5 | `api.mode` default: §7's table says `off`, claim-f14 instructs `snapshot` — implemented **`snapshot`** (the JSON-snapshot path is option 1, §4.4's stated default). `push` is a warned stub (needs `core.request_http_api()` + an external key service); `off` refuses. `/api` issues `fcsmp_ .. sha1` once (`rec.api_key = {key, created}`, §5), re-shows the existing key, `/api delete` revokes, re-issue mints a new key (T10). Message wording PROPOSED (unobserved). Snapshots: `<worldpath>/friedcake_api/leaderboards.json` + `players.json`, rewritten after every rebuild. — **resolved (D4, 2026-09-24): §7 now says `snapshot`; code was already `snapshot` (`smp_stats/init.lua:43-50`), unchanged.** |
 | F14-D6 | V-23 layouts (PROPOSED): `/stats` = prompt menu `Stats` / `Stats - <name>` of `Label: Value` rows + `Back`; `/leaderboard` = prompt picker `Leaderboard` with the ten category buttons in §4.2.1 order + `Back`; `/leaderboard <cat>` = container menu `<Category> (Page N)`, textlist rows `@1. @2 — @3`, page size 10, `<`/`>`/`Back`, player inventory (smp_orders grammar). Field labels are the claim's verbatim strings; unknown categories and forged `cat_*` fields are refused/ignored. |
 | F14-D7 | `/baltop` (f01-owned command, f14-owned data source per §4.2.2): `core.override_chatcommand` keeps f01's exact chat output — `--- Money Top (page @1/@2) ---` + ten `@1. @2 — @3` rows — but reads the `money` snapshot (top `leaderboards.size`, so pagination covers the top 100) instead of a live full-table sort. Falls back to f01's live implementation until the first rebuild publishes a board. PROPOSED; no `spec/shared` change needed. |
 | F14-D8 | Display details (PROPOSED): leaderboard money rows use the body chat spacing (`1. rich01 — $ 1M`), counts the lower-case quantity suffix, playtime raw seconds (§0.6 silent); `/stats` money rows likewise body-spaced. HUD updates hook `smp_store.api.add_money/take_money/set_money` and join — never poll (§8). |
@@ -254,7 +254,9 @@ records; `sell` and `shop` read `stats.money_made_from_sell` and
 - **Formatter** in F14-D3 (the third convention; T6 pins `754k` vs
   `$ 754K`).
 - **All PROPOSED decisions:** F14-D1 … F14-D9 above — signatures, f12
-  wiring, `api.mode` default conflict (§7 `off` vs claim `snapshot`),
+  wiring, `api.mode` default conflict (§7 `off` vs claim `snapshot`) —
+  resolved (D4, 2026-09-24: §7 default corrected to `snapshot`, code
+  already `snapshot`),
   menu layouts (V-23), `/baltop` override, display details, T11 budget.
 - **Acceptance:** T1–T11 all green under `luajit
   friedcake/dev-tests/test_stats.lua` (186 assertions) plus the in-game
