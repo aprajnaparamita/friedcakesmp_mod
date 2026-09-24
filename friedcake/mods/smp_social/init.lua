@@ -14,6 +14,8 @@
 --
 -- Public surface consumed by f08 (smp_tp) and f10 (smp_combat):
 --   smp_social.blocks(a, b)                — a blocks or ignores b
+--   smp_social.blocks_only(a, b)           — a blocks b (block graph only;
+--                                            RTP pairing, §4.3 / §10.2)
 --   smp_social.ignores(a, b)               — a ignores b
 --   smp_social.is_friend_or_followed(a, b) — b is a friend of a or followed by a
 --   smp_social.send_pm(sender, target, message)

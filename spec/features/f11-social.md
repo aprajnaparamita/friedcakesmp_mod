@@ -152,6 +152,10 @@ Built on follows: `/friend followers`, `/friend following`,
 semantics: following is one-way; mutual follows are friends; friends get join
 and leave notices; at most 200 follows.
 
+The §4.3 effect table applies to follows: a **block** on either edge refuses
+the follow (PROPOSED refusal `This user is not accepting follows`), while an
+**ignore** does not (F11-3, decision record §10.2, tied to V-48).
+
 **This system is load-bearing**, not a side feature: four of the seven observed
 chat settings resolve against it (`f12 §3.3`). Build it before, or with,
 `f12`.
@@ -282,7 +286,7 @@ observed server gives a single generic refusal.
 | V-17 | `/findplayer` output format — unobserved. Implemented as three `<Field>: <Value>` lines (`Name`, `Rank`, `Location`) with the coarse locations `Offline`, `Spawn`, `<Dimension> – <Region>`; see §10.1 |
 | V-18 | Friends and follow semantics — unobserved, yet four chat settings depend on them |
 | V-24 | **Reopened.** No rank prefix appears in any observed chat line, contradicting v0.1's `[Rank] Name: message`. Do ranked players carry a prefix? |
-| V-48 | What distinguishes `/ignore` from `/block`, given the narration says ignore already covers messages and teleports? |
+| V-48 | What distinguishes `/ignore` from `/block`, given the narration says ignore already covers messages and teleports? **Working decision 2026-09-25 recorded in §10.2** (F11-4 RTP pairing is block-only; F11-2 `/pay` cross-note) |
 | V-49 | Is the `/msg` refusal identical for an ignore and for a privacy setting? Specified as identical; unverified — implemented as one shared literal |
 | V-50 | Is there a friends menu, or is `/friend` chat-only? |
 | V-88 | Delivered private-message format — unobserved. The corpus shows only the refusal, never a delivered `/msg`; implemented as `@1 whispers to you: @2` / `You whisper to @1: @2` (PROPOSED) |
@@ -296,6 +300,8 @@ observed server gives a single generic refusal.
 smp_social.ignores(a, b)                -- true iff a has b on their ignore list
 smp_social.is_blocked(a, b)             -- true iff a has b on their block list (strict)
 smp_social.blocks(a, b)                 -- is_blocked(a,b) OR ignores(a,b)
+smp_social.blocks_only(a, b)            -- is_blocked(a,b) — block graph only (§4.3)
+smp_social.follow_blocked(a, b)         -- is_blocked(a,b) OR is_blocked(b,a) (§4.3)
 smp_social.follows(a, b)                -- a follows b (case-insensitive)
 smp_social.is_friend(a, b)              -- mutual follows
 smp_social.is_friend_or_followed(a, b)  -- b is a friend of a, or a follows b
@@ -307,11 +313,11 @@ smp_social.generic_refusal()                     -- the one OBSERVED refusal lit
 
 `blocks()` deliberately folds ignore in: f08 gates `/tpa` on `blocks`
 alone (`smp_tp.bridge.blocks`) and the narration says ignore covers
-teleport requests [F0287], so folding is what makes T6 hold. One
-consequence: mutually-ignoring players are also excluded from
-`/rtpqueue` pairing, which the PROPOSED row of §4.3 said they would not
-be — acceptable while V-48 is open. If f08 later calls both `ignores`
-and `blocks`, `blocks()` can become strict.
+teleport requests [F0287], so folding is what makes T6 hold. Effects
+the §4.3 table marks **block-only** — payments, follows and RTP-queue
+pairing — use `blocks_only()` instead (decision record **§10.2**,
+2026-09-25, tied to V-48); `blocks()` itself is unchanged, and the
+`/rtpqueue` consumer is still on `blocks()` until f08 switches it.
 
 `is_friend_or_followed(a, b)` follows §4.2 literally: access requires
 the *recipient's* edge (`a` follows `b`). A one-way `b` follows `a`
@@ -332,23 +338,32 @@ sentence.
   is only consulted when `chat.rank_prefix` is true, which it is not
   (V-24). Path carries `TODO(f13)` until the config key is meaningfully
   non-empty.
-- Moderation `smp_admin.is_muted(name) -> bool` (`TODO(admin)`); no mute
-  exists yet, so the bridge answers false.
+- Moderation `smp_admin.is_muted(name) -> bool [, remaining_seconds]` —
+  **D10 = A** (2026-09-24): `smp_admin` ships `mute`/`unmute`/`is_muted`
+  plus `/mute`,`/unmute` (`shared/05` §5.5), so the probe at
+  `bridges.lua` works as written in the full modpack. `smp_social` does
+  not depend on `smp_admin`; when it is absent the probe answers false
+  and `register_on_mods_loaded` logs a warning — no silent dead code
+  (F11-5, §10.2).
 
 **PROPOSED decisions made while implementing (none contradict an
 OBSERVED string):**
 
 1. Anti-spam strings: `You are sending messages too quickly`,
    `Do not repeat yourself`, `You are muted` (§4.1.3 says mutes are
-   enforced here; no mute exists yet).
+   enforced here; the producer arrived with D10 = A — see §10.2).
 2. `/msg` refusal for `chat.private_messages = OFF`:
    `This user is not accepting private messages` — same house style as
    the §6 algorithm, deliberately distinct from the generic refusal.
 3. Delivered PM format (V-88) and `/r` reply: `You have no one to reply to`.
 4. Ignore/block split (§4.3, V-48): implemented as specified, except
    `blocks()` folds ignore so teleport requests are covered (see above).
-   Payments (`/pay`) and follow edges are block-only; `/rtpqueue`
-   exclusion follows `blocks()` and therefore covers ignore too.
+   Payments (`/pay`) and follow edges are block-only: `follow()` now
+   refuses on `follow_blocked()` — a block on either edge, ignore
+   excluded (F11-3, §10.2); `/pay` consults `blocks()` from f01's side
+   (cross-note in §10.2, flagged under V-48). `/rtpqueue` exclusion
+   still follows `blocks()` and therefore still covers ignore — the
+   switch to `blocks_only()` is escalated to f08 (§10.2).
 5. `/findplayer` (V-17): three lines `Name/Rank/Location`; regions are
    nine compass buckets (`Center`, `North`, …) quantised to
    `findplayer.region_band` around world spawn, plus a `Spawn` bucket of
@@ -388,6 +403,27 @@ OBSERVED string):**
 14. `/smp test smp_social` needs the generic test loader f04 also asked
     for; `mods/smp_social/test.lua` returns the standard results table
     and currently runs only through `friedcake/dev-tests/test_social.lua`.
+15. Follow-refusal string (F11-3): `This user is not accepting
+    follows` — the same house style as the §6 generic refusal, stating
+    a reason without naming a block or an ignore, so it reveals nothing
+    (X9). See §10.2.
+
+### 10.2 Fix-wave record (f11 fix brief, 2026-09-25)
+
+Rows of `fixes/f11-social.md` and how each closes. Escalations name the
+file that owns the remaining work. Nothing in `spec/shared/`,
+`spec/plan/`, `spec/README.md`, `fixes/` or another feature's mod was
+edited to produce this table.
+
+| Id | Status | Record |
+|---|---|---|
+| F11-2 | **Contract test landed here; the `/pay` wiring is f01's and already on `main`** | `smp_economy/init.lua:207-209` calls `smp_social.blocks(target, sender) or smp_social.blocks(sender, target)` and answers `You cannot send money to @1.` (f01-owned — not edited). Our side of the contract is asserted by the `F11-2` block in `dev-tests/test_social.lua`: `blocks()` answers true for a blocker, false otherwise, both directions at the call site. **Cross-note under V-48:** that landed call folds ignore in (it uses `blocks()`), while §4.3's PROPOSED payments row says ignore → *no*; flagged for the integrator against `fixes/f01-economy-core.md` — no code changed here. |
+| F11-3 | **Fixed** | `follow()` now refuses when either side blocks the other: `smp_social.follow_blocked(a, b)` in `friends.lua`, checked after self/existence and **before** the mutate (no yields, `shared/02 §2.3`). Refusal (PROPOSED): `This user is not accepting follows` — generic reason, never names the block (X9, §10.1 item 15). Ignore does **not** refuse follows (§4.3 row: ignore = no). Tests: the `F11-3` block in `dev-tests/test_social.lua` (end-to-end, both directions, incl. the `/friend addsearch` path) and the `F11-3` block in `mods/smp_social/test.lua`. |
+| F11-4 | **Fixed in `smp_social`; the consumer switch ESCALATED** | `smp_social.blocks_only(a, b)` exposed in `graph.lua` (block graph only); `blocks()` semantics unchanged. **Decision, tied to V-48:** RTP-queue pairing is a block-only effect (§4.3 `Exclude from RTP-queue pairing`: ignore = *no*, block = *yes*), so pairing must test `blocks_only()` in both directions, never `blocks()`. The one-line switch lives in **`smp_rtpqueue/init.lua:50`** (`blocked()` must call a `blocks_only` bridge, which also needs a delegate in `smp_tp/bridge.lua`) — both files are f08's mods, so this item is **escalated to `fixes/f08-teleport.md`, which does not exist yet; the overseer holds it.** The old `graph.lua` comment claiming the contradiction was "recorded in §10" was false and is replaced by this entry. |
+| F11-5 | **D10 = A landed; honesty cleanup done inside `smp_social`** | D10 = A (2026-09-24): `smp_admin` ships `mute`/`unmute`/`is_muted` plus `/mute`,`/unmute` (mirror rows `shared/05` §5.5), so the probe at `bridges.lua` works as written; `smp_admin` is integrator-owned and was not edited. Inside `smp_social`: the stale `TODO(admin)`/"no mute graph yet" claims are gone, `register_on_mods_loaded` logs a **warning** when no producer exists, and a producer that errors is warned once (never silently). Tests: the `F11-5` block in `dev-tests/test_social.lua` asserts the load warning **and** drives the `You are muted` path end-to-end with a stub `smp_admin.is_muted`. |
+| F11-6 | **N/A — recorded, nothing built** | Luanti has no server-driven argument-completion API, so tab completion after `/msg`, `/pay`, `/ignore` [F0089, F0282, F0287] cannot be reproduced (spec `f11:30-31`; §10.1 item 13). `smp_social` contains no completion hack (grep clean); command params surface through `/help` instead. **Do not invent a client-side completion.** |
+| F11-7 | **Verified; the one leftover closed** | `87c0eae` wrapped every dimension/compass-sector name, `Spawn`, the `/kill` labels and all nine `info.*` titles in `S()`. Verification against the brief's evidence table found one item still raw — the ` – ` composition at `findplayer.lua:77` — now `S("@1 – @2", …)`; rendered output is unchanged and still asserted by T9. |
+| F11-8 | **Verified (already done)** | §7 declares `findplayer.spawn_radius`, `findplayer.region_band` and the `info.*` keys; the mirror rows are in `shared/06:119-123` under D7/P2. No edit needed. |
 
 ## Proposed shared changes
 
@@ -397,14 +433,24 @@ For the integrator — nothing here blocks T1–T10:
    rows `findplayer.spawn_radius`, `findplayer.region_band` and the
    `info.*` keys as PROPOSED.
 2. `f01-economy-core` / `smp_economy`: cross-cutting X9 expects `/pay`
-   to refuse a blocked sender. `smp_economy` does not consult
-   `smp_social.blocks`; propose `/pay` calls
-   `smp_social.blocks(target, sender)` and answers with the same
-   generic refusal style. Not implementable here (smp_economy is
-   f01-owned).
-3. `f08-teleport`: `smp_tp._is_friend_or_followed` still returns false
+   to refuse a blocked sender. **Landed on `main` 2026-09-24:**
+   `smp_economy/init.lua:207-209` calls
+   `smp_social.blocks(target, sender) or smp_social.blocks(sender,
+   target)` and answers `You cannot send money to @1.` — f01's side,
+   not edited here; contract asserted on our side in
+   `dev-tests/test_social.lua` (§10.2, F11-2). Open follow-up for the
+   integrator: that call folds ignore in, §4.3's PROPOSED payments row
+   says it should not (V-48, §10.2).
+3. `shared/08-ui-strings.md` (§0.8: every player-facing string must be
+   listed): the fix wave adds one PROPOSED refusal,
+   `This user is not accepting follows` (F11-3, §10.2). The catalogue
+   currently carries OBSERVED strings only — whether PROPOSED rows
+   belong there is the integrator's call; proposed, never hand-edited.
+4. `f08-teleport`: `smp_tp._is_friend_or_followed` still returns false
    with `TODO(f11)`; it should delegate to
-   `smp_social.is_friend_or_followed(a, b)` now that it exists.
-4. Operator note for V-89: set the engine's `join_msg` and `leave_msg`
+   `smp_social.is_friend_or_followed(a, b)` now that it exists. Also
+   (F11-4, §10.2): expose `blocks_only` through `smp_tp/bridge.lua` and
+   switch the pairing predicate at `smp_rtpqueue/init.lua:50` to it.
+5. Operator note for V-89: set the engine's `join_msg` and `leave_msg`
    to empty so the Friends/Followed-filtered notices are the only
    join/leave lines.

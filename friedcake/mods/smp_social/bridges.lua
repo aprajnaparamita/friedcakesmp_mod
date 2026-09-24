@@ -90,17 +90,39 @@ function smp_social.rank_display(name)
 end
 
 ----------------------------------------------------------------------
--- Moderation mute. f01's admin helpers do not ship a mute yet; the
--- hook exists so /mute lands without touching smp_social (§4.1.3).
+-- Moderation mute (f11 §4.1.3). D10 = A (2026-09-24): smp_admin ships
+-- mute/unmute/is_muted plus /mute and /unmute (shared/05 §5.5), so in
+-- the full modpack the probe below is live and the old `TODO(admin)`
+-- was stale. smp_admin is integrator-owned (AGENTS rule 4) and is NOT
+-- a dependency of smp_social, so the hook stays a capability probe —
+-- and the probe says out loud at load when no producer exists, instead
+-- of leaving silent dead code (fix brief F11-5, §10.2).
 ----------------------------------------------------------------------
 
+local mute_error_warned = false
+
 function smp_social.is_muted(name)
-	if type(smp_admin) == "table" and smp_admin.is_muted ~= nil then
+	if type(smp_admin) == "table" and type(smp_admin.is_muted) == "function" then
 		local ok, v = pcall(smp_admin.is_muted, name)
 		if ok then return v and true or false end
+		if not mute_error_warned then
+			mute_error_warned = true
+			core.log("warning", "[smp_social] smp_admin.is_muted raised an "
+				.. "error; treating players as unmuted")
+		end
 	end
-	-- TODO(admin): no mute graph yet.
-	return false
+	return false -- no producer: nothing can have set a mute
 end
+
+-- Honesty at load (F11-5): §4.1.3 can only enforce what a producer
+-- can set, so announce the capability gap once mods are loaded.
+core.register_on_mods_loaded(function()
+	if not (type(smp_admin) == "table"
+			and type(smp_admin.is_muted) == "function") then
+		core.log("warning", "[smp_social] no mute producer: "
+			.. "smp_admin.is_muted (D10) is not loaded — §4.1.3 mutes "
+			.. "cannot be set or enforced this session")
+	end
+end)
 
 return smp_social.bridges

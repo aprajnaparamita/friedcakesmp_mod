@@ -20,6 +20,14 @@
 -- the f12 settings bridge (both assumed contract shapes) and the
 -- follow limit.
 --
+-- Fix-wave coverage (fixes/f11-social.md):
+--   F11-2  /pay's contract on our side (stub consumer over blocks())
+--   F11-3  a block on either edge refuses the follow; ignore does not
+--   F11-4  blocks_only() is block-graph-only, blocks() unchanged
+--   F11-5  load-time mute warning + the `You are muted` path end to
+--          end with a stub smp_admin.is_muted (D10 = A)
+--   f12 T9 leg (stranger /msg refusal) is asserted in the T3 block.
+--
 -- The builtin chat pipeline (command dispatch, on_chatcommand
 -- callbacks, default broadcast) is reproduced faithfully from
 -- builtin/game/chat.lua so the unknown-command override is exercised
@@ -225,6 +233,7 @@ local store_data = {}
 local commands = {}            -- core.registered_chatcommands
 local fake = {
 	chat = {},                  -- [name] = { line, ... }
+	logs = {},                  -- { level, msg } recorded by core.log
 	forms = {},                 -- [name] = { formname, spec }
 	players = {},               -- name -> player object (online)
 	auth = {},                  -- names that exist (online or former)
@@ -281,6 +290,12 @@ local function any_chat_contains(s)
 end
 local function reset_chat() fake.chat = {} end
 local function reset_forms() fake.forms = {} end
+local function any_log_contains(s)
+	for _, e in ipairs(fake.logs) do
+		if tostring(e.msg):find(s, 1, true) then return true end
+	end
+	return false
+end
 
 local function make_player(name, pos)
 	fake.auth[name] = true
@@ -358,6 +373,7 @@ core = {
 	get_current_modname = function() return _G.__current_modname or "smp_social" end,
 	get_modpath = function(m) return ROOT .. "/friedcake/mods/" .. m end,
 	log = function(level, msg)
+		fake.logs[#fake.logs + 1] = { level = level, msg = tostring(msg) }
 		if level == "error" then print("[engine error] " .. tostring(msg)) end
 	end,
 	chat_send_player = chat_to,
@@ -632,6 +648,11 @@ eq(last_chat("eve"), REFUSAL, "T3 refusal is verbatim")
 eq(last_chat("eve"),
 	"This user only accepts messages from friends or followed players",
 	"T3 refusal matches the OBSERVED literal")
+-- This same case is f12's T9 leg (fixes/f12-settings.md points here —
+-- one harness, not two): a stranger /msg under Private Messages:
+-- Friends/Followed gets the exact observed refusal.
+eq(last_chat("eve"), REFUSAL,
+	"f12 T9 leg: stranger /msg under Friends/Followed refused verbatim")
 ok(not chat_contains("dana", "supersecret"), "T3 nothing delivered")
 eq(#chat_log("dana"), 0, "T3 recipient is not notified at all")
 
@@ -1106,6 +1127,152 @@ end
 
 eq(smp_social.rank_prefix("alice"), "", "no rank prefix without f13")
 eq(smp_social.rank_display("alice"), "None", "default rank displays as None")
+
+----------------------------------------------------------------------
+-- F11-3 — a block on either edge refuses the follow (§4.3, §4.4)
+----------------------------------------------------------------------
+
+local pat = make_player("pat")     -- blocks quinn
+local quinn = make_player("quinn")
+
+reset_chat()
+run_command("pat", "/block quinn")
+ok(smp_social.blocks("pat", "quinn"), "F11-3 /block recorded")
+
+-- A blocks B → B cannot follow A, and A cannot follow B.
+local f1, f1msg = smp_social.follow("quinn", "pat")
+eq(f1, false, "F11-3 blocked player cannot follow the blocker")
+eq(f1msg, "This user is not accepting follows",
+	"F11-3 refusal is a generic reason that never names the block (X9)")
+eq(smp_social.follow("pat", "quinn"), false,
+	"F11-3 the blocker cannot follow the blocked player either")
+ok(not smp_social.follows("quinn", "pat")
+	and not smp_social.follows("pat", "quinn"),
+	"F11-3 no follow edge is created")
+
+reset_chat()
+run_command("quinn", "/friend addsearch pat")
+eq(last_chat("quinn"), "This user is not accepting follows",
+	"F11-3 refusal reaches /friend addsearch")
+reset_chat()
+run_command("quinn", "/friend follow pat")
+eq(last_chat("quinn"), "This user is not accepting follows",
+	"F11-3 refusal reaches the /friend follow subcommand")
+
+-- Ignore does NOT refuse follows (§4.3: the ignore row is `no`).
+local rita = make_player("rita")
+local sam = make_player("sam")
+reset_chat()
+run_command("rita", "/ignore sam")
+ok(smp_social.blocks("rita", "sam"),
+	"F11-3 ignore still folds into blocks() (unchanged)")
+eq(smp_social.follow("sam", "rita"), true,
+	"F11-3 a pure ignore does not refuse follows (§4.3)")
+smp_social.unfollow("sam", "rita")
+run_command("rita", "/ignore sam") -- un-ignore: leave the graph clean
+reset_chat()
+
+----------------------------------------------------------------------
+-- F11-4 — blocks_only() is block-graph-only; blocks() unchanged
+--
+-- The RTP consumer (smp_rtpqueue/init.lua:50) still reaches blocks()
+-- through smp_tp.bridge.blocks; switching it to blocks_only() is
+-- escalated to fixes/f08-teleport.md and recorded in f11 §10.2 — that
+-- file does not exist yet and the overseer holds it (f08's mods).
+----------------------------------------------------------------------
+
+local meg = make_player("meg")
+local ned = make_player("ned")
+local opal = make_player("opal")
+
+reset_chat()
+run_command("meg", "/ignore ned")
+ok(smp_social.blocks("meg", "ned"),
+	"F11-4 blocks() still folds ignore in (unchanged)")
+ok(not smp_social.blocks_only("meg", "ned"),
+	"F11-4 blocks_only() excludes the ignore graph")
+ok(not smp_social.blocks_only("ned", "meg"),
+	"F11-4 blocks_only() is directional like every graph predicate")
+
+reset_chat()
+run_command("meg", "/block opal")
+ok(smp_social.blocks("meg", "opal"), "F11-4 blocks() covers /block")
+ok(smp_social.blocks_only("meg", "opal"),
+	"F11-4 blocks_only() covers the block graph — the RTP-pairing predicate")
+ok(smp_social.is_blocked("meg", "opal"), "F11-4 is_blocked unchanged")
+eq(smp_social.blocks_only("alice", "bob"), false,
+	"F11-4 nobody blocks anybody: predicate is false")
+reset_chat()
+
+----------------------------------------------------------------------
+-- F11-2 — /pay's contract on our side (stub consumer)
+--
+-- The real wiring landed on main in f01's mod,
+-- smp_economy/init.lua:207-209:
+--   smp_social.blocks(target, sender) or smp_social.blocks(sender, target)
+-- reproduced exactly below. smp_economy is f01-owned — not edited here.
+----------------------------------------------------------------------
+
+local function pay_refused(target, sender)
+	return smp_social.blocks(target, sender) or smp_social.blocks(sender, target)
+end
+
+local tam = make_player("tam")
+local una = make_player("una")
+eq(pay_refused("una", "tam"), false, "F11-2 blocks() false otherwise (strangers)")
+reset_chat()
+run_command("una", "/block tam")
+eq(pay_refused("una", "tam"), true, "F11-2 blocks() true for a blocker")
+reset_chat()
+run_command("una", "/block tam") -- unblock: keep the graph clean
+eq(pay_refused("una", "tam"), false, "F11-2 unblocking restores the leg")
+
+-- blocks() keeps its block-OR-ignore semantics (unchanged). Whether an
+-- ignorer's payment should bounce too is §4.3's PROPOSED payments row —
+-- flagged under V-48 in f11 §10.2; smp_economy is not touched here.
+local vic = make_player("vic")
+local wendy = make_player("wendy")
+reset_chat()
+run_command("vic", "/ignore wendy")
+ok(smp_social.blocks("vic", "wendy"), "F11-2 blocks() folds ignore (unchanged)")
+eq(pay_refused("wendy", "vic"), true, "F11-2 both directions at the call site")
+run_command("vic", "/ignore wendy") -- un-ignore
+reset_chat()
+
+----------------------------------------------------------------------
+-- F11-5 — mute enforcement: honest load warning + stub producer
+-- (D10 = A ships the real producer in smp_admin, which is
+-- integrator-owned and not loaded in this harness)
+----------------------------------------------------------------------
+
+ok(any_log_contains("no mute producer"),
+	"F11-5 warns at load when no mute producer exists")
+ok(not any_log_contains("[smp_admin]"),
+	"F11-5 the absent smp_admin produced no logs of its own")
+
+_G.smp_admin = { is_muted = function(n) return n == "mutedguy" end }
+local mutedguy = make_player("mutedguy")
+
+reset_chat()
+send_chat("mutedguy", "can anyone hear me")
+eq(last_chat("mutedguy"), "You are muted", "F11-5 stub producer fires the hook")
+eq(#chat_log("mutedguy"), 1, "F11-5 the muted sender sees only the refusal")
+ok(not any_chat_contains("can anyone hear me"),
+	"F11-5 the muted message reaches nobody")
+
+send_chat("mutedguy", "still talking")
+eq(last_chat("mutedguy"), "You are muted",
+	"F11-5 mute is checked before the rate limiter (§4.1.3)")
+
+eq(smp_social.is_muted("alice"), false, "F11-5 unmuted players pass through")
+reset_chat()
+send_chat("alice", "ordinary line")
+ok(chat_contains("bob", "<alice> ordinary line"), "F11-5 others still chat")
+
+_G.smp_admin = nil
+eq(smp_social.is_muted("mutedguy"), false,
+	"F11-5 without a producer the probe degrades to not-muted, never errors")
+reset_chat()
 
 ----------------------------------------------------------------------
 -- Commands and aliases are all registered

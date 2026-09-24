@@ -4,6 +4,9 @@
 -- stored); friends and followed players get join and leave notices; at
 -- most social.max_follows (200) follows.
 --
+-- A block on EITHER edge refuses the follow (§4.3 "Refuse their
+-- follows": block = yes, ignore = no — F11-3, §10.2).
+--
 -- The friend/follow graph is load-bearing: four of the seven observed
 -- chat settings (f12 §3.3) resolve against it.
 --
@@ -37,12 +40,26 @@ end
 -- follow / unfollow (also used by tests)
 ----------------------------------------------------------------------
 
+-- §4.3 effect table: a BLOCK refuses follows (both directions), an
+-- IGNORE does not. PROPOSED row, tied to V-48; decision record in f11
+-- §10.2 (F11-3). Exported so the in-mod suite can assert the split
+-- without needing two existing player accounts.
+function smp_social.follow_blocked(a, b)
+	return smp_social.is_blocked(a, b) or smp_social.is_blocked(b, a)
+end
+
 function smp_social.follow(a, b)
 	if a:lower() == b:lower() then
 		return false, S("You cannot follow yourself")
 	end
 	if not player_exists(b) then
 		return false, S("Player @1 does not exist", b)
+	end
+	-- Validate before mutate, no yields (shared §2.3). Generic refusal
+	-- in the §6 style: it states a reason without naming the block, so
+	-- it reveals nothing to the refused side (X9).
+	if smp_social.follow_blocked(a, b) then
+		return false, S("This user is not accepting follows")
 	end
 	local already = false
 	local full = false
