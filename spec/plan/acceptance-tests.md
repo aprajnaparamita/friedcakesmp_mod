@@ -48,6 +48,16 @@ set at every phase boundary.
 | X9 | **Privacy cascade.** A blocks B: B's `/msg`, `/pay`, `/tpa` and `/rtpqueue` pairing all refuse, each with a generic message that reveals nothing | f11, f01, f08 |
 | X10 | **Protection cascade.** Inside the spawn radius: no digging, no PvP tag, no amethyst drill damage, no `/rtp` landing, no bounty payout | f15, f10, f06, f08 |
 
+### Seam policy (D11)
+
+Cross-mod **seam existence** and **load order** are covered headlessly by
+`dev-tests/test_integration.lua` (D11, 2026-09-24), run with the rest of the
+suite at every phase boundary: it dofiles every `load_mod`-enabled mod in
+engine-faithful dependency order against the recorded
+`engine_api_surface.txt`, and fails on any load error, unknown global, or
+missing cross-mod seam. The X1–X10 drills remain the in-game behavioural
+layer (stub-free seam *behaviour* still needs a live server).
+
 ## Evidence gaps that block tests
 
 Some tests cannot be finalised until an open question closes
