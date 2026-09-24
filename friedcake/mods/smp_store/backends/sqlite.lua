@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS ledger (
 );
 CREATE INDEX IF NOT EXISTS ledger_actor_time ON ledger(actor, time DESC);
 CREATE INDEX IF NOT EXISTS ledger_time       ON ledger(time DESC);
+
+CREATE TABLE IF NOT EXISTS history (
+  kind       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  id         INTEGER NOT NULL,
+  t          INTEGER NOT NULL,
+  entry_json TEXT NOT NULL,
+  PRIMARY KEY (kind, name, id)
+);
 ]]
 
 ----------------------------------------------------------------------
@@ -347,6 +356,56 @@ function driver.ledger_for(actor, page, size)
 	end
 	s:reset()
 	return entries, math.max(1, math.ceil(total / size))
+end
+
+-- History lists (D12): one append-only list per (kind, name), rows in the
+-- `history` table. Ids are monotonic per (kind, name): pruning only drops
+-- lower ids, so MAX(id) never goes backwards.
+function driver.append_history(kind, name, entry, cap)
+	cap = math.max(1, math.floor(tonumber(cap) or 100))
+
+	local next_id = 1
+	local max_s = prepare(
+		"SELECT COALESCE(MAX(id), 0) FROM history WHERE kind = ? AND name = ?")
+	max_s:bind(1, kind)
+	max_s:bind(2, name)
+	if max_s:step() == sqlite3.ROW then
+		next_id = (tonumber(max_s:get_value(0)) or 0) + 1
+	end
+	max_s:reset()
+
+	entry.id = next_id
+	entry.t = entry.t or os.time()
+
+	local s = prepare([[
+		INSERT INTO history (kind, name, id, t, entry_json)
+		VALUES (?, ?, ?, ?, ?)
+	]])
+	s:bind(1, kind)
+	s:bind(2, name)
+	s:bind(3, next_id)
+	s:bind(4, entry.t)
+	s:bind(5, core.write_json(entry))
+	local _, err = s:step()
+	s:reset()
+	if err then die("append_history failed: " .. tostring(err)) end
+
+	-- FIFO prune: keep the newest `cap` entries, drop the oldest ids.
+	local d = prepare([[
+		DELETE FROM history
+		WHERE kind = ? AND name = ? AND id <=
+		  (SELECT MAX(id) FROM history WHERE kind = ? AND name = ?) - ?
+	]])
+	d:bind(1, kind)
+	d:bind(2, name)
+	d:bind(3, kind)
+	d:bind(4, name)
+	d:bind(5, cap)
+	local _, derr = d:step()
+	d:reset()
+	if derr then die("append_history prune failed: " .. tostring(derr)) end
+
+	return next_id
 end
 
 function driver.flush()

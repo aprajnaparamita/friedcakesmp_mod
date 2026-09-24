@@ -46,6 +46,14 @@
 --   );
 --   CREATE INDEX ledger_actor_time ON ledger(actor, time DESC);
 --   CREATE INDEX ledger_time       ON ledger(time DESC);
+--   CREATE TABLE history (
+--     kind       TEXT NOT NULL,
+--     name       TEXT NOT NULL,
+--     id         BIGINT NOT NULL,
+--     t          BIGINT NOT NULL,
+--     entry_json JSONB NOT NULL,
+--     PRIMARY KEY (kind, name, id)
+--   );
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -72,6 +80,7 @@ local driver = {
 	update_player_field = not_implemented,
 	append_ledger      = not_implemented,
 	ledger_for         = not_implemented,
+	append_history     = not_implemented,
 	flush              = function() end,
 	close              = function() end,
 }

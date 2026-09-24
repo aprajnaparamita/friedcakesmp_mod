@@ -28,6 +28,10 @@ update_player_field(name, key, value)          -- atomic partial update
 append_ledger(entry) -> id                     -- id is auto-assigned, monotonic
 ledger_for(actor, page, size) -> {entries, total_pages}
 
+append_history(kind, name, entry, cap) -> id   -- one list per (kind, name),
+                                               -- FIFO-pruned to cap (default
+                                               -- 100); id monotonic per list
+
 create_index(name, columns)                    -- free-form per backend
 migrate()                                      -- idempotent schema setup
 close()                                        -- flush + close handles
@@ -76,6 +80,9 @@ Reason codes are pinned in `spec/shared/02-architecture.md` §2.6 R3.
 
 - One JSON document per player: key = player name, value = JSON record.
 - Ledger: key `ledger:NNNNN` for entry N, written append-only.
+- History lists: keys `history:<kind>:<name>:NNNNN` for entry N plus
+  `history:<kind>:<name>:nextid`, written append-only; the oldest entries
+  are pruned to `cap` (FIFO, the newest win).
 - All operations in `core.get_mod_storage()`'s namespace.
 - Pros: zero setup, works in any Minetest build.
 - Cons: single-thread writes, no real index; leaderboards are O(N) at startup.
@@ -122,6 +129,15 @@ CREATE TABLE IF NOT EXISTS ledger (
 );
 CREATE INDEX IF NOT EXISTS ledger_actor_time ON ledger(actor, time DESC);
 CREATE INDEX IF NOT EXISTS ledger_time       ON ledger(time DESC);
+
+CREATE TABLE IF NOT EXISTS history (
+  kind       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  id         INTEGER NOT NULL,
+  t          INTEGER NOT NULL,
+  entry_json TEXT NOT NULL,
+  PRIMARY KEY (kind, name, id)
+);
 ```
 
 ### `postgres` (stub)

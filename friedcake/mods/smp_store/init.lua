@@ -170,6 +170,27 @@ function smp_store.api.ledger_for(actor, page, size)
 	return smp_store._driver.ledger_for(actor, page, size)
 end
 
+-- History lists (D12, 2026-09-24): one append-only list per (kind, name),
+-- backed by every driver.
+--   kind     string namespace — "sell", "auction", ... (extensible)
+--   name     player name; offline names work, like the rest of the store
+--   entry    plain table, stored verbatim; the driver stamps `t = os.time()`
+--            unless the caller set one
+--   cap      optional prune window; default 100 (sell.history_size default)
+-- Appends are FIFO-pruned to `cap`, keeping the newest entries. Returns
+-- `id`: a monotonic integer *per (kind, name)* — 1, 2, 3, ..., continuing
+-- across appends and prunes (and restarts), never a float. Money anywhere
+-- inside an entry is integer cents; it is stored verbatim, never computed
+-- on. No yields anywhere in this path (shared §2.3).
+function smp_store.api.append_history(kind, name, entry, cap)
+	assert(smp_store._driver, "store not started")
+	assert(type(kind) == "string" and kind ~= "", "append_history: bad kind")
+	assert(type(name) == "string" and name ~= "", "append_history: bad name")
+	assert(type(entry) == "table", "append_history: bad entry")
+	cap = cap or 100
+	return smp_store._driver.append_history(kind, name, entry, cap)
+end
+
 function smp_store.api.begin()
 	if smp_store._driver.begin then smp_store._driver.begin() end
 end

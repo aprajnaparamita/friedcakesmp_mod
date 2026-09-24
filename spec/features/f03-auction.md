@@ -290,6 +290,23 @@ function smp_ah.buy(player, id, seen_version)
 end
 ```
 
+### 6.3 History storage seam (decided D12, 2026-09-24)
+
+Auction history rows append through the generic store API — the same seam
+f02 uses, namespaced by `kind`, one API serving both features:
+
+```lua
+smp_store.api.append_history("auction", name, entry)   -- -> id
+```
+
+`kind` is `"auction"`; `name` is the history owner's player name (offline
+names work, same rule as the rest of the store); `entry` is a plain table
+carried verbatim — the driver stamps `t = os.time()` unless the caller set
+one, and money inside stays integer cents. Appends are append-only per
+`(kind, name)` and FIFO-pruned to `cap` (optional argument, default 100);
+`id` is a monotonic integer per `(kind, name)`, never a float. Wiring
+`smp_ah`'s history storage onto this call stays the f03 brief's row.
+
 ## 7. Configuration
 
 | Key | Default | Status |
