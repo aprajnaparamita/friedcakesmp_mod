@@ -525,3 +525,16 @@ The user approved four bundles; all are executed here.
 - **f09 (homes):** worktree `coconut-f09`, branch `agent/f09-homes-fixes`, base `481839f` (f08 merged, so `smp_tp` mod is current). Brief rows H1–H3 are **verify-don't-redo** (B3 fixes pre-applied); H4 (config) is the only in-scope implementation.
 - **f04 (orders):** worktree `coconut-f04`, branch `agent/f04-orders-fixes`, base `481839f` (f06 merged, cycle cut done). New row O9 (terminal full stop on `Insufficient funds.` + `test_orders.lua:828` literal). O2/O3/O8 remain ESCALATE → D7.
 - **Still open after these:** f02 (sell), f13 (ranks) — wave C, dispatch after f04/f09 merge. D13 backlog (5 store/core items), V-48 already ruled, F12-8 (`eco.pay_accept`), F-6 bounty period (overseer post-f10, done).
+
+## 20. f09 (homes) merged (2026-09-25)
+
+- **Merge:** `bab9913` → `8872ed3` (2 files: `smp_tp/test.lua` + in-mod tests, `spec/features/f09-homes.md` outcomes doc)
+- **Gate:** 25/27 on main — **test_config_mirror** 2 expected violations (f06 `amethyst.shovel_nodes`); **test_engine_apis** pre-existing false positive (`smp_ah/test.lua`). All feature tests pass.
+- **Rows:**
+  - H1: VERIFIED — `smp_tp/init.lua:33` `dofile` wiring present
+  - H2: VERIFIED — `mod.conf` deps correct
+  - H3: VERIFIED + HARNESS HONESTY — no `core.modpath`; test loads `init.lua` which wires `homes.lua`; test fails if wiring removed
+  - H4: FIXED — code reads 4 `smp_tp.homes.*` keys via `setting()`; §7 `default_icon` default updated to `mcl_beds:bed_red_bottom` (matches code); `shared/06` rows correct; mirror correction proposed in §11.4
+- **Escalations:** §11.4 proposes `shared/06` mirror change for `smp_tp.homes.default_icon` default (OBSERVED → PROPOSED); `homes.slots_*` renaming tracked in D7 follow-up (P2).
+- **Index row annotated** in `fixes/README.md`.
+- **f04 remains active** — still running in its worktree.
