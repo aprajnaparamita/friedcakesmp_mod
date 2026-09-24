@@ -334,7 +334,29 @@ The audit above is the *baseline*; this records what happened next.
 - **Stale-reference fix:** `spec/features/f11-social.md` §10.2 F11-4 said
   `fixes/f08-teleport.md` "does not exist yet" — true when filed, stale
   after the GAP-1 commit `4585552`; retargeted to **row TP13**.
-- **Still running:** f01, f07 (background agents). Still open: NOTE-1
+- **Second dispatch wave (2026-09-25, from `2b5f16c`):** f08, f06, f03,
+  f12, f10 — five background agents, worktrees `coconut-f08/f06/f03/f12/f10`,
+  branches `agent/f08-teleport-fixes`, `agent/f06-shard-fixes`,
+  `agent/f03-auction-fixes`, `agent/f12-settings-fixes`,
+  `agent/f10-combat-fixes`. Each got the standard payload (AGENTS.md → its
+  brief → its Depends rulings → `spec/shared/` → its slice of the
+  acceptance tests) plus per-agent notes: f08's TP13 hand-off is satisfied
+  (`blocks_only` merged); f06 owns the single cut of the
+  `orders → shardshop → amethyst → orders` cycle (exactly one edge) and
+  F06-11; f03 owns the `ah.history` DECLARED_ONLY entry in
+  `test_config_mirror.lua`; f12 has F12-4 unblocked, F12-2 → D3, F12-7 →
+  D7; f10 has C4 and must touch neither `mod.conf`.
+- **Two dispatches deliberately HELD:**
+  - **f04 (orders)** — it shares the `orders → shardshop → amethyst →
+    orders` cycle cut with f06 (both briefs claim ownership of different
+    sides). Dispatching both in parallel risks cutting two edges of one
+    cycle and losing an ordering hint. **Sequence: after f06 merges.**
+    It also shares `dev-tests/test_config_mirror.lua` (its
+    `orders.slots.*` entry) with f03.
+  - **f09 (homes)** — same mod as the running f08 (`smp_tp`; homes are
+    teleport destinations, so their file sets overlap), and the spec
+    dependency runs f09 → f08. **Sequence: after f08 merges.**
+- **Still running:** f01, f07 (wave A) plus f08, f06, f03, f12, f10. Still open: NOTE-1
   (E-09), `smp_economy.give`, the two `optional_depends` cycles
   (f02/f04, f04/f06), push blocked (SSH passphrase), E-06/E-17/E-21
   store-side escalations (D13+ candidates), V-48 ruling above.
