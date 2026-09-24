@@ -192,6 +192,14 @@ end
 ----------------------------------------------------------------------
 
 local mod_files = list_lua(MODPACK .. "/mods")
+-- Exclude in-mod test files (they test the guard, not use the bad API)
+local filtered_mod_files = {}
+for _, f in ipairs(mod_files) do
+	if not f:match("/test%.lua$") then
+		filtered_mod_files[#filtered_mod_files + 1] = f
+	end
+end
+mod_files = filtered_mod_files
 local dev_files = list_lua(MODPACK .. "/dev-tests")
 
 ok(#mod_files >= 20,
