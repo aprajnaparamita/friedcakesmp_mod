@@ -321,9 +321,14 @@ one, and money inside stays integer cents. Appends are append-only per
 | `ah.rate_limit` | 1 | PROPOSED |
 | `ah.sweep_interval` | 60 s | PROPOSED |
 | `ah.sweep_budget` | 200 | PROPOSED |
-| `ah.history_page`, `ah.history_pages` | 100, 10 | PROPOSED |
-| `ah.sorts` | `{lowest_price, highest_price, recently_listed}` | **OBSERVED** [F0118] |
-| `ah.history` | 100 per page, 10 pages | LIVE [S23] |
+| `ah.history_page`, `ah.history_pages` | 100, 10 | PROPOSED (back-compat aliases for `ah.history`) |
+| `ah.sorts` | `lowest_price,highest_price,recently_listed` | **OBSERVED** [F0118]; comma-separated list |
+| `ah.history` | `100,10` | LIVE [S23]; comma-list `per_page,pages` (PROPOSED encoding) |
+| `ah.reclaim_days` | 30 d | PROPOSED |
+| `ah.insert_slots` | 5 | PROPOSED |
+| `ah.rate_limit` | 1 | PROPOSED |
+| `ah.sweep_interval` | 60 s | PROPOSED |
+| `ah.sweep_budget` | 200 | PROPOSED |
 
 ## 8. Mineclonia implementation
 
@@ -369,6 +374,10 @@ one, and money inside stays integer cents. Appends are append-only per
 | V-40 | Is there a purchase confirmation dialog? Never opened on camera |
 | V-41 | Where are seller name and time remaining shown? Not on the board tooltip |
 | V-42 | How are listings cancelled or reclaimed? `Your Items` was opened but no listing was clicked |
+| A2 | **PROPOSED:** `Match lowest` button on `Confirm Listing` — tooltip `Click to match lowest price`; when no active listings exist for the item, the draft price is left unchanged; the matched price is the lowest *unit* price from the index, multiplied by the stack count to produce a total price; out-of-bounds result is caught by the normal validation path (no yields). |
+| A4 | **PROPOSED:** `ah.history` encoding as comma-list `per_page,pages` (e.g. `100,10`). The legacy keys `ah.history_page` / `ah.history_pages` remain as back-compat aliases; if both are set, `ah.history` wins. |
+| A5 | **ESCALATED (D7):** `ah.slots` table uses dotted scalars (`ah.slots.default`, `ah.slots.tier1`, …) while f04's `orders.slots` uses underscore scalars (`orders.slots_default`, `orders.slots_tier1`, …). D7 (2026-09-24) ruled "dotted scalar primary + underscore alias" for both. f03 keeps the documented dotted spelling so an operator's `ah.slots.default = 45` works; the mirror reconciliation is D7's. |
+| A6 | **PROPOSED (§7 bookkeeping):** five keys read by code but undeclared in f03 §7 are now declared above with their defaults — `ah.reclaim_days` (30 d), `ah.insert_slots` (5), `ah.rate_limit` (1/s), `ah.sweep_interval` (60 s), `ah.sweep_budget` (200). `ah.reclaim_days` was already sanctioned by §11.1; rate limiting by shared §2.6 R9. Mirror additions are D7's (proposed in §10, never hand-edited). |
 
 ## 11. Implementation notes (agent/f03-auction)
 
@@ -483,3 +492,15 @@ Nothing here is edited by the f03 agent; the integrator merges what it wants.
    every shipped Lua file (smp_core, smp_store, smp_economy, the dev tests)
    uses tabs. f03 uses tabs to match. Propose the guide be corrected or the
    files be re-indented.
+
+## Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence |
+|---|---|---|
+| A1 | VERIFIED | `smp_ah/init.lua:1276` uses `core.register_globalstep`; `ah_harness.lua:776` provides it; `rg 'register_on_globalstep' friedcake/mods` = 0 hits |
+| A2 | CLOSED | `smp_ah/formspec.lua` adds `Match lowest` button on `Confirm Listing`; `smp_ah/init.lua` handler rewrites draft price from unit-price index; PROPOSED details in §10 A2 |
+| A3 | CLOSED | `smp_ah/init.lua` `reload_cfg` parses `ah.sorts` as comma-list; `smp_ah/listings.lua` `SORTS` table driven by config; garbage falls back to default |
+| A4 | CLOSED | `smp_ah/init.lua` reads `ah.history` (comma `per_page,pages`); `ah.history_page`/`ah.history_pages` as aliases; `listings.lua` caps use configured values |
+| A5 | ESCALATED | Recorded in §10 A5 pointing at D7; dotted spelling kept in code; mirror reconciliation is integrator-owned |
+| A6 | CLOSED | Five keys added to §7 as PROPOSED with defaults; §10 A6 notes mirror is D7's |
+| A7 | VERIFIED | `grep -rn "TODO(f03)" friedcake/mods` matches only `smp_orders` (f04's mod); `smp_ah/init.lua:656-661` stub retained |

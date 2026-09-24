@@ -226,6 +226,14 @@ local CONTROLS = {
 		},
 		probe = "anvil",
 	},
+	-- `Match lowest` — Quick Auction Sell affordance (f03 §4.12, PROPOSED).
+	-- Uses a comparator (redstone) to suggest price comparison.
+	match_lowest = {
+		candidates = {
+			"mcl_redstone:comparator", "mcl_redstone:comparator_off",
+		},
+		probe = "comparator",
+	},
 }
 fs.CONTROLS = CONTROLS
 
@@ -682,9 +690,9 @@ end
 ----------------------------------------------------------------------
 
 --- The single displayed stack, as a non-interactive image with a positional
---- tooltip, plus the Confirm/Cancel controls.
+--- tooltip, plus the Confirm/Cancel controls, and optionally a Match Lowest control.
 local function confirm_grid(stack_name, tooltip_lines, confirm_name, confirm_lines,
-		cancel_name, cancel_lines)
+		cancel_name, cancel_lines, match_lowest_name, match_lowest_lines)
 	local g = G.small
 	local y = g.row_y
 	local out = {
@@ -703,6 +711,10 @@ local function confirm_grid(stack_name, tooltip_lines, confirm_name, confirm_lin
 		fs.control(cancel_name, sx(7), y, "cancel", cancel_lines),
 		fs.player_inventory(g),
 	}
+	if match_lowest_name and match_lowest_lines then
+		-- Place Match Lowest at column 1 (left of Confirm)
+		out[#out + 1] = fs.control(match_lowest_name, sx(1), y, "match_lowest", match_lowest_lines)
+	end
 	return table.concat(out)
 end
 
@@ -722,9 +734,10 @@ function fs.confirm_listing(rec, price)
 	return table.concat({
 		preamble(g.w, g.h),
 		label(G.x0, 0.375, S("Confirm Listing")),
-		confirm_grid(rec.name, lines, "ah_confirm", {
-			S("Confirm"), S("Click to list item (@1)", fs.money_inline(price)) },
-			"ah_cancel", { S("Cancel"), S("Click to go back") }),
+		confirm_grid(rec.name, lines,
+			"ah_confirm", { S("Confirm"), S("Click to list item (@1)", fs.money_inline(price)) },
+			"ah_cancel", { S("Cancel"), S("Click to go back") },
+			"ah_match_lowest", { S("Match lowest"), S("Click to match lowest price") }),
 	})
 end
 
