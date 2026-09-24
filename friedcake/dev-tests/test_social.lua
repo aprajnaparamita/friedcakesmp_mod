@@ -421,7 +421,7 @@ core = {
 		fake.on_mods_loaded[#fake.on_mods_loaded + 1] = fn
 	end,
 	register_on_shutdown = function(fn) fake.on_shutdown[#fake.on_shutdown + 1] = fn end,
-	register_on_globalstep = function(fn) fake.on_globalstep[#fake.on_globalstep + 1] = fn end,
+	register_globalstep = function(fn) fake.on_globalstep[#fake.on_globalstep + 1] = fn end,
 	registered_aliases = {},
 }
 

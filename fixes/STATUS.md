@@ -216,3 +216,41 @@ The audit above is the *baseline*; this records what happened next.
   (SSH passphrase): `agent/integrator-decisions` + the six P-branches are
   all local. Wave-1 worktrees remain under
   `$TMPDIR/coconut-p1..p6` and can be removed with `git worktree remove`.
+
+## 10. Wave 0 by the overseer (2026-09-24, same session)
+
+- **`main` fast-forwarded to `agent/integrator-decisions`** — zero
+  divergence, so a `--ff-only` merge. This closes §1 ("`fixes/` is not on
+  `main`"; "main still does not boot") and §4 finding 4: the pack, the
+  briefs, the rulings and the P1–P6 execution are now on `main`, and
+  README row 00's ✅ is no longer branch-conditional. §1–§6 above stay as
+  the **baseline** record; this section supersedes them where they conflict.
+  (Push still blocked — `origin/main` lags until the SSH key is loaded.)
+- **`agent/f11-social` merged into `agent/integrator-decisions`** (§9's
+  recommended step 4). One conflict — `spec/features/f11-social.md` §7,
+  both sides having edited the same rows (P2's mirror sweep vs the f11
+  branch) — resolved **by code, per D7**: `info.help` falls back to the
+  generated command list (never "not configured"), `info.rules` **and**
+  `info.ranks` answer `This text is not configured` (the f11 side grouped
+  `info.ranks` with the links — wrong, `info.lua:162-167` has no
+  `link = true`), the other six answer `This link is not configured`.
+  `shared/06:121` was split to match the same three groups (Status/Spec
+  cells kept).
+- **The f11 branch predated B1:** its `test_social.lua:424` stubbed
+  `register_on_globalstep` — exactly the B4-1 class the guard exists to
+  catch, and it made `smp_store`'s init fail. Renamed to
+  `register_globalstep` (capture list unchanged).
+- **Suite now 26/26** — `test_social` joins the gate.
+- **STATUS §3 reconciliation applied to the briefs** (the integrator had
+  annotated the *rulings* on the Depends rows; the *pre-fixed rows* were
+  still open, so a verbatim agent would have re-done finished work):
+  F07-1, F07-2, F06-1, S1, E-01 marked **ALREADY FIXED on `main`** (each
+  re-verified in tree first); E-14, E-16 marked **RESOLVED** (no §10
+  escalation to file); F11-1, F11-8 marked **done/merged**; F11-7 marked
+  fixed (`87c0eae`); F12-4 marked **UNBLOCKED** (harness exists).
+- **f11 open rows after the merge:** F11-3 (follow block check), F11-4
+  (`blocks_only` predicate), F11-5 (D10 honesty cleanup) — that is the
+  f11-finish agent's scope.
+- **Still open, unchanged:** GAP-1 (f08/f09/f10 briefs), NOTE-1 (E-09,
+  f01's), the boot-aborting `optional_depends` cycles on the f01/f02/f04/
+  f06/f14 Depends rows, push blocked (SSH passphrase).

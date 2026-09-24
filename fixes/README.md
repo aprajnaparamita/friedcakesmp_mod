@@ -32,7 +32,7 @@ paste it). No other context is required.
 | f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
 | f09 | [`f09-homes.md`](f09-homes.md) ⚠ *brief file missing* | Homes | `smp_tp` (homes) | 4 | **high — feature never loads** | `agent/f09-homes-fixes` |
-| f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | high — 0 tests | `agent/f11-social-fixes` |
+| f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | high — harness landed (F11-1/F11-8 ✅ merged 2026-09-24); F11-3/4/5 open | `agent/f11-social-fixes` |
 | f08 | [`f08-teleport.md`](f08-teleport.md) ⚠ *brief file missing* | Teleport | `smp_tp`, `smp_rtpqueue` | 8 | high | `agent/f08-teleport-fixes` |
 | f14 | [`f14-stats.md`](f14-stats.md) | Stats | `smp_stats` | 4 | high (incl. blocker site) | `agent/f14-stats-fixes` |
 | f06 | [`f06-shards.md`](f06-shards.md) | Shards | `smp_shards`, `smp_shardshop`, `smp_amethyst` | 5 | medium | `agent/f06-shard-fixes` |
@@ -118,9 +118,11 @@ indexed but **have no file** (14 unassigned gaps — see
 [`STATUS.md`](STATUS.md)); they must be authored before those features get fix
 agents.
 
-**Caveat:** `fixes/` exists only on `agent/p0-engine-apis` /
-`agent/integrator-decisions`, never on `main` — see [`STATUS.md`](STATUS.md).
-Base every branch on `agent/integrator-decisions`, not `main`.
+**Caveat:** every branch below is local — push is blocked (SSH passphrase).
+Branch bases: before the 2026-09-24 fast-forward, from
+`agent/integrator-decisions` (it carried `fixes/`, the rulings, and the 00
+engine-API fixes); from then on `main` and `agent/integrator-decisions`
+point at the **same commit**, so branch from either (they are identical).
 
 ## Suggested order
 
