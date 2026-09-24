@@ -177,7 +177,12 @@ end
 | `economy.max_balance` | $10¹³ | CLONE [C1] |
 | `economy.flag_threshold` | $1,000,000 | PROPOSED |
 | `economy.flag_min_playtime` | 7,200 s | PROPOSED |
+| `economy.tab_complete` | true | PROPOSED |
+| `ledger.page_size` | 20 | PROPOSED |
 | `store.flush_interval` | 10 s | PROPOSED |
+| `store.backend` | `auto` | PROPOSED |
+| `store.max_balance` | $10¹³ | PROPOSED |
+| `store.ledger_page_size` | 20 | PROPOSED |
 
 ## 8. Mineclonia implementation
 

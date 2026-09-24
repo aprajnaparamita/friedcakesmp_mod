@@ -334,6 +334,10 @@ end
 | `orders.sorts` | `{most_per_item, most_paid, recently_listed}` | **OBSERVED** [F0180] |
 | `orders.default_amount` | 1 | **OBSERVED** [F0199] |
 | `orders.allow_self_delivery` | false | PROPOSED |
+| `orders.page_size` | 45 | PROPOSED |
+| `orders.min_price` | $1 | PROPOSED |
+| `orders.flush_interval` | 10 s | PROPOSED |
+| `orders.expire_check_interval` | 60 s | PROPOSED |
 
 ## 8. Mineclonia implementation
 

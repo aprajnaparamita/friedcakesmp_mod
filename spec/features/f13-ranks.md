@@ -123,7 +123,7 @@ end
 | `ranks.chat_prefix` | `""` (no prefix) | **OBSERVED** by absence [F0269] — see V-24 |
 | `ranks.expiry_check_interval` | 3,600 s | PROPOSED |
 | `ranks.store_text` | configurable store URL and blurb | PROPOSED |
-| Slot tables (`homes.slots`, `ah.slots`, `orders.slots`) | declared in `f09`, `f03`, `f04` | LIVE [S17] except defaults/tier3 |
+| Slot tables (`homes.slots_default`-family, `ah.slots.*`, `orders.slots.*`) | declared in `f09`, `f03`, `f04` | LIVE [S17] except defaults/tier3 |
 
 ## 8. Mineclonia implementation
 

@@ -192,6 +192,8 @@ end)
 | `combat.log_broadcast` | true | PROPOSED |
 | `bounty.min_amount` | $1,000 | PROPOSED |
 | `bounty.pair_cooldown` | 3,600 s | PROPOSED |
+| `combat.explosion_window` | 10 s | PROPOSED |
+| `combat.explosion_radius` | 12 nodes | PROPOSED |
 
 ## 8. Mineclonia implementation
 

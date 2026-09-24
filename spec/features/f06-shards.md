@@ -131,11 +131,14 @@ end
 | Key | Default | Status |
 |---|---|---|
 | `shards.interval` | 600 s | LIVE [S8] |
-| `shards.require_activity` | false | PROPOSED |
+| `shards.require_activity` | false — inert (V-61 closed, D8 2026-09-24); still read, never enabled | PROPOSED |
 | `shards.transferable` | false | PROPOSED |
+| `shards.flush_interval` | 30 s | PROPOSED |
 | `amethyst.lifetime` | 86,400 s | LIVE [S9] |
 | `amethyst.felling_limit` | 512 | PROPOSED |
 | `amethyst.sweep_interval` | 300 s | PROPOSED |
+| `amethyst.haste_level` | 2 | PROPOSED |
+| `amethyst.haste_duration` | 86,400 s | PROPOSED |
 | `shardshop.offers` | table above | LIVE [S8] |
 
 ## 8. Mineclonia implementation
