@@ -392,9 +392,12 @@ core.register_chatcommand("pay", {
 		end
 		-- f01 §4.2.1: reject recipients who have blocked the payer (and
 		-- vice-versa) without revealing which privacy rule fired (X9).
-		if smp_social and type(smp_social.blocks) == "function" then
-			if smp_social.blocks(target, player_name)
-			   or smp_social.blocks(player_name, target) then
+		-- V-48 ruled 2026-09-25: payments are BLOCK-only — `/ignore`
+		-- does not refuse them (f11 §4.3 payments row), so this tests
+		-- `blocks_only()`, not `blocks()` (which folds ignore in).
+		if smp_social and type(smp_social.blocks_only) == "function" then
+			if smp_social.blocks_only(target, player_name)
+			   or smp_social.blocks_only(player_name, target) then
 				return false, S("You cannot send money to @1", target)
 			end
 		end

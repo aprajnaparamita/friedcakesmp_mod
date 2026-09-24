@@ -411,3 +411,53 @@ The audit above is the *baseline*; this records what happened next.
   (E-09), `smp_economy.give`, the two `optional_depends` cycles
   (f02/f04, f04/f06), push blocked (SSH passphrase), E-06/E-17/E-21
   store-side escalations (D13+ candidates), V-48 ruling above.
+
+## 12. Integrator rulings executed (2026-09-25, after the f01 + f12 merges)
+
+The user approved four bundles; all are executed here.
+
+- **V-48 = block-only payments.** `/pay` now calls
+  `smp_social.blocks_only()` both directions in the validate phase
+  (`smp_economy/init.lua`, guard comment records the ruling); `/ignore`
+  alone no longer refuses a payment, matching f11 §4.3's PROPOSED
+  payments row. New V-48 assertions in `dev-tests/test_economy.lua`
+  (predicate split `blocks` vs `blocks_only`, plus an ignore-only pair
+  paying successfully). Records: `f11-social.md` V-48 row + §10.2 F11-2
+  (cross-note resolved, stale `:207-209` citation corrected to
+  `:395-401`), `fixes/f01-economy-core.md` E-01 row annotated.
+- **F-1 = accept guarded call-only.** No `optional_depends = smp_social`
+  edge; the omission is deliberate. Documented in `f01-economy-core.md`
+  §10.2 F-1 and as a dependency note in `spec/shared/02-architecture.md`
+  §2.1 (integrator-owned edit) so nobody "fixes" it into a boot cycle
+  later.
+- **Store/core escalations: two fixed, five backlogged.**
+  - **E-12 fixed:** `/smp_backend`'s chat output goes through the
+    translator — `S("Storage backend: @1", …)` (unobserved wording, no
+    terminal full stop); the raw `[smp_store] backend = ` tag stays in
+    the server log only.
+  - **E-21 fixed:** `auto` actually probes for lsqlite3 now
+    (`sqlite_available()` in `smp_store/init.lua` — pcall(require) behind
+    a real insecure-environment check, cached), at both the `auto` branch
+    and the unknown-value fallback. Previously `package.loaded` was
+    tested and nothing ever preloaded it, so `auto` never chose sqlite.
+  - **Backlogged as D13 (store-hardening):** E-05 ledger reversal helper
+    (R11), E-06 pending markers on multi-record ops (R12), E-15 ledger
+    `counterparty` written `""`, E-17 mod_storage `flush` no-op (§2.2
+    dirty-flag batching), E-19 `smp_core` event bus/config loader/widget
+    helpers (`show_formspec` 4th arg bound to `_`). All
+    integrator-owned (`smp_store`/`smp_core`); scheduling is the user's.
+- **F-2 accepted (PROPOSED):** `shared/05` `/smp` row widened to
+  `reload｜test <mod>｜backend` with the dispatcher note.
+- **F-3 accepted as-is:** `shared/05` gained a `/payto` row (PROPOSED,
+  `economy.tab_complete` gate kept).
+- **F-5 routed:** row **F12-8** added to `fixes/f12-settings.md`
+  (register `eco.pay_accept`, default ON) — f12 has already merged once,
+  so it dispatches as a follow-up agent, not a re-run.
+- **F-6 split three ways:** `smp_quickbuy/buy.lua:70` period fixed by the
+  integrator (no brief owns quickbuy); `smp_orders` sites + the
+  `test_orders.lua:828` literal → new row **O9** in
+  `fixes/f04-orders.md` (f04 still held); `smp_bounty/init.lua:159` +
+  `test_bounty.lua:126` → **overseer post-f10** (the f10 agent is
+  mid-flight and cannot be reached; same file set as its C4 row).
+- **Suite after these edits:** recount at the next merge — `test_economy`
+  gained the V-48 block, `test_items` keeps f01's count (27 files).

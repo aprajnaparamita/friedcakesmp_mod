@@ -330,14 +330,24 @@ end
 -- f12's `smp_settings.get/set/store_get` accessor trio.
 ----------------------------------------------------------------------
 
--- f11 §6: `blocks(a, b)` is `is_blocked(a,b) OR ignores(a,b)`. The block
--- set is keyed "<blocker>|<blocked>" and starts empty, so `/pay` in the
--- default state is unblocked.
+-- f11 §6 / §4.3: `blocks(a, b)` is `is_blocked(a,b) OR ignores(a,b)`,
+-- while `blocks_only(a, b)` is the BLOCK graph alone. Both sets are keyed
+-- "<actor>|<target>" and start empty, so `/pay` in the default state is
+-- unblocked. (V-48, ruled 2026-09-25: payments consult `blocks_only` —
+-- ignore must NOT refuse a payment.)
 local block_pairs = {}
+local ignore_pairs = {}
 
 smp_social = {}
 function smp_social.blocks(a, b)
+	local k = tostring(a) .. "|" .. tostring(b)
+	return block_pairs[k] == true or ignore_pairs[k] == true
+end
+function smp_social.blocks_only(a, b)
 	return block_pairs[tostring(a) .. "|" .. tostring(b)] == true
+end
+function smp_social.ignores(a, b)
+	return ignore_pairs[tostring(a) .. "|" .. tostring(b)] == true
 end
 
 -- f12 §5 accessor semantics: an unregistered id answers nil from `get`
@@ -605,6 +615,29 @@ clear_pay_cooldown("alice")
 r, msg = pay.func("alice", "bob 1")
 ok(r == false, "E-01 a payer who blocked the recipient is refused too")
 block_pairs["alice|bob"] = nil
+
+----------------------------------------------------------------------
+-- V-48: payments are BLOCK-only — `/ignore` does not refuse them
+-- (f11 §4.3 payments row; ruled 2026-09-25, the guard consults
+-- `blocks_only()`).
+----------------------------------------------------------------------
+
+print("--- V-48: ignore does not refuse /pay ---")
+ignore_pairs["bob|alice"] = true            -- bob ignores alice
+ignore_pairs["alice|bob"] = true            -- and alice ignores bob
+ok(smp_social.blocks("bob", "alice") == true,
+	"V-48 blocks() folds ignore in (chat/messages predicate)")
+ok(smp_social.blocks_only("bob", "alice") == false,
+	"V-48 blocks_only() does not (payments predicate)")
+local v48_alice, v48_bob = money("alice"), money("bob")
+local v48_rows = ledger_total("alice", "bob")
+clear_pay_cooldown("alice")
+r, msg = pay.func("alice", "bob 1")
+ok(r == true, "V-48 a payment between mutual ignorers SUCCEEDS")
+eq(money("alice"), v48_alice - 1, "V-48 the payment moved 1 cent")
+eq(ledger_total("alice", "bob"), v48_rows + 2, "V-48 it wrote two rows")
+ignore_pairs["bob|alice"] = nil
+ignore_pairs["alice|bob"] = nil
 
 ----------------------------------------------------------------------
 -- E-02: offline-recipient summary (§4.2.4) — both halves

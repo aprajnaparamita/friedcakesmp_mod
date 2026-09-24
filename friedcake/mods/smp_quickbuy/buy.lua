@@ -67,7 +67,7 @@ function smp_quickbuy.buy.entry(player, entry_index, shown_price, confirmed)
 	-- Insufficient funds.
 	local rec = smp_store.api.get_player(name)
 	if not rec or (rec.money or 0) < cost then
-		return refuse(player, S("Insufficient funds."))
+		return refuse(player, S("Insufficient funds"))
 	end
 
 	-- Mutate. Each listing re-validates its own version inside smp_ah.buy;

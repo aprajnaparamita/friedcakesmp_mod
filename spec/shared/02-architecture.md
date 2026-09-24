@@ -27,6 +27,16 @@
 | `smp_rtpqueue` | Paired random teleport | `smp_tp`, `smp_combat` | P8 | `f08` |
 | `smp_crates`, `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop` | Legacy modules | various | n/a *(f16 descoped — D8, 2026-09-24)* | `f16` |
 
+**Dependency note (f01 §10.2 F-1, ruled 2026-09-25):** `smp_economy`
+deliberately does **not** declare `optional_depends = smp_social`, even
+though it calls `smp_social.blocks_only()` — declaring it would close the
+boot cycle `economy → social → combat → stats → economy`
+(`smp_social` optionally depends on `smp_combat`, `smp_combat` optionally
+depends on `smp_stats`, `smp_stats` hard-depends on `smp_economy`), which
+aborts real boots. The call is guarded (`if smp_social and …`) and runs at
+command time, so load order cannot break it. Do not "fix" this by adding
+the edge.
+
 ## 2.2 Persistence
 
 `smp_store` MUST expose a small table API with two interchangeable backends:

@@ -13,6 +13,7 @@ request alias (`f08`). Commands blocked during combat are listed in `f10`.
 |---|---|---|---|---|---|
 | `/bal` | `/balance`, `/money` | `[player]` | Show a money balance (another player's balance is `PROPOSED`) | LIVE [S24] | f01 |
 | `/pay` | — | `<player> <amount>` | Transfer money. Tab-completes player names [F0089] | **OBSERVED** [F0088–F0090] | f01 |
+| `/payto` | — | `<player> <amount>` | Exact-name alias of `/pay`, for scripts; registered only while `economy.tab_complete` is true | PROPOSED (f01 §10.2 F-3, ruled 2026-09-25) | f01 |
 | `/paytoggle` | `/paymenttoggle` | — | Toggle receiving payments | CLONE [C1] | f01 |
 | `/baltop` | `/moneytop` | `[page]` | Money leaderboard | LIVE [S24] | f14 |
 | `/sell` | — | — | Open the `Sell` container | **OBSERVED** [F0092–F0096] | f02 |
@@ -97,7 +98,7 @@ All entries are `PROPOSED` except `/eco`, which follows a clone [C1].
 | `/bountyadmin` | `clear <player>` | Remove a bounty, with refund | f10 |
 | `/combat` | `untag <player>` | Clear a combat tag | f10 |
 | `/ledger` | `<player> [page]` | Audit trail | f01 |
-| `/smp` | `reload` | Reload configuration | f01 |
+| `/smp` | `reload｜test <mod>｜backend` | Reload configuration, run a mod's acceptance tests (any `smp_*` shipping `test.lua` — f01 §10.2 F-2, ruled PROPOSED 2026-09-25), show the storage backend (admin) | f01 |
 | `/mute` | `<player> [seconds]` | Mute a player (moderation); omitted duration = permanent | f11 |
 | `/unmute` | `<player>` | Clear a mute | f11 |
 

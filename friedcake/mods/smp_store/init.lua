@@ -39,12 +39,38 @@ cfg.ledger_page_size = tonumber(cfg.ledger_page_size) or 20
 
 smp_store._chosen_backend = nil -- string
 
+-- E-21 (ruled 2026-09-25): `auto` must actually probe for lsqlite3.
+-- The old guard tested `package.loaded["lsqlite3"] ~= nil`, which is
+-- false unless something already required the library — nobody does —
+-- so `auto` silently never chose sqlite. Probe exactly the way
+-- `backends/sqlite.lua:41` loads it: pcall(require, …), guarded on the
+-- insecure environment (without it the sqlite backend refuses to start
+-- anyway), and cache the result. A build without the library answers
+-- false and `auto` falls back to mod_storage; a successful probe also
+-- populates `package.loaded`, so the backend finds it warm.
+local sqlite_probe -- nil = not tried yet
+local function sqlite_available()
+	if package.loaded["lsqlite3"] ~= nil then
+		return true
+	end
+	if sqlite_probe ~= nil then
+		return sqlite_probe
+	end
+	if not core.request_insecure_environment
+	   or not core.request_insecure_environment() then
+		sqlite_probe = false
+		return false
+	end
+	local ok, mod = pcall(require, "lsqlite3")
+	sqlite_probe = ok and mod ~= nil
+	return sqlite_probe
+end
+
 local function pick_backend()
 	local want = cfg.backend
 	if want == "auto" then
 		-- Try sqlite first if available; otherwise mod_storage.
-		if core.request_insecure_environment and
-		   package.loaded["lsqlite3"] ~= nil then
+		if sqlite_available() then
 			return "sqlite"
 		end
 		return "mod_storage"
@@ -58,8 +84,7 @@ local function pick_backend()
 	-- Unknown value: behave like auto.
 	core.log("warning", "[smp_store] unknown store.backend=" .. tostring(want)
 		.. " — falling back to auto")
-	if core.request_insecure_environment and
-	   package.loaded["lsqlite3"] ~= nil then
+	if sqlite_available() then
 		return "sqlite"
 	end
 	return "mod_storage"
@@ -345,9 +370,15 @@ core.register_chatcommand("smp_backend", {
 	description = S("Show the active storage backend (FriedcakeSMP admin)."),
 	privs = { smp_admin = true },
 	func = function(player_name, _)
-		local msg = "[smp_store] backend = " .. (smp_store._backend_name or "?")
-		core.chat_send_player(player_name, msg)
-		core.log("action", msg)
+		-- E-12 (ruled 2026-09-25): player-facing output goes through
+		-- the translator (AGENTS hard rule 7); the raw tag stays in
+		-- the server log, which is not player-facing. Unobserved
+		-- wording, so no terminal full stop (shared 00-conventions
+		-- §0.5).
+		local backend_name = smp_store._backend_name or "?"
+		core.chat_send_player(player_name,
+			S("Storage backend: @1", backend_name))
+		core.log("action", "[smp_store] backend = " .. backend_name)
 		return true
 	end,
 })
