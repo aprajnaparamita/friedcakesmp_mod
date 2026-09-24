@@ -32,9 +32,9 @@ paste it). No other context is required.
 | f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
 | f09 | [`f09-homes.md`](f09-homes.md) | Homes | `smp_tp` (homes) | 4 | **high — 3/4 gaps closed by P0-B3 (verify rows), config row open** | `agent/f09-homes-fixes` |
-| f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | high — harness landed (F11-1/F11-8 ✅ merged 2026-09-24); F11-3/4/5 open | `agent/f11-social-fixes` |
+| f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | **✅ merged 2026-09-25 (`8cd7620`) — F11-2 contract test, F11-3 `follow_blocked`, F11-4 `blocks_only` (+ consumer switch escalated to f08 TP13), F11-5 D10 honesty, F11-6 N/A, F11-7/8 verified; record in `spec/features/f11-social.md` §10.2** | merged → `agent/integrator-decisions` |
 | f08 | [`f08-teleport.md`](f08-teleport.md) | Teleport | `smp_tp`, `smp_rtpqueue` | 8 + 5 dev | high — safety gaps (both-party tag cancel, border clip, spawn exclusion) | `agent/f08-teleport-fixes` |
-| f14 | [`f14-stats.md`](f14-stats.md) | Stats | `smp_stats` | 4 | high (incl. blocker site) | `agent/f14-stats-fixes` |
+| f14 | [`f14-stats.md`](f14-stats.md) | Stats | `smp_stats` | 4 | **✅ merged 2026-09-25 (`fd62e64`) — S1 verify-only (fixed on `main`), S2 → D4, S3/S4/S5/S6/S7 closed; record in `spec/features/f14-stats.md` §10** | merged → `agent/integrator-decisions` |
 | f06 | [`f06-shards.md`](f06-shards.md) | Shards | `smp_shards`, `smp_shardshop`, `smp_amethyst` | 5 | medium | `agent/f06-shard-fixes` |
 | f01→f03 | [`f03-auction.md`](f03-auction.md) | Auction | `smp_ah` | 4 | medium | `agent/f03-auction-fixes` |
 | f04 | [`f04-orders.md`](f04-orders.md) | Orders | `smp_orders` | 3 + 1 consumer | medium | `agent/f04-orders-fixes` |

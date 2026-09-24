@@ -1027,32 +1027,39 @@ end
 -- house pattern from test_config_mirror.lua)
 ---------------------------------------------------------------------------
 
+-- The `spec` column is a printed citation only (never read from disk).
+-- Re-anchored by the overseer 2026-09-25: the column predated the spec's
+-- final feature numbering and cited files that do not exist
+-- (f02-orders/f03-ah/f04-sell/f06-combat/f07-stats/f10-spawners,
+-- spec/shared/01-conventions.md) plus shared/02 line numbers that now hold
+-- unrelated text. Every path below points at a real file; line numbers
+-- were re-verified against the merged tree.
 local SEAM_CHECKS = {
-	{ mod = "smp_core", seam = "fmt_money", spec = "spec/shared/01-conventions.md:40" },
-	{ mod = "smp_ranks", seam = "order_limit", spec = "spec/features/f02-orders.md:71 (ranks/perk.lua:76)" },
-	{ mod = "smp_ah", seam = "cheapest_for", spec = "spec/features/f03-ah.md:66 (ah:707)" },
-	{ mod = "smp_ah", seam = "buy", spec = "spec/features/f03-ah.md:67 (ah:850)" },
-	{ mod = "smp_orders", seam = "best_open_order", spec = "spec/features/f02-orders.md:66 (orders/routing.lua:207)" },
-	{ mod = "smp_orders", seam = "fill_from_stack", spec = "spec/features/f02-orders.md:66 (orders/routing.lua:226)" },
-	{ mod = "smp_sell", seam = "sell", spec = "spec/features/f04-sell.md:71 (sell:187)" },
-	{ mod = "smp_social", seam = "blocks", spec = "spec/shared/02-architecture.md:47 (social/graph.lua:112)" },
-	{ mod = "smp_settings", seam = "get", spec = "spec/features/f12-settings.md §5 (accessor.lua:32)" },
-	{ mod = "smp_store", field = "api", seam = "upsert_player", spec = "spec/shared/02-architecture.md:41 (store:147)" },
-	{ mod = "smp_store", field = "api", seam = "ledger_for", spec = "spec/shared/02-architecture.md:41 (store:167)" },
-	{ mod = "smp_store", field = "api", seam = "add_money", spec = "spec/shared/02-architecture.md:44 (store:211)" },
-	{ mod = "smp_store", field = "api", seam = "take_money", spec = "spec/shared/02-architecture.md:44 (store:236)" },
-	{ mod = "smp_admin", seam = "flag", spec = "spec/shared/02-architecture.md:77 (admin:85)" },
-	{ mod = "smp_admin", seam = "is_muted", spec = "spec/shared/02-architecture.md:78 (admin:164) [P4]" },
-	{ mod = "smp_combat", seam = "is_tagged", spec = "spec/features/f06-combat.md:65 (combat/tag.lua:59)" },
-	{ mod = "smp_stats", seam = "add", spec = "spec/features/f07-stats.md:55 (stats/counters.lua:42)" },
+	{ mod = "smp_core", seam = "fmt_money", spec = "spec/features/f01-economy-core.md:111" },
+	{ mod = "smp_ranks", seam = "order_limit", spec = "spec/features/f13-ranks.md:177 (ranks/perk.lua:76)" },
+	{ mod = "smp_ah", seam = "cheapest_for", spec = "spec/features/f05-quickbuy.md:176 (V-58; ah:707)" },
+	{ mod = "smp_ah", seam = "buy", spec = "spec/features/f03-auction.md:270 (ah:850)" },
+	{ mod = "smp_orders", seam = "best_open_order", spec = "spec/features/f04-orders.md:443 (orders/routing.lua:207)" },
+	{ mod = "smp_orders", seam = "fill_from_stack", spec = "spec/features/f04-orders.md:444 (orders/routing.lua:226)" },
+	{ mod = "smp_sell", seam = "sell", spec = "spec/features/f02-sell.md:113 (sell:187)" },
+	{ mod = "smp_social", seam = "blocks", spec = "spec/features/f11-social.md:302 (social/graph.lua:126)" },
+	{ mod = "smp_settings", seam = "get", spec = "spec/features/f12-settings.md:281 (accessor.lua:32)" },
+	{ mod = "smp_store", field = "api", seam = "upsert_player", spec = "spec/shared/02-architecture.md:32 (store/init.lua:147)" },
+	{ mod = "smp_store", field = "api", seam = "ledger_for", spec = "spec/shared/02-architecture.md:32 (store:167)" },
+	{ mod = "smp_store", field = "api", seam = "add_money", spec = "spec/shared/02-architecture.md:32 (store:211)" },
+	{ mod = "smp_store", field = "api", seam = "take_money", spec = "spec/shared/02-architecture.md:32 (store:236)" },
+	{ mod = "smp_admin", seam = "flag", spec = "spec/shared/02-architecture.md:12 (smp_admin row; admin/init.lua:85)" },
+	{ mod = "smp_admin", seam = "is_muted", spec = "spec/shared/05-command-reference.md:101 (/mute; admin/init.lua:164) [P4]" },
+	{ mod = "smp_combat", seam = "is_tagged", spec = "spec/features/f10-combat.md:251 (combat/tag.lua:59)" },
+	{ mod = "smp_stats", seam = "add", spec = "spec/features/f14-stats.md:233 (F14-D1; stats/counters.lua:48)" },
 	-- R4 quickbuy bridge targets (grep smp_quickbuy/bridges.lua)
-	{ mod = "smp_ah", seam = "cheapest_for", target_of = "smp_quickbuy/bridges.lua:40", spec = "spec/features/f05-quickbuy.md:74" },
-	{ mod = "smp_ah", seam = "buy", target_of = "smp_quickbuy/bridges.lua:62", spec = "spec/features/f05-quickbuy.md:74" },
-	{ mod = "smp_combat", seam = "is_tagged", target_of = "smp_quickbuy/bridges.lua:73", spec = "spec/features/f05-quickbuy.md:74" },
-	{ mod = "smp_stats", seam = "add", target_of = "smp_quickbuy/bridges.lua:84", spec = "spec/features/f05-quickbuy.md:74" },
+	{ mod = "smp_ah", seam = "cheapest_for", target_of = "smp_quickbuy/bridges.lua:40", spec = "spec/features/f05-quickbuy.md:176 (V-58)" },
+	{ mod = "smp_ah", seam = "buy", target_of = "smp_quickbuy/bridges.lua:62", spec = "spec/features/f05-quickbuy.md:176 (V-58)" },
+	{ mod = "smp_combat", seam = "is_tagged", target_of = "smp_quickbuy/bridges.lua:73", spec = "spec/features/f05-quickbuy.md:176 (V-58)" },
+	{ mod = "smp_stats", seam = "add", target_of = "smp_quickbuy/bridges.lua:84", spec = "spec/features/f05-quickbuy.md:176 (V-58)" },
 	-- R4 spawners routing (grep smp_spawners/routing.lua: sell-all seam f02)
-	{ mod = "smp_spawners", field = "routing", seam = "sell_all", target_of = "smp_spawners/routing.lua:32", spec = "spec/features/f10-spawners.md:60" },
-	{ mod = "smp_sell", seam = "sell", target_of = "smp_spawners/routing.lua:53,70", spec = "spec/features/f10-spawners.md:60" },
+	{ mod = "smp_spawners", field = "routing", seam = "sell_all", target_of = "smp_spawners/routing.lua:32", spec = "spec/features/f07-spawners.md:132" },
+	{ mod = "smp_sell", seam = "sell", target_of = "smp_spawners/routing.lua:53,70", spec = "spec/features/f07-spawners.md:132 (V-63)" },
 }
 
 -- DECLARED: smp_economy.give is referenced by f01:161/196, f02:133,

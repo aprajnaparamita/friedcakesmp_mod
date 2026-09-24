@@ -277,3 +277,64 @@ The audit above is the *baseline*; this records what happened next.
   `optional_depends` cycles (f02/f04 = `sell ↔ orders`; f04/f06 =
   `orders → shardshop → amethyst → orders`), push blocked (SSH
   passphrase).
+
+## 11. Wave A — first two agents merged (2026-09-25)
+
+- **Wave A dispatched 2026-09-25** from the merged tip `5413d08`, one
+  background agent per feature file, each in its own worktree and branch:
+  f01 → `$TMPDIR/coconut-f01` / `agent/f01-economy-fixes`, f07 →
+  `coconut-f07` / `agent/f07-spawner-fixes`, f11-finish → `coconut-f11` /
+  `agent/f11-social-fixes`, f14 → `coconut-f14` / `agent/f14-stats-fixes`.
+  Payload per agent: `AGENTS.md` → its brief → its Depends-on rows →
+  `spec/shared/` → its slice of `plan/acceptance-tests.md`. No agent may
+  write under `fixes/`; escalations go to its feature file §10.
+- **f14 merged** (`fd62e64` → merge commit `36ed1c9`, 7 files, suite
+  26/26). S1/S2 verify-only (pre-fixed / D4), S3–S7 closed; index row
+  annotated in `fixes/README.md`. Closure record + 4 escalations in
+  `spec/features/f14-stats.md` §10.
+- **f11-finish merged** (`8cd7620` → merge commit `f528d68`, 8 files,
+  suite 26/26, `test_social` 206 assertions). F11-3 `follow_blocked`
+  (either side, validated before mutate), F11-4 `blocks_only` exposed with
+  the `smp_rtpqueue` consumer switch escalated to f08's TP13, F11-5 D10
+  honesty cleanup inside `smp_social`, F11-2 contract test, F11-6 N/A,
+  F11-7/8 verified. Record in `spec/features/f11-social.md` §10.2.
+  Index row annotated. **f08 is now unblocked** (its TP13 base predicate
+  `smp_social.blocks_only` is on `main`).
+- **Escalations routed by the overseer:**
+  1. f14 #1 (`fixes/README.md` row) — applied by the overseer.
+  2. f14 #2 (terminal full stop `Player @1 does not exist.` in other
+     mods) — new row **F06-11** in `fixes/f06-shards.md`
+     (`smp_shards/init.lua:218`) and **C4** in `fixes/f10-combat.md`
+     (`smp_bounty/init.lua:144` + the literal pinned at
+     `dev-tests/test_bounty.lua:122`). The `smp_economy/init.lua:110,200`
+     pair belongs to f01, whose agent was already dispatched — recorded
+     here as an **overseer follow-up after f01 merges** (no dev-test pins
+     those literals, so it is a two-string edit).
+  3. f14 #3 (`api.lua` refusal strings beyond S7's listed sites) —
+     **fixed by the overseer** in the same pass: four terminal full stops
+     stripped in `smp_stats/api.lua:125,130,134,136` (none asserted by a
+     test, none in `shared/08`).
+  4. f14 #4 (`dev-tests/test_integration.lua:1047` cites the nonexistent
+     `spec/features/f07-stats.md`) — **fixed by the overseer, and the
+     drift was wider than reported**: the whole `SEAM_CHECKS` `spec`
+     column predated the spec's final feature numbering (cited
+     `f02-orders`, `f03-ah`, `f04-sell`, `f06-combat`, `f07-stats`,
+     `f10-spawners`, `spec/shared/01-conventions.md` — none exist) plus
+     `shared/02:41/44/47/77/78` line numbers that now hold unrelated
+     text. All 24 rows re-anchored to verified `file:line` (the column is
+     printed only, never read from disk — zero behaviour risk), with a
+     header comment recording the re-anchor.
+- **f11's cross-note flagged for the integrator (V-48):** the landed
+  `/pay` guard (`smp_economy/init.lua:207-209`, f01's) tests `blocks()`,
+  which folds *ignore* in, while f11 §4.3's payments row says ignore →
+  *no* (block-only). `smp_social.blocks_only()` now exists. **Decision
+  pending** — resolve when f01 reports (either switch the guard to
+  `blocks_only()` or amend §4.3's PROPOSED payments row); recorded in
+  `spec/features/f11-social.md` §10.2 and under V-48.
+- **Stale-reference fix:** `spec/features/f11-social.md` §10.2 F11-4 said
+  `fixes/f08-teleport.md` "does not exist yet" — true when filed, stale
+  after the GAP-1 commit `4585552`; retargeted to **row TP13**.
+- **Still running:** f01, f07 (background agents). Still open: NOTE-1
+  (E-09), `smp_economy.give`, the two `optional_depends` cycles
+  (f02/f04, f04/f06), push blocked (SSH passphrase), E-06/E-17/E-21
+  store-side escalations (D13+ candidates), V-48 ruling above.

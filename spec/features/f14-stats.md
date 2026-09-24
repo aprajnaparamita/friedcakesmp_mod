@@ -301,3 +301,15 @@ records; `sell` and `shop` read `stats.money_made_from_sell` and
    the `smp_stats.add` seam: `spec/features/f07-stats.md:55` — this
    feature is `f14-stats.md` (seam contract F14-D1, `counters.lua:42`).
    P5-owned file; not edited here.
+
+*Overseer outcomes (2026-09-25): **1** applied — `fixes/README.md` f14 row
+annotated. **2** routed — row **F06-11** in `fixes/f06-shards.md` and row
+**C4** in `fixes/f10-combat.md` (incl. the `test_bounty.lua:122` literal);
+the two `smp_economy` sites are an overseer follow-up once f01 merges.
+**3** fixed here — four terminal full stops stripped in
+`smp_stats/api.lua:125,130,134,136`. **4** fixed — and the drift was wider
+than reported: the whole `SEAM_CHECKS` `spec` column in
+`dev-tests/test_integration.lua` cited the pre-final feature numbering
+(`f07-stats`, `f06-combat`, `f02-orders`, `f03-ah`, `f04-sell`,
+`f10-spawners`, `spec/shared/01-conventions.md` — none exist); all 24 rows
+re-anchored to verified `file:line` (printed-only column).*

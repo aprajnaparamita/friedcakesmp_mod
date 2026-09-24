@@ -122,18 +122,18 @@ core.register_chatcommand("api", {
 		param = (param or ""):lower():match("^%s*(.-)%s*$")
 		local mode = smp_stats.cfg.api_mode
 		if mode == "off" then
-			return false, S("The public API is disabled on this server.")
+			return false, S("The public API is disabled on this server")
 		end
 		if mode == "push" then
 			core.log("warning", "[smp_stats] /api requested in push mode "
 				.. "— the external key service is not configured")
-			return false, S("The public API push mode is not configured yet.")
+			return false, S("The public API push mode is not configured yet")
 		end
 		if param == "delete" then
 			if api.revoke_key(player_name) then
-				return true, S("API key revoked.")
+				return true, S("API key revoked")
 			end
-			return false, S("You have no API key.")
+			return false, S("You have no API key")
 		end
 		local key, issued = api.issue_key(player_name)
 		if issued then
