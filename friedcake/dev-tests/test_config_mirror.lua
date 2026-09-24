@@ -51,9 +51,9 @@ local DECLARED_ONLY = {
 	-- (smp_orders/init.lua:42-45); dotted `orders.slots.*` is the
 	-- documented primary spelling (shared/06 R4).
 	["orders.slots.*"] = "f04",
-	-- f07 brief F07-8/9: code reads the compound `spawners.C` list
-	-- (smp_spawners/init.lua:93); the per-type keys are not read yet.
-	["spawners.C.skeleton"] = "f07",
+	-- f07 F07-8 discharged: apply_C_overrides() now reads the dotted
+	-- `spawners.C.<type>` names (site registered in PREFIX_PATTERNS
+	-- below), so the entry went the way this list prescribes.
 }
 
 -- Brief ids whose DECLARED_ONLY duty is discharged (P1/P3-era items
@@ -131,6 +131,31 @@ local PREFIX_PATTERNS = {
 			"info.link", "info.store", "info.website", "info.ranks",
 			"info.medal",
 		},
+	},
+	{
+		-- f07 F07-9: build_cfg() reads the flat acquisition keys as a
+		-- per-source fallback for the documented table key
+		-- (smp_spawners/init.lua: `"spawners.acquisition." .. src`).
+		-- All four are documented in shared/06 row 80.
+		kind = "expand",
+		file = "smp_spawners/init.lua",
+		site = '"spawners.acquisition." .. src',
+		expand = {
+			"spawners.acquisition.shard_shop",
+			"spawners.acquisition.crates",
+			"spawners.acquisition.natural",
+			"spawners.acquisition.admin",
+		},
+	},
+	{
+		-- f07 F07-8: apply_C_overrides() reads the documented dotted
+		-- per-type keys (… `"spawners.C." .. id`). Only the spelling
+		-- shared/06 documents (row 63) is tracked here; the loop serves
+		-- every type, the mirror only names the skeleton one.
+		kind = "expand",
+		file = "smp_spawners/init.lua",
+		site = '"spawners.C." .. id',
+		expand = { "spawners.C.skeleton" },
 	},
 }
 

@@ -117,6 +117,13 @@ configurable:
 | `always` | Accrue wall-clock time, limited only by capacity |
 | `capped` | Accrue wall-clock time up to `spawners.offline_cap_hours` |
 
+Conformance (F07-7): *every* interaction converts elapsed time before it
+reads or writes storage — menu open, take, `Take all`, Collect XP, Sell all,
+stacking, digging and hopper extraction all call `accrue(pos)` first, and the
+state object that gets written is read after it. The 60 s node timer is only
+the background driver, so no interaction can show or pay less than the
+elapsed time it covers.
+
 ### 4.6 Interaction
 
 1. **Placement.** `smp_spawners:spawner_item` (item meta `type`) creates
@@ -124,11 +131,16 @@ configurable:
    `last_update` now. A separate node from `mcl_mobspawners:spawner`, so no
    mob-spawning code runs.
 2. **Stacking.** Sneak and right-click with a spawner item of the same type
-   adds the whole held stack [S24] (`spawners.stack_mode = "all"`). Other
+   adds the whole held stack [S24] (`spawners.stack_mode = "all"`, the
+   default); `spawners.stack_mode = "one"` adds a single spawner per click
+   and any other value warns at load and behaves as `all` (F07-10). Other
    types are rejected. Requires protection access.
 3. **Menu.** Header `<Type> Spawner x<n>`, a storage page, Sell all, Collect XP,
    paging, and lines for rate per minute, stored versus capacity, and stored
-   XP. Clicking an item takes one stack; shift-clicking takes as much as fits.
+   XP. Clicking an item takes one stack; taking as much as fits is the
+   `Take all` button — Luanti formspecs expose no shift-click state, so the
+   clone's shift-click is an **accepted substitution** recorded in V-01
+   (F07-12, documentation only; not re-litigated here).
 4. **Sell all.** Sells stored output through `f02` routing, so higher-paying
    orders are served first [S2].
 5. **Breaking.** Requires Silk Touch
@@ -269,6 +281,25 @@ end
 | V-05 | Storage capacity and behaviour when full | Implemented per §4.4: `min(hard_cap, per_spawner × n)`. At full, production pauses, the overflow is discarded, `smp:last_update` still advances (no hidden banking), and the menu shows `Storage full`, so the pause is visible rather than silent (T5). |
 | V-62 | Is the diminishing-returns curve exponential as modelled, or another shape? Only the asymptote is published | Implemented as the §4.3 exponential. The curve function is isolated (`smp_spawners.curve`) so an alternative shape can be substituted in one place once a second data point is published. |
 | V-63 | (new) Sell-all message when f02 is absent | The f02 branch is not on `main`; `smp_sell` is an `optional_depends` and Sell all reports `Selling is not available yet` and takes nothing out of storage until `smp_sell.sell(player, stacks)` (f02 §6) exists. Marked `TODO(f02)` in `routing.lua`. |
+
+## 10.1 Fix-wave record (fix brief, 2026-09-25)
+
+| Row ID | Outcome | Evidence (file:line) |
+|---|---|---|
+| F07-1 | VERIFIED | `routing.lua:70-78` — `smp_sell.sell` called first; storage decremented + `write_state` only on `true` return; comment fixed |
+| F07-2 | VERIFIED | `init.lua:54-56` — `bool()` uses `core.settings:get_bool(key, default)` so stored `false` wins; all four default-true keys + `open_requires_access` behave correctly for unset/true/false |
+| F07-3 | VERIFIED | `formspecs.lua:178-184` — `Inventory` label + `list[current_player;main;...]` player inventory rows present; virtual storage grid stays `item_image_button[]` take-requests |
+| F07-4 | VERIFIED | `node.lua:162-163` — `groups = { ..., unmovable_by_piston = 1, container = 7 }`; Mineclonia aborts push when `core.get_item_group(name, "unmovable_by_piston") == 1` |
+| F07-5 | VERIFIED | `node.lua:194-195` `_on_hopper_out` hook registered; `performance.lua:63-95` `hopper_extract` gated on `cfg.hopper_extraction` (default `false`), accrues first, pulls one item, respects hopper room |
+| F07-6 | VERIFIED | `node.lua:200-254` — `convert_natural` overrides vanilla `mcl_mobspawners:spawner` `on_dig`; converts on Silk Touch dig when enabled, reads `Mob` key, respects `enable_creeper` gate and protection |
+| F07-7 | VERIFIED | `interaction.lua:162` `revalidate` calls `accrue`; all menu actions (take, Collect XP, Sell all), stacking, dig, hopper pull route through `revalidate` or call `accrue` directly — elapsed time always converted before read/mutate |
+| F07-8 | VERIFIED | `init.lua:175-197` `apply_C_overrides` reads documented `spawners.C.<type>` dotted keys (win) and compound `spawners.C` back-compat fallback |
+| F07-9 | VERIFIED | `init.lua:92-122` `build_cfg` reads documented `spawners.acquisition` table key first; flat `spawners.acquisition.<src>` keys remain as back-compat fallback; defaults unchanged |
+| F07-10 | VERIFIED | `interaction.lua:107-109` honors `stack_mode = "one"` (adds 1) vs `"all"` (adds whole stack); `init.lua:83-90` warns on unknown values, degrades to `"all"` behaviour |
+| F07-11 | VERIFIED | `node.lua:176-180` `on_blast` checks `cfg.blast_immune`: `true` → no-op (spec default); `false` → `stop_timer` + `remove_node` (normal blast behaviour) |
+| F07-12 | N/A | Accepted substitution per V-01 (Luanti formspecs have no shift state); `Take all` button remains — no code change |
+| F07-13 | VERIFIED | `test_spawners.lua:861-983` — T9 rewritten: stub returns `true`/`false` per f02 contract; both refusal paths (balance-cap, empty plan) assert storage/version byte-identical, stacks handed intact, fallback message; success path asserts storage decremented exactly by sold lots, version bumped, f02 receipt lines relayed |
+| F07-14 | ESCALATED → D5 | Documentation only; spec §3/§4.6.3 wording splits (`Page 1/5` vs `Page n of m`, `×n` vs `x<n>`) — code renders `x` / `Page n of m` consistently (observed/V-01 forms); D5 ruled 2026-09-24: normalise spec to code, never reverse; `formspecs.lua:89` comment still says `×n` but line 90 renders `x@2` — left as-is pending D5 |
 
 ## Proposed shared changes
 

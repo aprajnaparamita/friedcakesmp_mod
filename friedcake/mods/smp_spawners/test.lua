@@ -146,7 +146,113 @@ eq(cfg.open_requires_access and true or false, false,
 eq(cfg.blast_immune and true or false, true, "blast immune")
 eq(cfg.convert_natural and true or false, false,
 	"convert natural PROPOSED false")
+eq(cfg.hopper_extraction and true or false, false,
+	"hopper extraction PROPOSED off [C3]")
+eq(cfg.enable_creeper and true or false, true,
+	"creeper gate PROPOSED open (V-04)")
 eq(smp_spawners.MAX_STACK, 2147483647, "max stack [S24]")
+
+----------------------------------------------------------------------
+-- §7 read back through build_cfg (F07-2, F07-8, F07-9)
+--
+-- The pre-fix suite asserted the LIVE table only, which is why it
+-- could not see the `bool()` bug: `cfg.x and true or false` is true
+-- whether the stored value was `false` or simply absent. These build
+-- the config from an injected store instead, so a stored `false` has
+-- to win over the default.
+----------------------------------------------------------------------
+
+-- An injected settings store with engine semantics: an absent key
+-- returns the default, a present one wins and reads as y/yes/true or a
+-- non-zero number (luanti l_settings.cpp + settings.cpp is_yes).
+local function fake_settings(vals)
+	return {
+		get = function(_, k) return vals[k] end,
+		get_bool = function(_, k, default)
+			local v = vals[k]
+			if v == nil then return default end
+			if type(v) == "boolean" then return v end
+			local s = tostring(v):lower():gsub("^%s+", ""):gsub("%s+$", "")
+			if s == "y" or s == "yes" or s == "true" then return true end
+			local n = tonumber(s)
+			if n then return n ~= 0 end
+			return false
+		end,
+	}
+end
+
+do
+	local cases = {
+		-- { settings key, cfg field, container (nil = top level), default }
+		{ "spawners.require_silk_touch", "require_silk_touch", true },
+		{ "spawners.blast_immune", "blast_immune", true },
+		{ "spawners.enable_creeper", "enable_creeper", true },
+		{ "spawners.open_requires_access", "open_requires_access", false },
+	}
+	for _, c in ipairs(cases) do
+		local key, field, default = c[1], c[2], c[3]
+		local unset = smp_spawners.build_cfg(fake_settings({}))[field]
+		local tru = smp_spawners.build_cfg(
+			fake_settings({ [key] = "true" }))[field]
+		local fals = smp_spawners.build_cfg(
+			fake_settings({ [key] = "false" }))[field]
+		eq(unset, default, key .. " unset -> default " .. tostring(default))
+		eq(tru, true, key .. " = true -> true")
+		eq(fals, false,
+			key .. " = false -> false (the bool() bug this replaces)")
+	end
+
+	-- acquisition.admin lives in the acquisition table.
+	local acq_un = smp_spawners.build_cfg(fake_settings({})).acquisition
+	local acq_tr = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition.admin"] = "true" })).acquisition
+	local acq_fa = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition.admin"] = "false" })).acquisition
+	eq(acq_un.admin, true, "acquisition.admin unset -> true")
+	eq(acq_tr.admin, true, "acquisition.admin = true -> true")
+	eq(acq_fa.admin, false, "acquisition.admin = false -> false")
+
+	-- F07-8: the documented dotted name and the compound back-compat.
+	local function c_over(vals)
+		local c = smp_spawners.build_cfg(fake_settings({}))
+		smp_spawners.apply_C_overrides(fake_settings(vals), c)
+		return c
+	end
+	near(c_over({ ["spawners.C.skeleton"] = "999" }).C.skeleton, 999, 1e-9,
+		"spawners.C.skeleton overrides")
+	near(c_over({ ["spawners.C"] = "skeleton=1000" }).C.skeleton, 1000, 1e-9,
+		"compound spawners.C still parses")
+	near(c_over({ ["spawners.C"] = "skeleton=1000",
+		["spawners.C.skeleton"] = "999" }).C.skeleton, 999, 1e-9,
+		"the documented dotted name wins")
+
+	-- F07-9: table key primary, flat keys as fallback, defaults intact.
+	local tbl = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition"] = "{ admin = false }" }))
+		.acquisition
+	eq(tbl.admin, false, "spawners.acquisition table key sets admin")
+	eq(tbl.shard_shop, false, "table key leaves shard_shop at default")
+	local flat = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition.admin"] = "false" }))
+		.acquisition
+	eq(flat.admin, false, "flat spawners.acquisition.admin back-compat")
+	local dfl = smp_spawners.build_cfg(fake_settings({})).acquisition
+	eq(dfl.shard_shop, false, "default shard_shop false")
+	eq(dfl.crates, false, "default crates false")
+	eq(dfl.natural, false, "default natural false")
+	eq(dfl.admin, true, "default admin true")
+
+	-- The live config is built through the same path (engine store).
+	local rebuilt = smp_spawners.build_cfg(core.settings)
+	eq(rebuilt.accrual_mode, cfg.accrual_mode,
+		"live accrual_mode round-trips through build_cfg")
+	eq(rebuilt.require_silk_touch, cfg.require_silk_touch,
+		"live require_silk_touch round-trips")
+	eq(rebuilt.open_requires_access, cfg.open_requires_access,
+		"live open_requires_access round-trips")
+	eq(rebuilt.acquisition.admin, cfg.acquisition.admin,
+		"live acquisition.admin round-trips")
+end
 
 ----------------------------------------------------------------------
 -- Integer boundary and number formatting
@@ -191,6 +297,12 @@ do
 	ok(type(def.on_blast) == "function", "on_blast registered")
 	ok(type(def.on_punch) == "function", "on_punch registered")
 	ok(type(def.on_timer) == "function", "on_timer registered")
+	ok(type(def._on_hopper_out) == "function", "_on_hopper_out registered")
+	eq(def.groups.unmovable_by_piston, 1,
+		"piston-immune group (f07 §4.6.7, F07-4)")
+	eq(def.groups.container, 7,
+		"container class 7 keeps hoppers out of generic paths (F07-5)")
+	eq(def.drop, "", "the node never drops a bare node item (F07-11)")
 end
 
 return results

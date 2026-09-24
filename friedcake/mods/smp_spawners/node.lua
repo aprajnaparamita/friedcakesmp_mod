@@ -3,8 +3,9 @@
 --
 -- Cardinal rule (f07 §8, goal G1): this is NEVER an entity and never an
 -- ABM. It is a separate node from mcl_mobspawners:spawner, so no
--- mob-spawning code runs. on_blast and on_punch do nothing (T4,
--- f07 §4.6.7).
+-- mob-spawning code runs. on_punch does nothing and on_blast only acts
+-- when the operator has turned spawners.blast_immune off (f07 §4.6.7,
+-- T4).
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -58,6 +59,14 @@ end)
 local function on_dig(pos, node, player, tool)
 	local name = player and player:get_player_name()
 
+	-- The engine calls on_dig(pos, node, digger) — three arguments only
+	-- (luanti src/script/cpp_api/s_node.cpp:118-130, also
+	-- serverpackethandler.cpp) — so the wielded tool has to be read off
+	-- the player when it is not passed in. Without this, silk could
+	-- never be seen in production (f07 §10, engine-truth fix).
+	tool = tool or (player and player.get_wielded_item and
+		player:get_wielded_item())
+
 	-- Refused without Silk Touch (PROPOSED, T7). The node survives.
 	if cfg.require_silk_touch then
 		local has_st = tool and mcl_enchanting and
@@ -72,12 +81,19 @@ local function on_dig(pos, node, player, tool)
 		end
 	end
 
-	if core.is_protected(pos, "dig", player) then
+	-- f07 §4.6.6: core.is_protected(pos, player_name) — the second
+	-- argument is a PLAYER NAME (luanti builtin/game/misc.lua), not an
+	-- action tag (f07 §10, engine-truth fix).
+	if core.is_protected(pos, name) then
 		if name then
 			core.chat_send_player(name, S("This area is protected"))
 		end
 		return
 	end
+
+	-- f07 §4.5: every interaction converts elapsed time before the
+	-- state object that gets written is read (F07-7).
+	smp_spawners.accrue(pos)
 
 	-- Validate before mutating (shared §2.3); no yields in between.
 	local state = smp_spawners.read_state(pos)
@@ -136,12 +152,31 @@ core.register_node("smp_spawners:spawner", {
 	tiles = { "mcl_mobspawners:mob_spawner.png" },
 	paramtype = "light",
 	is_ground = true,
-	groups = { cracky = 3, oddly_breakable_by_hand = 1 },
+	-- f07 §4.6.7: unmovable_by_piston = 1 aborts the push in Mineclonia
+	-- (mods/ITEMS/REDSTONE/mcl_pistons/api.lua:56). container = 7 is
+	-- Mineclonia's "no generic movement" class (mcl_util
+	-- move_item_container bails on 7 before touching either inventory,
+	-- and hopper_push only accepts 2..6): it keeps the virtual storage
+	-- out of every container path while still routing hopper pulls to
+	-- our own _on_hopper_out hook below (mcl_hoppers init.lua:62-70).
+	groups = { cracky = 3, oddly_breakable_by_hand = 1,
+		unmovable_by_piston = 1, container = 7 },
+	-- Nothing drops from the node itself: the dig path hands the
+	-- digger their spawner items, and storage loss is deliberate
+	-- (f07 §4.6.5). Without this, get_node_drops returns the bare
+	-- node item and the "last spawner" dig leaks one.
+	drop = "",
 	on_dig = on_dig,
 	on_rightclick = on_rightclick,
-	-- Cardinal rule: explosions do nothing. f07 §4.6.7, T4.
-	on_blast = function(pos, intensity)
-		-- deliberately empty
+	-- f07 §4.6.7, T4: blasts are ignored while spawners.blast_immune
+	-- (the default). With the toggle off the node behaves like a normal
+	-- block — mcl_explosions leaves the removal to us when on_blast is
+	-- defined (mods/CORE/mcl_explosions/init.lua:338-341) and drops
+	-- nothing because drop = "".
+	on_blast = function(pos, intensity, do_drop)
+		if cfg.blast_immune then return end
+		smp_spawners.performance.stop_timer(pos)
+		core.remove_node(pos)
 	end,
 	-- Cardinal rule: punching does nothing.
 	on_punch = function()
@@ -153,4 +188,67 @@ core.register_node("smp_spawners:spawner", {
 		-- active_only: the timer only runs then).
 		smp_spawners.performance.start_timer(pos)
 	end,
+	-- f07 §4.6.8: optional hopper extraction (off by default). Mineclonia
+	-- calls this before any generic pull (mcl_hoppers init.lua:64-70);
+	-- the generic path is blocked by container = 7 anyway.
+	_on_hopper_out = function(pos, hpos)
+		return smp_spawners.performance.hopper_extract(pos, hpos)
+	end,
 })
+
+----------------------------------------------------------------------
+-- Natural spawners (f07 §4.6.9, spawners.convert_natural)
+--
+-- Dungeon spawners stay vanilla by default. When the operator turns the
+-- key on, a dig that also satisfies the Silk Touch rule converts the
+-- vanilla node into a virtual spawner of the matching type instead of
+-- breaking it. Type comes from the vanilla `Mob` metadata key, mapped
+-- back through types.def[*].mob; an unmapped mob (or a type disabled by
+-- spawners.enable_creeper) leaves the vanilla node alone.
+----------------------------------------------------------------------
+
+local VANILLA = "mcl_mobspawners:spawner"
+
+if core.registered_nodes and core.registered_nodes[VANILLA] then
+	local prev_on_dig = core.registered_nodes[VANILLA].on_dig
+
+	-- reverse map: mob entity name -> spawner type id
+	local mob_to_type = {}
+	for id, tdef in pairs(smp_spawners.types.def) do
+		if tdef.mob then mob_to_type[tdef.mob] = id end
+	end
+
+	core.override_item(VANILLA, {
+		on_dig = function(pos, node, digger, tool)
+			local name = digger and digger.get_player_name and
+				digger:get_player_name()
+			tool = tool or (digger and digger.get_wielded_item and
+				digger:get_wielded_item())
+			local has_st = tool and mcl_enchanting and
+				mcl_enchanting.has_enchantment and
+				mcl_enchanting.has_enchantment(tool, "silk_touch")
+
+			local convert = cfg.convert_natural and name ~= nil
+				and (has_st or not cfg.require_silk_touch)
+				and not core.is_protected(pos, name)
+
+			if convert then
+				local mob = core.get_meta(pos):get_string("Mob")
+				local type_id = mob_to_type[mob]
+				-- types.get applies the creeper gate (f07 §4.2, V-04).
+				if type_id and smp_spawners.types.get(type_id) then
+					-- Validate done. set_node runs the vanilla
+					-- on_destruct (doll + XP cleanup) and clears the
+					-- metadata, so the Mob key is read first.
+					core.set_node(pos, { name = "smp_spawners:spawner" })
+					smp_spawners.init_meta(pos, type_id)
+					smp_spawners.performance.start_timer(pos)
+					return
+				end
+			end
+
+			if prev_on_dig then return prev_on_dig(pos, node, digger, tool) end
+			return core.node_dig(pos, node, digger)
+		end,
+	})
+end

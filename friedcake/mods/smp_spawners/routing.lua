@@ -8,7 +8,8 @@
 --
 -- takes a list of ItemStacks, groups them by M0, routes each group to
 -- better-paying open orders first and the remainder to the server at
--- base price, writes the ledger and shows the receipt. Spawner output
+-- base price, writes the ledger and returns the receipt lines (it does
+-- not display them — the caller does). Spawner output
 -- is plain (M0) loot, so that is exactly what Sell all needs.
 --
 -- f02 (smp_sell) is not on main yet. When it lands this module calls
@@ -26,11 +27,17 @@ smp_spawners.routing = {}
 ----------------------------------------------------------------------
 -- Sell all
 --
--- Returns (ok, message). The caller closes the menu on ok.
+-- Returns (ok, message). The message is a string for our own refusals
+-- and a list of lines when f02's receipt or refusal lines are relayed
+-- (f02 returns them without showing them — only the caller can show
+-- them), so the caller must be able to handle either (F07-1).
+-- The caller closes the menu on ok.
 ----------------------------------------------------------------------
 
 function smp_spawners.routing.sell_all(pos, player, opened_type)
 	-- Re-validate; the action is part of the menu contract (R7, T10).
+	-- It also converts elapsed time first (f07 §4.5, F07-7), so a sale
+	-- takes everything produced since last_update.
 	local state = smp_spawners.revalidate(pos, opened_type, player)
 	if not state then
 		return false, S("This spawner has been removed")
@@ -63,12 +70,21 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 		stacks[#stacks + 1] = stack
 	end
 
-	-- f02 routes better-paying orders first, then the server [S2]. It owns
-	-- the money/item movement; we remove from storage only when it reports
-	-- success (f02 §6: `true` = "every stack was consumed and paid for").
-	-- On `false` the stacks were left untouched, so nothing is lost.
-	local ok = smp_sell.sell(player, stacks)
+	-- f02 routes better-paying orders first, then the server [S2]. It
+	-- owns the money/item movement and its contract (f02 §6,
+	-- smp_sell/init.lua:180-186) is: `true` = every stack was consumed
+	-- and paid for, `false` = nothing moved. So storage is decremented
+	-- only after a `true` — validate, then mutate (shared §2.3) — and
+	-- there is no yield between the two.
+	--
+	-- f02 returns its receipt/refusal lines as the second value without
+	-- displaying them (smp_sell/sell.lua:294-342, init.lua:195-213), so
+	-- the caller is the only place they can be shown: relay them.
+	local ok, lines = smp_sell.sell(player, stacks)
 	if not ok then
+		if type(lines) == "table" and #lines > 0 then
+			return false, lines
+		end
 		return false, S("Spawner output could not be sold")
 	end
 
@@ -77,6 +93,12 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 	end
 	smp_spawners.write_state(state)
 
-	return true, S("Spawner output sent to sell routing (@1 items)",
-		smp_core.fmt_qty(total))
+	local out = { S("Spawner output sent to sell routing (@1 items)",
+		smp_core.fmt_qty(total)) }
+	if type(lines) == "table" then
+		for _, line in ipairs(lines) do
+			out[#out + 1] = tostring(line)
+		end
+	end
+	return true, out
 end

@@ -24,83 +24,179 @@ local S = smp_spawners.S
 
 ----------------------------------------------------------------------
 -- Configuration (f07 §7)
+--
+-- build_cfg() is a pure function of a settings object, so the whole
+-- §7 table can be re-built from any store (the engine's core.settings,
+-- or an injected fake in the dev-tests). Settings readers take the
+-- store as their first argument for the same reason.
 ----------------------------------------------------------------------
 
-local function num(key, default)
-	local v = tonumber(core.settings:get(key))
+local function num(settings, key, default)
+	local v = tonumber(settings:get(key))
 	if v == nil then return default end
 	return v
 end
-local function str(key, default)
-	local v = core.settings:get(key)
+
+local function str(settings, key, default)
+	local v = settings:get(key)
 	if v == nil or v == "" then return default end
 	return v
 end
-local function bool(key, default)
-	-- `get_bool(key, default)` returns default only when the key is unset,
-	-- so a default-true key CAN be turned off. The old `get_bool(key) or
-	-- default` never let `false` through (`false or default == default`).
-	return core.settings:get_bool(key, default)
+
+-- `get_bool(key, default)` returns the default only when the key is
+-- unset, so a default-true key CAN be turned off. The old
+-- `get_bool(key) or default` never let `false` through
+-- (`false or default == default`) — see f07 §10, F07-2.
+--
+-- Engine semantics (luanti src/script/lua_api/l_settings.cpp:119-139 +
+-- src/settings.cpp:485): a stored value wins over the default and is
+-- read with `is_yes` semantics, so `false` really is `false`.
+local function bool(settings, key, default)
+	return settings:get_bool(key, default)
 end
 
-smp_spawners.cfg = {
-	-- PROPOSED: single-spawner rate, roughly a vanilla spawner.
-	r = num("spawners.r", 6),
-	-- timer interval; the clamp for active_only is 2 x this (f07 §4.5)
-	timer_interval = num("spawners.timer_interval", 60),
-	-- active_only | always | capped (default active_only)
-	accrual_mode = str("spawners.accrual_mode", "active_only"),
-	-- PROPOSED, used only by accrual_mode = "capped"
-	offline_cap_hours = num("spawners.offline_cap_hours", 24),
-	-- LIVE [S24]: the whole held stack merges
-	stack_mode = str("spawners.stack_mode", "all"),
-	-- f07 §4.4
-	storage = {
-		per_spawner = num("spawners.storage.per_spawner", 2880),  -- PROPOSED
-		hard_cap = num("spawners.storage.hard_cap", 2147483647),  -- PROPOSED
-	},
-	xp = {
-		per_spawner_cap = num("spawners.xp.per_spawner_cap", 2000), -- PROPOSED
-	},
-	-- CLONE [C3]
-	require_silk_touch = bool("spawners.require_silk_touch", true),
-	sneak_break_max = num("spawners.sneak_break_max", 64),
-	-- PROPOSED
-	open_requires_access = bool("spawners.open_requires_access", false),
-	blast_immune = bool("spawners.blast_immune", true),
-	convert_natural = bool("spawners.convert_natural", false),
-	-- f07 §4.6.8: optional hopper extraction, off by default
-	hopper_extraction = bool("spawners.hopper_extraction", false),
-	-- f07 §4.2 "conditional" creeper (f07 §10)
-	enable_creeper = bool("spawners.enable_creeper", true),
-	-- f07 §4.7: no new supply; admin issue only [S10]
-	acquisition = {
-		shard_shop = bool("spawners.acquisition.shard_shop", false),
-		crates = bool("spawners.acquisition.crates", false),
-		natural = bool("spawners.acquisition.natural", false),
-		admin = bool("spawners.acquisition.admin", true),
-	},
-	-- C per type: skeleton is LIVE [S24]; the rest PROPOSED.
-	-- (types.lua carries the defaults; a setting overrides one type.)
-	C = setmetatable({}, {
-		__index = function(_, type_id)
-			local def = smp_spawners.types.def[type_id]
-			return def and def.C or nil
-		end,
-	}),
-}
-do
-	local raw = core.settings:get("spawners.C")
-	if raw and raw ~= "" then
-		for pair in raw:gmatch("([^,%s]+)=([^,%s]+)") do
-			local id, v = pair:match("^([^=]+)=[^=]*(%d+%.?%d*)$")
-			local val = tonumber(v)
-			if id and val and val > 0 then
-				smp_spawners.cfg.C[id] = val
+-- f07 §4.7 acquisition sources and their §7 defaults.
+local ACQ_SOURCES = { "shard_shop", "crates", "natural", "admin" }
+local ACQ_DEFAULTS = { shard_shop = false, crates = false,
+                       natural = false, admin = true }
+
+-- Token grammar for the `spawners.acquisition = {...}` table value
+-- (PROPOSED: the spec fixes the key shape, not its spelling).
+local YES_TOKENS = { ["true"] = true, ["yes"] = true, ["1"] = true,
+                     ["on"] = true }
+local NO_TOKENS  = { ["false"] = true, ["no"] = true, ["0"] = true,
+                     ["off"] = true }
+
+local function parse_bool(v)
+	if type(v) == "boolean" then return v end
+	if type(v) ~= "string" then return nil end
+	local s = v:lower():gsub("^%s+", ""):gsub("%s+$", "")
+	if YES_TOKENS[s] then return true end
+	if NO_TOKENS[s] then return false end
+	return nil
+end
+
+-- The §7 configuration table. `settings` defaults to the engine store.
+function smp_spawners.build_cfg(settings)
+	settings = settings or core.settings
+
+	local stack_mode = str(settings, "spawners.stack_mode", "all")
+	if stack_mode ~= "all" and stack_mode ~= "one" then
+		-- Keep the raw value (operators can see what they wrote) but
+		-- degrade to the default behaviour and say so (f07 §10, F07-10).
+		core.log("warning", "[smp_spawners] unknown spawners.stack_mode "
+			.. string.format("%q", tostring(stack_mode))
+			.. "; falling back to \"all\"")
+	end
+
+	-- f07 §4.7 / §7 `spawners.acquisition`: one table key is the
+	-- documented shape (spec §7, F07-9); the flat
+	-- `spawners.acquisition.<src>` keys remain as a per-source
+	-- fallback for existing configs.
+	local acq = {}
+	for _, src in ipairs(ACQ_SOURCES) do acq[src] = ACQ_DEFAULTS[src] end
+	local from_table = {}
+	local raw_acq = settings:get("spawners.acquisition")
+	if type(raw_acq) == "string" and raw_acq:find("%S") then
+		local body = raw_acq:gsub("[%[%]{}]", "")
+		for k, v in body:gmatch("([%w_]+)%s*=%s*([%w_]+)") do
+			if acq[k] ~= nil then
+				local b = parse_bool(v)
+				if b ~= nil then
+					acq[k] = b
+					from_table[k] = true
+				else
+					core.log("warning",
+						"[smp_spawners] spawners.acquisition."
+						.. k .. ": cannot read " .. string.format("%q", v))
+				end
 			end
 		end
 	end
+	for _, src in ipairs(ACQ_SOURCES) do
+		if not from_table[src] then
+			local v = settings:get_bool("spawners.acquisition." .. src,
+				acq[src])
+			if v ~= nil then acq[src] = v end
+		end
+	end
+
+	return {
+		-- PROPOSED: single-spawner rate, roughly a vanilla spawner.
+		r = num(settings, "spawners.r", 6),
+		-- timer interval; the clamp for active_only is 2 x this (f07 §4.5)
+		timer_interval = num(settings, "spawners.timer_interval", 60),
+		-- active_only | always | capped (default active_only)
+		accrual_mode = str(settings, "spawners.accrual_mode", "active_only"),
+		-- PROPOSED, used only by accrual_mode = "capped"
+		offline_cap_hours = num(settings, "spawners.offline_cap_hours", 24),
+		-- LIVE [S24]: "all" = the whole held stack merges; "one" = one
+		-- spawner per click (f07 §10, F07-10).
+		stack_mode = stack_mode,
+		-- f07 §4.4
+		storage = {
+			per_spawner = num(settings, "spawners.storage.per_spawner", 2880), -- PROPOSED
+			hard_cap = num(settings, "spawners.storage.hard_cap", 2147483647), -- PROPOSED
+		},
+		xp = {
+			per_spawner_cap = num(settings, "spawners.xp.per_spawner_cap", 2000), -- PROPOSED
+		},
+		-- CLONE [C3]
+		require_silk_touch = bool(settings, "spawners.require_silk_touch", true),
+		sneak_break_max = num(settings, "spawners.sneak_break_max", 64),
+		-- PROPOSED
+		open_requires_access = bool(settings, "spawners.open_requires_access", false),
+		blast_immune = bool(settings, "spawners.blast_immune", true),
+		convert_natural = bool(settings, "spawners.convert_natural", false),
+		-- f07 §4.6.8: optional hopper extraction, off by default
+		hopper_extraction = bool(settings, "spawners.hopper_extraction", false),
+		-- f07 §4.2 "conditional" creeper (f07 §10)
+		enable_creeper = bool(settings, "spawners.enable_creeper", true),
+		-- f07 §4.7: no new supply; admin issue only [S10]
+		acquisition = acq,
+		-- C per type: skeleton is LIVE [S24]; the rest PROPOSED.
+		-- (types.lua carries the defaults; apply_C_overrides writes the
+		-- configured ones as plain keys — see below.)
+		C = setmetatable({}, {
+			__index = function(_, type_id)
+				local def = smp_spawners.types and
+					smp_spawners.types.def[type_id]
+				return def and def.C or nil
+			end,
+		}),
+	}
 end
+
+-- f07 §7 `spawners.C.skeleton` (documented shape, F07-8) and the
+-- older compound `spawners.C = "skeleton=1505.35,zombie=250"` spelling.
+-- The dotted keys are the documented ones, so they win when both are
+-- present. Values must be positive numbers; anything else is ignored
+-- and the per-type default from types.lua stands.
+function smp_spawners.apply_C_overrides(settings, cfg)
+	settings = settings or core.settings
+	cfg = cfg or smp_spawners.cfg
+
+	local raw = settings:get("spawners.C")
+	if type(raw) == "string" and raw:find("%S") then
+		for k, v in raw:gmatch("([^,%s]+)=([^,%s]+)") do
+			local id = k:match("^[%w_]+$")
+			local val = tonumber(v)
+			if id and val and val > 0 then
+				cfg.C[id] = val
+			end
+		end
+	end
+
+	local defs = (smp_spawners.types and smp_spawners.types.def) or {}
+	for id in pairs(defs) do
+		local val = tonumber(settings:get("spawners.C." .. id))
+		if val and val > 0 then
+			cfg.C[id] = val
+		end
+	end
+end
+
+smp_spawners.cfg = smp_spawners.build_cfg(core.settings)
 
 ----------------------------------------------------------------------
 -- Submodules
@@ -126,6 +222,10 @@ for _, file in ipairs({
 		error("[smp_spawners] error in " .. file .. ": " .. tostring(lerr))
 	end
 end
+
+-- types.lua is loaded now, so the per-type C overrides can resolve the
+-- documented `spawners.C.<type>` names (F07-8).
+smp_spawners.apply_C_overrides(core.settings, smp_spawners.cfg)
 
 smp_spawners.formspecs.register_handler()
 smp_spawners.formspecs.register_leave()
