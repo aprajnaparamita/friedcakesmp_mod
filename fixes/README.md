@@ -36,7 +36,7 @@ paste it). No other context is required.
 | f08 | [`f08-teleport.md`](f08-teleport.md) | Teleport | `smp_tp`, `smp_rtpqueue` | 8 + 5 dev | high — safety gaps (both-party tag cancel, border clip, spawn exclusion) | `agent/f08-teleport-fixes` |
 | f14 | [`f14-stats.md`](f14-stats.md) | Stats | `smp_stats` | 4 | **✅ merged 2026-09-25 (`fd62e64`) — S1 verify-only (fixed on `main`), S2 → D4, S3/S4/S5/S6/S7 closed; record in `spec/features/f14-stats.md` §10** | merged → `agent/integrator-decisions` |
 | f06 | [`f06-shards.md`](f06-shards.md) | Shards | `smp_shards`, `smp_shardshop`, `smp_amethyst` | 5 | medium | `agent/f06-shard-fixes` |
-| f01→f03 | [`f03-auction.md`](f03-auction.md) | Auction | `smp_ah` | 4 | medium | `agent/f03-auction-fixes` |
+| f03 | [`f03-auction.md`](f03-auction.md) | Auction | `smp_ah` | 7 | **✅ merged 2026-09-25 (`61fc3c9`) — A1 VERIFIED, A2 CLOSED (Match lowest), A3 CLOSED (ah.sorts), A4 CLOSED (ah.history), A5 ESCALATED → D7, A6 CLOSED (5 keys), A7 VERIFIED; 27/27 on main** | merged → `agent/integrator-decisions` |
 | f04 | [`f04-orders.md`](f04-orders.md) | Orders | `smp_orders` | 3 + 1 consumer | medium | `agent/f04-orders-fixes` |
 | f12 | [`f12-settings.md`](f12-settings.md) | Settings | `smp_settings` | 7 | **✅ merged 2026-09-25 (`ffb6a08`) — F12-1 closed (⚠ in both renders + byte-exact tests) · F12-2, F12-3 ESCALATED → D3 (ruled A; pre-applied, verified) · F12-4 closed (T9 leg in `test_social.lua`) · F12-5, F12-6 closed (hygiene) · F12-7 ESCALATED → D7 (mirror already at `shared/06:124`, verified)** | merged → `agent/integrator-decisions` |
 | f10 | [`f10-combat.md`](f10-combat.md) | Combat | `smp_combat`, `smp_bounty` | 2 | low — two dead config knobs; cycle context verified | `agent/f10-combat-fixes` |

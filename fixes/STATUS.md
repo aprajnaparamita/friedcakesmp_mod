@@ -461,3 +461,18 @@ The user approved four bundles; all are executed here.
   mid-flight and cannot be reached; same file set as its C4 row).
 - **Suite after these edits:** recount at the next merge — `test_economy`
   gained the V-48 block, `test_items` keeps f01's count (27 files).
+
+## 15. f03 (auction) merged (2026-09-25)
+
+- **Merge:** `61fc3c9` → `7799aab` (6 files, 215 ins / 15 del)
+- **Gate:** 27/27 on main (one pre-existing `test_engine_apis` failure unrelated; same at base `2b5f16c`)
+- **Rows:**
+  - A1: VERIFIED — `register_globalstep` used correctly, harness provides it
+  - A2: CLOSED — `Match lowest` button on Confirm Listing screen; handler rewrites draft price from unit-price index
+  - A3: CLOSED — `ah.sorts` config read (comma-separated, garbage → default); `set_sorts()` wired
+  - A4: CLOSED — `ah.history` config read (comma `per_page,pages`); legacy `ah.history_page`/`ah.history_pages` fallback retained
+  - A5: ESCALATED → D7 — `ah.slots` dotted vs underscore encoding inconsistency with f04 (D7 ruling: dotted scalar primary + underscore alias)
+  - A6: CLOSED — 5 PROPOSED keys declared in §7 with defaults (`reclaim_days` 30d, `insert_slots` 5, `rate_limit` 1/s, `sweep_interval` 60s, `sweep_budget` 200)
+  - A7: VERIFIED — no `TODO(f03)` in `smp_ah` (only in f04's `smp_orders`)
+- **Escalations:** A5 → D7, A6 mirror proposals → D7. `test_config_mirror.lua` DECLARED_ONLY `["ah.history"] = "f03"` removed (read landed).
+- **Index row annotated** in `fixes/README.md`.
