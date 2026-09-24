@@ -267,11 +267,6 @@ core.chat_send_all = function(msg)
 end
 core.get_player_by_name = function(n) return players[n] end
 core.player_exists = function(n) return players[n] ~= nil or auth[n] == true end
-core.get_player_names = function()
-	local out = {}
-	for n in pairs(players) do out[#out + 1] = n end
-	return out
-end
 core.get_connected_players = function()
 	local out = {}
 	for _, p in pairs(players) do out[#out + 1] = p end
@@ -312,12 +307,6 @@ end
 core.register_globalstep = function(fn)
 	callbacks.globalstep[#callbacks.globalstep + 1] = fn
 end
--- smp_store (f01, not editable by this feature) calls
--- core.register_globalstep, which does not exist in the engine
--- (lua_api.md: core.register_globalstep only). The harness aliases it
--- so the stack loads; the discrepancy is surfaced in f10 §10 for the
--- integrator.
-core.register_globalstep = core.register_globalstep
 core.register_on_shutdown = function() end
 core.register_on_player_receive_fields = function(formname, fn)
 	callbacks.receive_fields[formname] = fn

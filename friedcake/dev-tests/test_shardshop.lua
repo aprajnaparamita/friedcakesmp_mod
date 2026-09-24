@@ -239,7 +239,6 @@ core = {
 		end
 		return nil
 	end,
-	get_player_names = function() return { "dave" } end,
 	get_gametime = function() return 1000 end,
 	get_connected_players = function()
 		return {

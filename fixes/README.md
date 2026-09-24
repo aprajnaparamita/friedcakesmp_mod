@@ -27,7 +27,7 @@ paste it). No other context is required.
 
 | # | Document | Feature | Target mod(s) | Gaps | Severity | Branch |
 |---|---|---|---|---:|---|---|
-| 00 | [`00-P0-blockers.md`](00-P0-blockers.md) | cross-cutting | `smp_store`, `smp_ah`, `smp_orders`, `smp_shards`, `smp_amethyst`, `smp_stats`, `smp_tp` | 3 classes | **blocker — nothing loads** | `agent/p0-engine-apis` |
+| 00 | [`00-P0-blockers.md`](00-P0-blockers.md) | cross-cutting | `smp_store`, `smp_ah`, `smp_orders`, `smp_shards`, `smp_amethyst`, `smp_stats`, `smp_tp` | 3 classes | **✅ fixed — pack boots** | `agent/p0-engine-apis` |
 | 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 11 decisions | **high — blocks several fixes** | `agent/integrator-decisions` |
 | f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
@@ -43,6 +43,39 @@ paste it). No other context is required.
 | f02 | [`f02-sell.md`](f02-sell.md) | Sell | `smp_sell` | 2 | low | `agent/f02-sell-fixes` |
 | f13 | [`f13-ranks.md`](f13-ranks.md) | Ranks | `smp_ranks` | 2 (consumer-side) | low — coordination | `agent/f13-ranks-fixes` |
 | f16 | [`f16-legacy.md`](f16-legacy.md) | Legacy | *(none exist)* | 37 | scope call → `01` | `agent/f16-legacy-decide` |
+
+### Row 00 ✅ — closed on `agent/p0-engine-apis`
+
+B1–B3 had already landed in `68b5bf5`. This branch adds the missing B4-3
+regression guard, `dev-tests/test_engine_apis.lua`, backed by a recorded
+542-name **server** API surface (`dev-tests/engine_api_surface.txt`,
+extracted from the local engine clone with `l_client.cpp` excluded — that
+file registers the client-mod API, which is nil on a server). Two B4-1
+blind-replace remnants are gone as well.
+
+Brief 00's own audit turned out to be incomplete: the criterion-6 surface
+diff found three further sites **of the same class**, none of which it
+listed. All fixed:
+
+| Site | Was | Now |
+|---|---|---|
+| `smp_amethyst/init.lua:205` | `core.register_on_pickup` — **load-time crash, pack still did not boot** | `core.register_on_item_pickup` (signature-compatible) |
+| `smp_economy/init.lua:161`, `smp_shards/init.lua:196` | `core.get_player_names()` — client-only, runtime crash on a server | `core.get_connected_players()` + `:get_player_name()` |
+| `smp_sell/items.lua:478` | `core.get_translated` | `core.get_translated_string` |
+
+Nine harnesses stubbed `get_player_names` and one stubbed
+`register_on_pickup`, masking every row above — exactly the B4-1
+anti-pattern ("never stub a name the engine does not have"). Those fakes
+are removed, and the guard now diffs **every** `core.*` name the mods
+reference against the recorded surface, so the whole bug class is
+covered rather than the two literals brief 00 happened to name.
+
+**Nothing escalated. One site deferred:** `core.get_detached_inventory`
+(7 sites in `smp_ah`, `smp_orders`) is engine-absent but `and`-guarded,
+so it cannot crash — it silently resolves to `nil`. The engine offers
+`create`/`remove_detached_inventory` but **no getter**, so a real fix
+needs a module-local inventory registry, a behavioural change beyond a
+rename. Listed under "deliberately absent" in `engine_api_surface.txt`.
 
 **No document for f05 (Quick Buy) or f15 (world rules)** — both audited
 `COMPLETE` with zero gaps.

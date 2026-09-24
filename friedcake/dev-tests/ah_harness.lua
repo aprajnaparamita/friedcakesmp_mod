@@ -748,12 +748,6 @@ function H.boot(opts)
 		end,
 
 		get_player_by_name = function(name) return H.players[name] end,
-		get_player_names = function()
-			local out = {}
-			for n in pairs(H.players) do out[#out + 1] = n end
-			table.sort(out)
-			return out
-		end,
 		get_connected_players = function()
 			local out = {}
 			for _, p in pairs(H.players) do out[#out + 1] = p end

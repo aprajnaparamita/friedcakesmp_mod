@@ -239,12 +239,6 @@ core = {
 		shown[pname] = nil
 	end,
 	get_player_by_name = function(n) return players[n] end,
-	get_player_names = function()
-		local out = {}
-		for n in pairs(players) do out[#out + 1] = n end
-		table.sort(out)
-		return out
-	end,
 	get_connected_players = function() return connected end,
 	register_chatcommand = function(name, def) commands[name] = def end,
 	registered_chatcommands = commands,

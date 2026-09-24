@@ -258,11 +258,6 @@ core = {
 		field_handlers[#field_handlers + 1] = fn
 	end,
 	get_player_by_name = function(name) return online[name] or nil end,
-	get_player_names = function()
-		local out = {}
-		for name in pairs(online) do out[#out + 1] = name end
-		return out
-	end,
 	get_connected_players = function()
 		local out = {}
 		for name in pairs(online) do

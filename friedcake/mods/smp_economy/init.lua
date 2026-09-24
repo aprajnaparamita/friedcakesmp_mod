@@ -158,7 +158,13 @@ local function resolve_player_name(prefix)
 	if core.get_player_by_name(prefix) then return prefix end
 	if smp_store.api.get_player(prefix) then return prefix end
 	-- Case-insensitive prefix match over online players.
-	local names = core.get_player_names()
+	-- `core.get_player_names` is registered only by l_client.cpp (client
+	-- mods) and is nil on a dedicated server, so build the list from the
+	-- server-side API instead.
+	local names = {}
+	for _, p in ipairs(core.get_connected_players()) do
+		names[#names + 1] = p:get_player_name()
+	end
 	local lc = prefix:lower()
 	local match
 	for _, n in ipairs(names) do

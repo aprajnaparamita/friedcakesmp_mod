@@ -185,11 +185,6 @@ core = {
 		end
 		return nil
 	end,
-	get_player_names = function()
-		local out = {}
-		for _, p in ipairs(connected) do out[#out + 1] = p:get_player_name() end
-		return out
-	end,
 	get_connected_players = function() return connected end,
 }
 

@@ -475,7 +475,8 @@ local function display_name(stack_or_name)
 	if type(stack_or_name) == "string" then
 		local def = core.registered_items and core.registered_items[stack_or_name]
 		if def and def.description and def.description ~= "" then
-			return core.get_translated and core.get_translated("en", stack_or_name .. ".description")
+			return core.get_translated_string
+				and core.get_translated_string("en", stack_or_name .. ".description")
 				or def.description
 		end
 		return stack_or_name

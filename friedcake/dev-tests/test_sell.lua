@@ -605,7 +605,7 @@ core = {
 			end))
 		end
 	end,
-	get_translated = function(_, _, s) return s end,
+	get_translated_string = function(_, _, s) return s end,
 	-- Identity on purpose: the T1 assertion checks the exact label element.
 	colorize = function(_, text) return text end,
 	formspec_escape = function(s) return (tostring(s):gsub("[%[%];,\\]", "\\%1")) end,
@@ -693,11 +693,6 @@ core = {
 	get_connected_players = function()
 		local out = {}
 		for _, p in pairs(players) do out[#out + 1] = p end
-		return out
-	end,
-	get_player_names = function()
-		local out = {}
-		for n in pairs(players) do out[#out + 1] = n end
 		return out
 	end,
 	get_gametime = function() return 0 end,

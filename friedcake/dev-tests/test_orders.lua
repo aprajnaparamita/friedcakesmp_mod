@@ -522,11 +522,6 @@ local function make_player(name)
 end
 
 core.get_player_by_name = function(n) return players[n] end
-core.get_player_names = function()
-	local out = {}
-	for n in pairs(players) do out[#out + 1] = n end
-	return out
-end
 
 local detached = {}
 core.create_detached_inventory = function(name, callbacks, pname)

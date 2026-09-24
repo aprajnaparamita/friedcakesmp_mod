@@ -202,7 +202,7 @@ end)
 
 -- An expired item picked up from the ground/container is removed lazily
 -- (f06 §4.3: "items in containers are removed lazily when ... picked up").
-core.register_on_pickup(function(itemstack, player)
+core.register_on_item_pickup(function(itemstack, player)
 	if not player or not player:is_player() then return itemstack end
 	if expiry.is_amethyst(itemstack:get_name()) and expiry.is_expired(itemstack) then
 		smp_amethyst.remove_expired(itemstack, player)

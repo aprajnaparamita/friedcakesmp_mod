@@ -193,7 +193,10 @@ smp_shards.parse_shard_amount = parse_shard_amount
 local function resolve_target(raw)
 	if not raw or raw == "" then return nil end
 	if smp_store.api.get_player(raw) then return raw end
-	for _, n in ipairs(core.get_player_names()) do
+	-- `core.get_player_names` is client-only (nil on a server); resolve
+	-- against the connected players the server API actually exposes.
+	for _, p in ipairs(core.get_connected_players()) do
+		local n = p:get_player_name()
 		if n:lower() == raw:lower() then return n end
 	end
 	return nil

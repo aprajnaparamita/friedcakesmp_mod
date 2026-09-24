@@ -207,7 +207,7 @@ core = {
 	register_globalstep = function() end,
 	register_on_leaveplayer = function() end,
 	get_player_by_name = function() return nil end,
-	get_player_names = function() return {} end,
+	get_connected_players = function() return {} end,
 }
 
 -- Sanity: settings.get_bool exists on this core

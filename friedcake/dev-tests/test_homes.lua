@@ -248,11 +248,6 @@ local core = {
 		for name in pairs(fake.players) do out[#out + 1] = fake.players[name] end
 		return out
 	end,
-	get_player_names = function()
-		local out = {}
-		for name in pairs(fake.players) do out[#out + 1] = name end
-		return out
-	end,
 	get_node = function(pos) return { name = fake.node_at(pos.x, pos.y, pos.z) } end,
 	get_item_group = function() return 0 end,
 	emerge_area = function(_, _, cb) cb(nil, nil, 0) end,
@@ -274,7 +269,6 @@ local core = {
 	registered_chatcommands = {},
 	register_privilege = function() end,
 	register_on_player_hpchange = function(fn) fake.hpchange = fn end,
-	register_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
 	register_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
 	register_on_leaveplayer = function(fn) fake.leaves[#fake.leaves + 1] = fn end,
 	register_on_dieplayer = function(fn) fake.die[#fake.die + 1] = fn end,
