@@ -16,12 +16,13 @@
 |---|---|---|---|---|
 | `/bal` | `/balance`, `/money` | `[player]` | Show a money balance | LIVE [S24] |
 | `/pay` | — | `<player> <amount>` | Transfer money | **OBSERVED** [F0088–F0090] |
+| `/payto` | — | `<player> <amount>` | Exact-name alias of `/pay`, for scripts; registered only while `economy.tab_complete` is true | PROPOSED |
 | `/paytoggle` | `/paymenttoggle` | — | Toggle receiving payments | CLONE [C1] |
 | `/baltop` | `/moneytop` | `[page]` | Money leaderboard (`f14`) | LIVE [S24] |
 | `/shards` | `/shard` | — | Shard balance (`f06`) | CLONE [C1] |
 | `/eco` | — | `give｜take｜set｜reset <player> <amount>` | Adjust money (admin) | CLONE [C1] |
-| `/ledger` | — | `<player> [page]` | Audit trail (admin) | PROPOSED |
-| `/smp` | — | `reload` | Reload configuration (admin) | PROPOSED |
+| `/ledger` | — | `<player> [page]` | Audit trail (admin **or** moderator; the OR is enforced inside `func`, see §8) | PROPOSED |
+| `/smp` | — | `reload｜test｜backend` | Reload configuration, run a mod's acceptance tests, show the storage backend (admin) | PROPOSED |
 
 ## 3. Observed UI
 
@@ -169,6 +170,18 @@ function smp_economy.pay(sender, target_name, amount)
 end
 ```
 
+**As implemented** — the block above is pseudocode for the validation
+*order*, not a call-for-call transcript. Where the shipped code differs, and
+why:
+
+| Pseudocode | Shipped (`smp_economy/init.lua`) | Why |
+|---|---|---|
+| `smp_settings.get_name(target, …)` | `smp_settings.get(target, …)` → `record.social.pay_accept` → default **on** | **F12-A** (`f12-settings.md:248`) renamed the accessor to `get`. f12 does not register `eco.pay_accept` yet, and its store lives in *player* meta, which an offline recipient has no handle for — so `record.social.pay_accept` stays the offline-authoritative fallback, with a one-time migration on join (E-22). Cross-feature ask: f12 §10. |
+| `smp_economy.take(sender, amount)` / `smp_economy.give(target, amount)` | `smp_store.api.take_money` / `add_money` directly, with the two ledger rows each helper writes | **No clamp is allowed to leak supply**: `give` is capped at `economy.max_balance`, so routing `/pay` through it would silently drop part of a transfer that has already been debited. `/eco give｜set｜reset` and every other *credit* path do go through `smp_economy.give` (E-18). D7 mirror consequence recorded in §10. |
+| `smp_admin.flag(kind, from, target, amount)` | `smp_admin.flag(kind, detail)` with `detail` formatted on this side | **D9** landed 2026-09-24 with the 2-argument signature (E-03/E-24). |
+| `smp_store.ledger(...)` | `take_money` / `add_money` write the debit and the credit row each | shared §2.6 R3: one append-only entry per mutation; T5 asserts the delta is exactly two. |
+| `amount < cfg.economy.min_pay` before the funds check | blocks → cooldown → amount → min_pay → recipient toggle → funds | shared §2.3: every validation runs before the first mutation, with no yield in between. R9's cooldown is validated (not armed) here. |
+
 ## 7. Configuration
 
 | Key | Default | Status |
@@ -210,7 +223,60 @@ end
 | T9 | Money never becomes negative under concurrent operations |
 | T10 | A balance of $10¹³ cannot be exceeded |
 
-## 10. Open questions
+## 10. Findings, escalations and open questions
+
+### 10.1 Escalations and dispositions from the conformance fixes
+
+Every row of `fixes/f01-economy-core.md`, with its evidence and outcome.
+Nothing outside the edit surface (`smp_economy`, `smp_items`, their tests,
+`dev-tests/test_economy.lua`, `dev-tests/test_items.lua`, this file) was
+modified.
+
+| Id | Outcome | Evidence / target |
+|---|---|---|
+| E-01 | **CLOSED** (verified, not redone) | `smp_social.blocks` wired both directions in the validate phase, `smp_economy/init.lua:395-398`; generic refusal so X9's `/pay` leg does not reveal the block. Closed here so `fixes/f11-social.md` does not double-implement. |
+| E-02 | **CLOSED** | `core.register_on_joinplayer` at `init.lua:858` surfaces `pending:<name>` rows accumulated in this mod's own mod storage at pay time; read-and-clear has no yield. Ledger-based alternatives were impossible (E-15 `counterparty` = `""`, E-16 pagination). |
+| E-03 | **CLOSED** (D9 landed) | `smp_admin.flag("large_transfer_to_new_account", detail)` at `init.lua:435-436`; `detail` formatted on this side per D9's 2-arg signature. `core.log` kept as fallback when `smp_admin` is absent. |
+| E-04 | **CLOSED** | 1 s per-sender cooldown validated before any mutate; armed only by a successful pay; clock = `core.get_gametime` (fallback `os.time`); hook `smp_economy._reset_pay_cooldown` at `init.lua:230`. Hardcoded — no new `core.settings` key (see §7). |
+| E-05 | **ESCALATE → integrator** | Ledger reversal helper (shared §2.6 R11) lives in `smp_store`; no reversal code exists anywhere in the pack. Integrator-owned. |
+| E-06 | **ESCALATE → integrator** | Pending marker on multi-record ledger ops (shared §2.6 R12) is `smp_store`-side. Consequence: T8's crash-mid-flush half is satisfied *a fortiori* by write-through, not by a real crash simulation. |
+| E-07 | **CLOSED** | `/ledger` registered with **no** privs table; the OR is checked inside `func` (`init.lua:662-675`) and denial is the engine-verbatim `You don't have permission to run this command (missing privileges: @1).`. `/eco` stays `smp_admin`-only. §2 row updated. |
+| E-08 | **CLOSED** | `/eco reset <player> <amount>` now parses the amount and sets the balance to it with reason `eco:reset:<admin>` (`init.lua:626-637`); missing/invalid input rejected, never accepted-and-ignored. |
+| E-09 | **CLOSED** | `local function run_smp_core_tests` moved above the registration (`init.lua:728` vs call at `:819`), so the closure captures the local. The dispatcher now runs `test.lua` for **any** `smp_*` mod — that generalisation is `PROPOSED`, see §10.3. |
+| E-10 | **CLOSED** | Prefix resolver kept (`resolve_player_name`) and proven by T7; the engine limitation is documented here and in the code comment. Luanti exposes no server-driven argument-completion API (`~/dev/luanti/doc/lua_api.md`), so the OBSERVED dropdown [F0089] is client-side online-name completion, which the server cannot drive. |
+| E-11 | **CLOSED** | In-game test output and every player-facing string in this mod go through the translator; enforced by the string audit in `dev-tests/test_economy.lua` (0 failures). |
+| E-12 | **ESCALATE → integrator** | `smp_store/init.lua:326` sends `"[smp_store] backend = " …` to chat untranslated. Integrator-owned. |
+| E-13 | **CLOSED** | Terminal `.` stripped from every invented string in `smp_economy`/`smp_items`, descriptions included; catalogued and OBSERVED strings left byte-exact. Automated period scan in `dev-tests/test_economy.lua`. |
+| E-14 | ✅ **RESOLVED** by integrator | `shards_for_playtime` column + migration present in `smp_store/backends/sqlite.lua`. Verified, no escalation filed. |
+| E-15 | **ESCALATE → integrator** | Ledger `counterparty` still written `""` in `smp_store`. Also the reason E-02 cannot use ledger queries. |
+| E-16 | ✅ **RESOLVED** by integrator | `ledger_for` filter-then-page in `smp_store/backends/mod_storage.lua`. Verified. |
+| E-17 | **ESCALATE → integrator** | mod_storage `flush` is a no-op (write-through, no batching) — shared §2.2 dirty-flag batching unimplemented. Integrator-owned. |
+| E-18 | **CLOSED** | `economy.max_balance` is enforced in this mod's credit paths: `smp_economy.give` clamps to `cfg.max_balance` and reports what it credited (`init.lua:104-135`), and `/eco give｜set｜reset` clamp (`init.lua:606-637`). `/pay` deliberately does **not** route through `give` (see §6) so no clamp can destroy supply already debited. **D7 mirror consequence recorded in `## Proposed shared changes`.** |
+| E-19 | **ESCALATE → integrator** | `smp_core` event bus / config loader / widget helpers missing; `show_formspec`'s 4th argument bound to `_` (`smp_core/init.lua:204-205`). Integrator-owned. |
+| E-20 | **CLOSED** | Reversible contents codec in `smp_items`: percent-encoded tokens `"C"<pct(meta "compressed")>` / `"S"<pct(serialized list)>` / `""`, bytes outside `[A-Za-z0-9.-]` encoded so no `|` can appear. `stack_from_key` rebuilds contents/wear/ench and returns nil only for legacy hash tokens and `named == 1`. M0/M1 literals byte-identical; `test_ah_keys.lua`'s six-field parse untouched. Preferred route (implement) taken over amending the shared wording — wording proposal still filed below. |
+| E-21 | **ESCALATE → integrator** | `auto` backend never picks sqlite (`smp_store/init.lua:46-50` guards on a `package.loaded` entry nobody preloads). Integrator-owned. |
+| E-22 | **CLOSED** | Read chain `smp_settings.get(name, "eco.pay_accept")` → `record.social.pay_accept` → default ON; writes mirror to both; one-time join migration via raw `smp_store` read (`init.lua:153-156`). Cross-feature ask in §10.2 (f12 must register the id). |
+| E-23 | **CLOSED** | T5 counts ledger rows immediately before and after and asserts a delta of **exactly 2**, both `pay`, plus supply conservation. |
+| E-24 | **CLOSED** (D9 landed) | T6 asserts the flag fires for $2M → a 10-minute account via `smp_admin.flags()` (kind, detail, +1 count), and does **not** fire below the threshold or above the playtime floor. Same asserts in `smp_economy/test.lua`. |
+| E-25 | **CLOSED** | T7 in `dev-tests/test_economy.lua`: unique prefix, ambiguous refusal, exact-wins, case-insensitive. |
+| E-26 | **CLOSED** | T8 re-instantiates the store driver over the same storage stub and re-reads balances + ledger. Crash-window rationale documented in the test: satisfied *a fortiori* by write-through, blocked on R12 (E-06) for a true simulation. |
+| E-27 | **CLOSED** by integrator (D1 = A, P1) | `smp_quickbuy/buy.lua:87` verified period-free — matches the OBSERVED form. No change made here. **Live residue in other mods** noted in §10.2. |
+| E-28 | **DEPENDS-BLOCKER** (B1-1, B4-1) | B1-1 (`core.register_on_globalstep` in `smp_store`) is integrator-owned; B4-1 deletes this suite's `register_globalstep` fake afterwards. The fake was kept as instructed, and this suite gained **no** stub of a name the engine lacks. The literal forbidden symbol is not written anywhere under `friedcake/`. |
+
+### 10.2 Findings and cross-feature asks raised by the fixes
+
+| # | Finding | Ask |
+|---|---|---|
+| F-1 | `optional_depends = smp_social` on `smp_economy` was **not** added: it creates the real load cycle economy → social → combat → stats → economy, which aborts server startup. Verified against the mod dependency graph. | Integrator: rule on the cycle (either `smp_social` must not depend on `smp_stats`, or the blocks check has to move behind a lazy call). Until then E-01 stays a guarded call-only wiring (`if smp_social and …`), which is already what ships. |
+| F-2 | `/smp test <mod>` now dispatches to **any** `smp_*` mod that ships a `test.lua`, not only `smp_core`. | Integrator: accept as `PROPOSED` behaviour for the `/smp` row in `spec/shared/05-command-reference.md`, or tell me to narrow it back to `smp_core`. |
+| F-3 | `/payto` is kept and now declared in §2 (status `PROPOSED`). | Integrator: add the mirror row to `spec/shared/05-command-reference.md`, or rule it out of scope and I will drop the command. Open question: should it be gated on `economy.tab_complete` (as currently registered) or be unconditional? |
+| F-4 | D7 mirror consequence of E-18: `shared/06` lists `economy.max_balance` (now genuinely enforced here) but still does **not** list the live `store.max_balance` cap in `smp_store`, and `shared/06:17` still says `economy.max_balance` is "read but dead". | See `## Proposed shared changes` — proposal only, never a hand-edit. |
+| F-5 | E-22 needs f12 to register `eco.pay_accept` for the canonical accessor to be authoritative; f12 also renamed `get_name` → `get` (**F12-A**). | Cross-feature ask for `spec/features/f12-settings.md` §10: register `eco.pay_accept` (default ON) and confirm the offline-player-meta limitation, so the `record.social` fallback can eventually be retired. |
+| F-6 | Period divergence in **other** mods' `Insufficient funds.` — `smp_bounty/init.lua:159`, `smp_quickbuy/buy.lua:70`, `smp_orders/routing.lua:104,133`. Their own tests assert the period, so they were not touched. The f01 copy is period-free (E-13). | Integrator: fold into D1's sweep of E-27 across f02/f03/f05, or file a new row. Same class as E-27. |
+| F-7 | E-10: there is still no server-driven tab-completion API in Luanti, so the OBSERVED dropdown [F0089] can only ever be the client's own online-name completion. | Informational for the integrator; if the engine ever gains an argument-completion callback, revisit the resolver. |
+| F-8 | E-01 closed on `main` before this branch (verified, both directions). | Informational: `fixes/f11-social.md` must not re-implement the blocks → payments wiring; it landed here. |
+
+### 10.3 Open questions
 
 | Id | Question |
 |---|---|
@@ -218,3 +284,13 @@ end
 | V-52 | What are the `/pay` success and notification messages? Never seen |
 | V-53 | Is the scoreboard's lower-case money (`754k`) a third format, or the same formatter at a narrower width? |
 | V-27 | Exact name of the shard balance command (`/shards` vs `/shard`) |
+
+## Proposed shared changes
+
+Proposals only — `spec/shared/` is read-only for this agent.
+
+| File | Current | Proposed |
+|---|---|---|
+| `spec/shared/02-architecture.md` §2.5 (`:95`) | the M2 `<contents>` field is described as a **hash** over the contents | describe it as a **reversible token** (percent-encoded `compressed` meta, or the empty key for the serialized list); `stack_from_key` rebuilds the stack. The one-way hash was retired by E-20; consumers that compared it opaquely are unaffected. |
+| `spec/shared/06-config-reference.md` (`:10`, `:17`) | `economy.max_balance` marked read-but-dead; `store.max_balance` not listed although `smp_store` enforces it | `economy.max_balance` — now enforced by `smp_economy`'s credit paths (E-18); `store.max_balance` — listed as the store-level cap for direct `smp_store.api.add_money` callers. This is D7's mirror decision. |
+| `spec/shared/05-command-reference.md` | no `/payto` row; `/smp` row predates the test dispatcher | add `/payto <player> <amount>` (alias of `/pay`, f01 `PROPOSED`); widen `/smp test` to `<mod>` where the mod ships a `test.lua` (f01 `PROPOSED`). |
