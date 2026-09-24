@@ -494,6 +494,56 @@ eq(smp_ranks.cfg.expiry_check_interval, 3600, "cfg sweep interval 3600s")
 ok(#after_fns >= 1, "hourly sweep loop scheduled with core.after")
 
 ----------------------------------------------------------------------
+-- CONTRACT — f13 §4.2.4 perk API contract tests
+-- C1 (R-01): order_limit honours expires_at (hand-off → fixes/f04-orders.md)
+-- C2 (R-02): rtp_cooldown never nil, defaults correctly (hand-off → fixes/f08-teleport.md)
+----------------------------------------------------------------------
+print("--- CONTRACT: perk API contract ---")
+
+-- C1 (R-01): expired tier reads default via perk API, raw record unchanged
+local C1 = "__t13_c1"
+reset(C1)
+local rec_c1 = smp_store.api.get_player(C1)
+rec_c1.rank = { tier = "tier1", expires_at = os.time() - 1 }
+smp_store.api.upsert_player(rec_c1)
+local before_c1 = json_encode(smp_store.api.get_player(C1).rank)
+
+eq(smp_ranks.tier(C1), "default", "C1 expired tier reads default")
+eq(smp_ranks.order_limit(C1), 9, "C1 order_limit expired -> default (9)")
+eq(smp_ranks.home_limit(C1), 2, "C1 home_limit expired -> default (2)")
+-- Raw record still says tier1 — this is why raw reads are wrong
+local raw_rec = smp_store.api.get_player(C1)
+eq(raw_rec.rank.tier, "tier1", "C1 raw rec.rank.tier still tier1")
+eq(raw_rec.rank.expires_at, os.time() - 1, "C1 raw expires_at unchanged")
+-- Record must be byte-identical (no mutation by tier()/limit calls)
+eq(json_encode(smp_store.api.get_player(C1).rank), before_c1,
+	"C1 record unmutated after perk API calls")
+
+-- C2 (R-02): rtp_cooldown never nil; live tier2/media fall back to default (60s)
+local C2 = "__t13_c2"
+reset(C2)
+-- Live tier2 record
+local rec_c2 = smp_store.api.get_player(C2)
+rec_c2.rank = { tier = "tier2", expires_at = os.time() + 86400 }
+smp_store.api.upsert_player(rec_c2)
+local cd_tier2 = smp_ranks.rtp_cooldown(C2)
+eq(cd_tier2, 60, "C2 tier2 rtp_cooldown falls back to default (60s), never nil")
+
+-- Live media record (aliases tier3)
+local C2m = "__t13_c2m"
+reset(C2m)
+local rec_c2m = smp_store.api.get_player(C2m)
+rec_c2m.rank = { tier = "media", expires_at = os.time() + 86400 }
+smp_store.api.upsert_player(rec_c2m)
+local cd_media = smp_ranks.rtp_cooldown(C2m)
+eq(cd_media, 60, "C2 media rtp_cooldown falls back to default (60s)")
+
+-- Counterpart: live tier1 returns 30s (already covered by T8, but pin here)
+reset(C2)
+smp_ranks.grant(C2, "tier1")
+eq(smp_ranks.rtp_cooldown(C2), 30, "C2 tier1 rtp_cooldown 30s")
+
+----------------------------------------------------------------------
 -- In-game suite (mods/smp_ranks/test.lua) — must also pass
 ----------------------------------------------------------------------
 print("== in-game test suite (mods/smp_ranks/test.lua) ==")
