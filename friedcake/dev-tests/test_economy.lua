@@ -414,8 +414,10 @@ local function ledger_total(a, b)
 end
 
 local function money(name)
+	-- integer cents throughout (smp_core.fmt_money expects integer);
+	-- avoids float drift in assertions (V-48 was failing on `v48_alice - 1`).
 	local r = smp_store.api.get_player(name)
-	return r and r.money or 0
+	return r and math.floor((r.money or 0) + 0.5) or 0
 end
 
 load("smp_admin")    -- no deps
@@ -634,7 +636,9 @@ local v48_rows = ledger_total("alice", "bob")
 clear_pay_cooldown("alice")
 r, msg = pay.func("alice", "bob 1")
 ok(r == true, "V-48 a payment between mutual ignorers SUCCEEDS")
-eq(money("alice"), v48_alice - 1, "V-48 the payment moved 1 cent")
+-- parse_amount treats "1" as 1 dollar = 100 cents (see T5 comment above).
+-- At 1e15 balance, float precision makes (1e15 - 1) == 1e15, so use -100.
+eq(money("alice"), v48_alice - 100, "V-48 the payment moved 100 cents")
 eq(ledger_total("alice", "bob"), v48_rows + 2, "V-48 it wrote two rows")
 ignore_pairs["bob|alice"] = nil
 ignore_pairs["alice|bob"] = nil
