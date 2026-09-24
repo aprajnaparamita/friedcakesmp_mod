@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f12 |
 | Verdict at audit | **MOSTLY COMPLETE (4 gaps)** · ~26 OK · T1–T8 green; T9 absent |
 | Branch | `agent/f12-settings-fixes` |
-| Depends on | **D3** and **D7** (`01-integrator-decisions.md`); `fixes/f11-social.md` (T9 harness); `00-P0-blockers` (in-game verification only) |
+| Depends on | **D3** and **D7** (`01-integrator-decisions.md`); `fixes/f11-social.md` (T9 harness); `00-P0-blockers` (in-game verification only) — **ruled 2026-09-24: D3 = A (§4.7 + §5.1 rewritten, `settings.categories` struck from §7 by P1 — F12-B/F12-C are pre-applied, verify, don't redo), D7 = A (mirror by P2)** |
 
 ---
 

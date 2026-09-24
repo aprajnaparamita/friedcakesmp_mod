@@ -7,7 +7,15 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f16 |
 | Verdict at audit | **NOT IMPLEMENTED** · 1 OK · 1 PARTIAL · **37 MISSING** · **0/11 tests** |
 | Branch | `agent/f16-legacy-decide` |
-| Depends on | **D8** (f16 scope call, `01-integrator-decisions.md`); **D7** (the four `legacy.*` mirror rows) |
+| Depends on | **CANCELLED — D8 ruled 2026-09-24: descoped permanently, never to be built. Do not run this brief.** Spec-side descope (f16 status, V-61, roadmap, acceptance-tests) is executed by [`prompts/p3-f16-descope.md`](prompts/p3-f16-descope.md); the four `legacy.*` mirror rows are struck by [`prompts/p2-config-mirror.md`](prompts/p2-config-mirror.md) |
+
+---
+
+> **CANCELLED — 2026-09-24 (D8).** The five legacy mods (`smp_crates`,
+> `smp_afk`, `smp_teams`, `smp_duels`, `smp_servershop`) will **never be
+> built** — "never going to be written… no need for legacy mods" (integrator).
+> This brief is retained as the record of the 37 audit gaps and of the scope
+> call itself. Do not run it; there is nothing to decide any more.
 
 ---
 

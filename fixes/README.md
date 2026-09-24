@@ -28,21 +28,21 @@ paste it). No other context is required.
 | # | Document | Feature | Target mod(s) | Gaps | Severity | Branch |
 |---|---|---|---|---:|---|---|
 | 00 | [`00-P0-blockers.md`](00-P0-blockers.md) | cross-cutting | `smp_store`, `smp_ah`, `smp_orders`, `smp_shards`, `smp_amethyst`, `smp_stats`, `smp_tp` | 3 classes | **✅ fixed — pack boots** | `agent/p0-engine-apis` |
-| 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 11 decisions | **high — blocks several fixes** | `agent/integrator-decisions` |
+| 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 11 decisions | **✅ ruled 2026-09-24 — execution: [prompts/](prompts/)** | `agent/integrator-decisions` |
 | f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
-| f09 | [`f09-homes.md`](f09-homes.md) | Homes | `smp_tp` (homes) | 4 | **high — feature never loads** | `agent/f09-homes-fixes` |
+| f09 | [`f09-homes.md`](f09-homes.md) ⚠ *brief file missing* | Homes | `smp_tp` (homes) | 4 | **high — feature never loads** | `agent/f09-homes-fixes` |
 | f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | high — 0 tests | `agent/f11-social-fixes` |
-| f08 | [`f08-teleport.md`](f08-teleport.md) | Teleport | `smp_tp`, `smp_rtpqueue` | 8 | high | `agent/f08-teleport-fixes` |
+| f08 | [`f08-teleport.md`](f08-teleport.md) ⚠ *brief file missing* | Teleport | `smp_tp`, `smp_rtpqueue` | 8 | high | `agent/f08-teleport-fixes` |
 | f14 | [`f14-stats.md`](f14-stats.md) | Stats | `smp_stats` | 4 | high (incl. blocker site) | `agent/f14-stats-fixes` |
 | f06 | [`f06-shards.md`](f06-shards.md) | Shards | `smp_shards`, `smp_shardshop`, `smp_amethyst` | 5 | medium | `agent/f06-shard-fixes` |
 | f01→f03 | [`f03-auction.md`](f03-auction.md) | Auction | `smp_ah` | 4 | medium | `agent/f03-auction-fixes` |
 | f04 | [`f04-orders.md`](f04-orders.md) | Orders | `smp_orders` | 3 + 1 consumer | medium | `agent/f04-orders-fixes` |
 | f12 | [`f12-settings.md`](f12-settings.md) | Settings | `smp_settings` | 4 | medium | `agent/f12-settings-fixes` |
-| f10 | [`f10-combat.md`](f10-combat.md) | Combat | `smp_combat`, `smp_bounty` | 2 | low | `agent/f10-combat-fixes` |
+| f10 | [`f10-combat.md`](f10-combat.md) ⚠ *brief file missing* | Combat | `smp_combat`, `smp_bounty` | 2 | low | `agent/f10-combat-fixes` |
 | f02 | [`f02-sell.md`](f02-sell.md) | Sell | `smp_sell` | 2 | low | `agent/f02-sell-fixes` |
 | f13 | [`f13-ranks.md`](f13-ranks.md) | Ranks | `smp_ranks` | 2 (consumer-side) | low — coordination | `agent/f13-ranks-fixes` |
-| f16 | [`f16-legacy.md`](f16-legacy.md) | Legacy | *(none exist)* | 37 | scope call → `01` | `agent/f16-legacy-decide` |
+| f16 | [`f16-legacy.md`](f16-legacy.md) | Legacy | *(none exist)* | 37 | **❌ cancelled — descoped permanently (D8, 2026-09-24), never to be built** | — |
 
 ### Row 00 ✅ — closed on `agent/p0-engine-apis`
 
@@ -80,15 +80,60 @@ rename. Listed under "deliberately absent" in `engine_api_surface.txt`.
 **No document for f05 (Quick Buy) or f15 (world rules)** — both audited
 `COMPLETE` with zero gaps.
 
+---
+
+### Row 01 ✅ — ruled 2026-09-24, execution in [prompts/](prompts/)
+
+All eleven decisions are written up with dated rulings, chosen options and
+exact change sites in
+[`01-integrator-decisions.md`](01-integrator-decisions.md) § *Rulings —
+2026-09-24*:
+
+| Decision | Ruled | Decision | Ruled |
+|---|---|---|---|
+| D1 | **A** — race string loses its period | D7 | **A** — mirror + §7 follow code |
+| D2 | **A** — chat receipt is the design | D8 | **descoped permanently — f16 never built** |
+| D3 | **A** — §4.7/§5.1 rewritten, categories struck | D9 | **A** — `smp_admin.flag` built |
+| D4 | **§7 → `snapshot`** | D10 | **A** — mute producer + `/mute`,`/unmute` |
+| D5 | **normalise spec to renderer** | D11 | **A** — `test_integration.lua` built |
+| D6 | **`upsert_player`, `mark_dirty` struck** | OPEN-1 | sell-history seam — *still unruled* |
+
+Execution is split into five standalone prompts
+([`prompts/README.md`](prompts/README.md) — waves, branches, conflict matrix),
+master requirements in [`REQUIREMENTS.md`](REQUIREMENTS.md):
+
+- **Wave 1 (parallel):** [P1 spec-rulings](prompts/p1-spec-rulings.md) (D1–D6),
+  [P3 f16-descope](prompts/p3-f16-descope.md) (D8 spec-side),
+  [P4 admin-apis](prompts/p4-admin-apis.md) (D9+D10)
+- **Wave 2:** [P2 config-mirror](prompts/p2-config-mirror.md) (D7 + mirror
+  halves of D3/D8) — after P1 and P3
+- **Wave 3:** [P5 integration-harness](prompts/p5-integration-harness.md)
+  (D11) — after P2 and P4
+
+Each feature brief below now carries its ruling outcome on its **Depends on**
+row (criterion 5). Brief `f16` is cancelled. Briefs `f08`, `f09`, `f10` are
+indexed but **have no file** (14 unassigned gaps — see
+[`STATUS.md`](STATUS.md)); they must be authored before those features get fix
+agents.
+
+**Caveat:** `fixes/` exists only on `agent/p0-engine-apis` /
+`agent/integrator-decisions`, never on `main` — see [`STATUS.md`](STATUS.md).
+Base every branch on `agent/integrator-decisions`, not `main`.
+
 ## Suggested order
 
-1. `00-P0-blockers.md` — without it no fix can be verified in-game.
-2. `01-integrator-decisions.md` — several feature briefs carry **ESCALATE**
-   items that cannot be closed until these rulings land.
+1. `00-P0-blockers.md` — **done** (✅, `agent/p0-engine-apis`); merge it first,
+   it is the load blocker for everything below.
+2. `01-integrator-decisions.md` — **ruled** (✅); run its five
+   [`prompts/`](prompts/) in wave order 1 → 2 → 3 (each branches from
+   `agent/integrator-decisions`).
 3. `f07`, `f09`, `f11`, `f08`, `f14` — the high-severity items (item loss,
-   unwired feature, untested OBSERVED strings, wrong engine APIs).
+   unwired feature, untested OBSERVED strings, wrong engine APIs). `f08`/`f09`
+   briefs must be authored first (⚠ missing).
 4. Everything else, in any order — the remaining briefs are independent and can
-   run in parallel (one agent per feature file, per AGENTS.md).
+   run in parallel (one agent per feature file, per AGENTS.md). `f16` is
+   cancelled (D8). All D-escalations are already ruled — see each brief's
+   **Depends on** row.
 
 ## Standing rules (repeated in every brief)
 

@@ -50,6 +50,40 @@ rows that name the decision they are waiting on.
 | **D10** | **Mute producer (f11 §4.1.3).** The chat callback enforces mutes but nothing in the pack can set one — `smp_admin` has no `mute`/`is_muted`, so the bridge always returns false. | Add a mute API to `smp_admin` (+ `/mute`, `/unmute` and a duration), **or** amend f11 §4.1.3 to note enforcement-only-until-moderation-tooling. | `smp_admin/` (integrator-owned), `spec/features/f11-social.md` §4.1.3 | f11 brief row 4 |
 | **D11** | **Integration-test seam policy.** Every cross-mod seam (f03↔f04, f03↔f05, f07→f02, f08→f11) is tested with the counterpart stubbed; no test ever loads two real mods together, which is exactly how B1/B4 in `00-P0-blockers.md` survived. | Commission one modpack-level headless test that loads the real mods in dependency order (or record in `plan/acceptance-tests.md` — integrator-owned — that seam tests are out of scope for the dev harness). | `spec/plan/acceptance-tests.md` (**integrator-owned**), new `friedcake/dev-tests/test_integration.lua` | all briefs (structural) |
 
+## Rulings — 2026-09-24 (integrator)
+
+All eleven decisions are **ruled**. The work they unlock is written up as
+requirements in [`fixes/REQUIREMENTS.md`](REQUIREMENTS.md) and split into five
+standalone agent prompts under [`fixes/prompts/`](prompts/). Execution waves
+and file-ownership are fixed there so parallel agents cannot collide.
+
+| ID | Ruled | Choice | Follow-up change (exact sites) | Executed by |
+|---|---|---|---|---|
+| **D1** | 2026-09-24 | **A** — period-free OBSERVED form wins | Drop the period at `spec/features/f05-quickbuy.md:194` and `friedcake/mods/smp_quickbuy/buy.lua:87`. `shared/08:148`, `f03:194`, `f01:65` are already period-free — untouched. | `prompts/p1-spec-rulings.md` |
+| **D2** | 2026-09-24 | **A** — the chat receipt *is* the design | Amend `f02 §6` (replace `receipt:show(player)` at `f02-sell.md:140` with the real chat-emitting call from `smp_sell/receipt.lua:164-214`); close V-55 (`f02-sell.md:186`) as ruled. No formspec receipt will be built. V-94 (`append_sell_history`) is **not** covered by D2 — see Open item OPEN-1. | `prompts/p1-spec-rulings.md` |
+| **D3** | 2026-09-24 | **A** — code and observed screen are right | Rewrite §4.7 item 7 (`f12-settings.md:140-141`) and the §5.1 sample default (`f12-settings.md:~178`) to the implemented truth: `chat.private_messages`, `chat.death_messages`, `chat.advancements`, `chat.join_leave` default `FRIENDS_FOLLOWED`, everything else `ON`. Strike `settings.categories` from f12 §7 (`:205`) — the OBSERVED [F0237] category list must remain documented in §4 prose (move it if the §7 row is its only home). Annotate F12-B/F12-C (`:249-250`) and `:302` as decided. Mirror half: strike `06:76` (P2). | `prompts/p1-spec-rulings.md` (feature file) + `prompts/p2-config-mirror.md` (mirror) |
+| **D4** | 2026-09-24 | **§7 corrected to `snapshot`** | `f14-stats.md:187` default cell `off` → `snapshot` (options list unchanged); annotate F14-D5 (`:237`) and the §10 note (`:257`) as resolved. Code stays as-is (already `snapshot`, `smp_stats/init.lua:43-50`). | `prompts/p1-spec-rulings.md` |
+| **D5** | 2026-09-24 | **Normalise spec to what code renders** | `f07-spawners.md:34` `Page 1/5` → `Page 1 of 5`; `:129` `×n` → `x<n>`. The grid `5 × 9` (`:33`) and the §5.3 formulas (`:76,99,102`) keep `×` — they are not UI strings. V-01 and §5 already conform. Never the reverse. | `prompts/p1-spec-rulings.md` |
+| **D6** | 2026-09-24 | **Amend §6 to `upsert_player`** | `f13-ranks.md:114` `smp_store.mark_dirty("players", name)` → `smp_store.api.upsert_player(rec)` (pattern: `smp_ranks/grant.lua:38`). Grep the whole spec for `mark_dirty` and eliminate the phantom. No `mark_dirty` API will be added to `smp_store`. | `prompts/p1-spec-rulings.md` |
+| **D7** | 2026-09-24 | **A — mirror and §7 follow code, both directions** | Full reconciliation of `shared/06-config-reference.md`: add the declared-but-unmirrored keys (`sell.base_prices`, `orders.allow_self_delivery`, `quickbuy.page_size`, `shards.transferable`, `shardshop.offers`, `settings.cycle_order`, `homes.delete_confirm`, `combat.log_broadcast`, `world.*`, …), add every code-read key the sweep finds (`scoreboard.title`, `stats.persist_interval`, `api.mode` default `snapshot`, `ledger.page_size`, `store.max_balance`, …); rename the `tp.*`/`rtp.*`/`rtpqueue.*`/`tpa.*`/`homes.*` rows (`06:50-68`) and the matching `f08`/`f09` §7 rows to the exact full names the code reads (`smp_tp.` prefix — grep `smp_tp/config.lua` + `homes.lua`); settle the slot encoding (`06:17,24`) as dotted-primary scalars with the underscore alias noted (f04 O3); resolve `store.max_balance` vs `economy.max_balance` and `ah.history` (stays f03's, `pending:` marker). New guard: `friedcake/dev-tests/test_config_mirror.lua`. | `prompts/p2-config-mirror.md` |
+| **D8** | 2026-09-24 | **B, hardened — descoped permanently: f16 will never be built** ("never going to be written… no need for legacy mods") | Strike `legacy.*` from `06:81-84` (P2). Close V-61 (`f06-shards.md:175`): `shards.require_activity` stays read, default false, documented inert. Mark `spec/features/f16-legacy.md` DESCOPED; de-f16 `plan/roadmap.md:24,42` (keep `smp_rtpqueue`/f08 and f14 `/api`); strike/annotate the f16 row (`plan/acceptance-tests.md:30`) and X1's "crate choice" (`:40`); annotate f16 references across `plan/`, `spec/README.md`, `shared/02`, `shared/05`. `fixes/f16-legacy.md` is CANCELLED and the README index updated by this brief. | `prompts/p3-f16-descope.md` (+ P2 for the mirror rows) |
+| **D9** | 2026-09-24 | **A — build the API** | Add `smp_admin.flag(kind, detail)` (persisted ring buffer + `core.log("warning", …)` + notify online staff holding `smp_admin`/`smp_moderator`) with `friedcake/dev-tests/test_admin.lua`. `f01 §4.2.5` unchanged. Wiring at `smp_economy/init.lua:234-236` stays the **f01 brief's** job. | `prompts/p4-admin-apis.md` |
+| **D10** | 2026-09-24 | **A — build the producer** | Add `smp_admin.mute(name, seconds)` / `unmute(name)` / `is_muted(name)` (mod-storage, offline- and restart-safe, lazy expiry) plus `/mute <player> [duration]` and `/unmute <player>` (priv `smp_moderator` or `smp_admin`; duration in seconds, omitted = permanent), rows in `shared/05-command-reference.md §5.5`, tests in `test_admin.lua`. `f11 §4.1.3` unchanged; the probe at `smp_social/bridges.lua:97-104` starts working as written; the honesty/TODO cleanup stays the **f11 brief's** job. | `prompts/p4-admin-apis.md` |
+| **D11** | 2026-09-24 | **A — build the harness** | New `friedcake/dev-tests/test_integration.lua`: load-order dry run of every `load_mod`-enabled mod against the strict recorded surface `dev-tests/engine_api_surface.txt` (542 names), engine-determined per-mod file order (verify against the `~/dev/luanti` clone and cite it), cross-mod seam existence checklist, and a degraded pass with the optional layer removed. Record the seam policy in `plan/acceptance-tests.md`. | `prompts/p5-integration-harness.md` |
+
+**OBSERVED preservation notes (AGENTS rule 5 / `spec/README.md:104`):** none of
+these rulings downgrades an OBSERVED row. D3 *moves* the OBSERVED [F0237]
+category list out of the config-key table into prose — the fact must still be
+documented. D7 *renames* key spellings while keeping every Status/Spec cell;
+settings-file spellings were never themselves observed on video. D1/D5 move
+spec text *toward* the observed/rendered form.
+
+**OPEN-1 (not ruled here):** `f02 §11`'s sell-history seam
+(`append_sell_history`, V-94) and `f03 §6`'s `append_history` still await an
+integrator ruling — one generic `smp_store.api.append_history(...)` would serve
+both. The f02/f03 briefs keep their "record in §10 and wait" instruction until
+the integrator rules.
+
 ## Acceptance criteria
 
 1. Every ID D1–D11 has a written ruling in this file (fill in the chosen

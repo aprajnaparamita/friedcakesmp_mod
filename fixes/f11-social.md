@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f11 |
 | Verdict at audit | **MOSTLY COMPLETE (5 gaps)** · ~27 OK · **0/10 tests** |
 | Branch | `agent/f11-social-fixes` |
-| Depends on | `00-P0-blockers` (in-game verification only); **D10** (mute producer, `01-integrator-decisions.md`); cross-references `fixes/f01-economy-core.md` and `fixes/f08-teleport.md` |
+| Depends on | `00-P0-blockers` (in-game verification only); **D10** (mute producer, `01-integrator-decisions.md`); cross-references `fixes/f01-economy-core.md` and `fixes/f08-teleport.md` — **ruled 2026-09-24: D10 = A (`smp_admin.mute`/`unmute`/`is_muted` + `/mute`,`/unmute` built by P4 — the probe at `bridges.lua:97-104` works as written; your F11-5 honesty/TODO cleanup is still your row), D7 = A (P2)** |
 
 ---
 

@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f07 |
 | Verdict at audit | PARTIAL (14 gaps) · 48/63 OK · T1–T10 green (T9 stubbed) |
 | Branch | `agent/f07-spawner-fixes` |
-| Depends on | `00-P0-blockers.md` B4-1 (harness shim `test_spawners.lua:296` — note only); `01-integrator-decisions.md` **D5** (spec-internal wording splits — documentation only), **D7** (config mirror rows) |
+| Depends on | `00-P0-blockers.md` B4-1 (harness shim `test_spawners.lua:296` — note only); `01-integrator-decisions.md` **D5** (spec-internal wording splits — documentation only), **D7** (config mirror rows) — **ruled 2026-09-24: D5 = normalise spec to the renderer (`Page 1 of 5`, `x<n>` applied by P1 — your documentation row is pre-applied), D7 = A (P2; your F07-8/9 compound-read code rows remain yours)** |
 
 Gap-count reconciliation: §4's exception table lists 13 rows; the report's
 count of 14 also covers the §3.4 spec-internal wording splits, which are **D5**

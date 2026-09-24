@@ -7,7 +7,7 @@
 | Audit source | `SPEC-CONFORMANCE-REPORT.md` §4 — f13 (lines 658–676) |
 | Verdict at audit | **MOSTLY COMPLETE (2 gaps)** — the mod itself is clean; both gaps are consumers bypassing the rank API · 1 spec-side N/A · T1–T8 green (76 checks, integration halves owned externally) |
 | Branch | `agent/f13-ranks-fixes` |
-| Depends on | `01-integrator-decisions.md` **D6**; hand-offs to `fixes/f04-orders.md` and `fixes/f08-teleport.md`; `00-P0-blockers.md` B4-1 owns the `test_ranks.lua:254` shim (do not touch) |
+| Depends on | `01-integrator-decisions.md` **D6**; hand-offs to `fixes/f04-orders.md` and `fixes/f08-teleport.md`; `00-P0-blockers.md` B4-1 owns the `test_ranks.lua:254` shim (do not touch) — **ruled 2026-09-24: D6 = A (`smp_store.mark_dirty` struck; §6 now names `smp_store.api.upsert_player(rec)`, applied by P1 — no `smp_store` API will be added)** |
 
 ---
 
