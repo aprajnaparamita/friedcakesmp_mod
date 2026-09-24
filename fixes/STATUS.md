@@ -538,3 +538,21 @@ The user approved four bundles; all are executed here.
 - **Escalations:** §11.4 proposes `shared/06` mirror change for `smp_tp.homes.default_icon` default (OBSERVED → PROPOSED); `homes.slots_*` renaming tracked in D7 follow-up (P2).
 - **Index row annotated** in `fixes/README.md`.
 - **f04 remains active** — still running in its worktree.
+
+## 21. f04 (orders) merged (2026-09-25)
+
+- **Merge:** `cb7d392` → `0387e3f` (8 files)
+- **Gate:** 25/27 on main — **test_config_mirror** 2 expected violations (f06 `amethyst.shovel_nodes`); **test_engine_apis** pre-existing false positive (`smp_ah/test.lua`). All feature tests pass.
+- **Rows:**
+  - O1: VERIFIED — `register_globalstep` used, harness stub provides it
+  - O2: CLOSED — `orders.sorts` CSV config read with validation, default cycle asserted
+  - O3: CLOSED (code) + ESCALATED → D7 — `orders.slots` dotted primary + underscore aliases; mirror proposal in §10
+  - O4: CLOSED — stale TODO removed; `nil→true` fallback kept; `true`/`false`/`nil` paths verified
+  - O5: CLOSED — `slot_limit` reads effective tier via `smp_ranks.tier(name)` (honours `expires_at`), falls back to stored rank; `smp_ranks` added to `optional_depends`; expired→default verified
+  - O6: CLOSED (comments) + ESCALATED (`sell_axe.lua:15`→f06) — stale `TODO(f03)` tags removed from orders code
+  - O7: CLOSED — `test.lua` header corrected to describe actual coverage
+  - O8: CLOSED (code) + ESCALATED → D7 — `store.flush_interval` primary + `orders.flush_interval` alias; mirror proposal in §10
+  - O9: CLOSED — `Insufficient funds.` terminal full stop removed at `routing.lua:105,134`; `test_orders.lua:828` assertion updated; both inside `core.get_translator`
+- **Escalations:** O3, O8 → D7 (mirror); O6 (`sell_axe.lua:15`) → f06.
+- **Index row annotated** in `fixes/README.md`.
+- **Wave C now unblocked** — f02 (sell) and f13 (ranks) can dispatch next.
