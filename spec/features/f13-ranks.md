@@ -162,6 +162,22 @@ end
 | V-75 | Does the Media tier exist as a purchasable grant, or is it assigned manually? (Out of scope for implementation; affects only `/ranks` display text) |
 | V-76 | Does tier1's shorter `/rtp` cooldown extend to tier2/tier3/media? [S27] documents it only for tier1, but a perk that regresses at tier2 would be odd. Implemented literally: only `tier1` is short; every other tier falls back to `default` (`PROPOSED`) |
 
+## Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence | Target |
+|---|---|---|---|
+| R-01 | ESCALATED | `spec/features/f13-ranks.md:229-232` (§11.3.2) → hand-off H1 | `fixes/f04-orders.md` |
+| R-02 | ESCALATED | `spec/features/f13-ranks.md:225-228` (§11.3.1) → hand-off H2 | `fixes/f08-teleport.md` |
+| R-03 | ESCALATED | `spec/features/f13-ranks.md:114` (§6 pseudocode); `fixes/01-integrator-decisions.md:67` (D6 ruled) | D6 (`upsert_player`) |
+
+### Hand-off entries
+
+**H1 (R-01 → f04)** `smp_orders.slot_limit` at `friedcake/mods/smp_orders/orders.lua:204-206` reads `rec.rank` directly and ignores `expires_at`. Consumer must call `smp_ranks.order_limit(name)` instead. Contract: `order_limit(who)` accepts name or PlayerRef, honours `expires_at` lazily (returns `default` limits for expired), reads live config, never mutates record. Contract test added: `test_ranks.lua` CONTRACT C1 seeds `{tier="tier1", expires_at=past}` → asserts `tier()=="default"`, `order_limit==9`, `home_limit==2`, raw `rec.rank.tier=="tier1"`, record unmutated. §11.3.2 annotated as handed off.
+
+**H2 (R-02 → f08)** `smp_tp.cooldown_secs` at `friedcake/mods/smp_tp/rtp.lua:182` reads `cfg.rtp.cooldown[tier]` directly, yielding `nil` for tier2/tier3/media. Consumer must call `smp_ranks.rtp_cooldown(name)` instead. Contract: `rtp_cooldown(who)` accepts name or PlayerRef, honours `expires_at` via `tier()`, returns `cooldowns[tier] or cooldowns.default` (never nil; only `tier1` is short by default). Contract test added: `test_ranks.lua` CONTRACT C2 seeds live `tier2` and `media` records → asserts `rtp_cooldown==60` (default fallback), live `tier1` returns `30`. §11.3.1 annotated as handed off.
+
+**H3 (R-03 → D6)** §6 pseudocode line 114 names `smp_store.mark_dirty("players", name)` which does not exist; the real pattern is `smp_store.api.upsert_player(rec)` at `grant.lua:38`. D6 ruled 2026-09-24: amend §6 to `upsert_player`, no `mark_dirty` API will be added. §6 left untouched until integrator applies the ruling.
+
 ## 11. Implementation notes (agent/f13-ranks)
 
 ### 11.1 Public API — exact signatures (f07, f08, f09, f03, f04 depend on these)
@@ -226,10 +242,12 @@ both satisfied by the same functions.
    directly. That yields `nil` for tier2/tier3/media (f08's table has
    only `default` and `tier1`). It should call
    `smp_ranks.rtp_cooldown(name)` instead.
+   **[HANDED OFF → H2 / `fixes/f08-teleport.md`]**
 2. **`smp_orders.slot_limit(name)`** reads `rec.rank` directly and
    ignores `expires_at`, so an expired tier1 keeps 45 order slots —
    both a §4.2.4 violation and a lazy-expiry bug. It should call
    `smp_ranks.order_limit(name)`.
+   **[HANDED OFF → H1 / `fixes/f04-orders.md`]**
 3. **f09** `home_limit(player)` works as written.
 4. **f11** registers its `info.ranks` fallback `/ranks` only when f13
    has not registered first (`smp_social/info.lua` guard); `smp_social`
