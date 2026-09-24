@@ -54,6 +54,21 @@ local function item_desc(name)
 	return (name:gsub("^[a-z_]+:", ""))
 end
 
+-- Chat helper for messages that are either a single string or a list of
+-- lines. f02's Sell-all receipt/refusal lines arrive as a list
+-- (routing.lua relays them; f02 itself never shows them), our own
+-- refusals arrive as a string.
+local function send_lines(name, msg)
+	if msg == nil then return end
+	if type(msg) == "table" then
+		for _, line in ipairs(msg) do
+			core.chat_send_player(name, tostring(line))
+		end
+		return
+	end
+	core.chat_send_player(name, tostring(msg))
+end
+
 ----------------------------------------------------------------------
 -- Rendering
 ----------------------------------------------------------------------
@@ -85,8 +100,10 @@ function smp_spawners.formspecs.render(pos, session)
 
 	local parts = {
 		"formspec_version[6]",
-		"size[12,8.4]",
-		-- Header: <Type> Spawner ×n (f07 §4.6.3)
+		-- 14.575 = footer + the player inventory section below
+		-- (shared/04: container menus show the player inventory).
+		"size[12,14.575]",
+		-- Header: <Type> Spawner x<n> (f07 §4.6.3)
 		"label[0,0," .. esc(S("@1 Spawner x@2", state.def.display,
 			state.stack)) .. "]",
 		-- Stored versus capacity and stored XP (f07 §4.6.3)
@@ -152,6 +169,19 @@ function smp_spawners.formspecs.render(pos, session)
 	parts[#parts + 1] =
 		string.format("button[4,%s,2,1,quit,%s]",
 			tostring(fy + 1.1), esc(S("Close")))
+
+	-- Player inventory under the storage grid, per the shared container
+	-- grammar (shared/04:22 — the menu shows the player inventory under
+	-- an `Inventory` label). These are real, functional list[]s; the
+	-- storage grid above stays a set of take-request buttons (f07 §8).
+	-- Geometry follows the chest menu (mcl_chests init.lua:588,770).
+	parts[#parts + 1] = "label[0.375,8.85;" .. esc(S("Inventory")) .. "]"
+	parts[#parts + 1] = "list[current_player;main;0.375,9.25;9,3;9]"
+	parts[#parts + 1] = "list[current_player;main;0.375,13.2;9,1;]"
+	if mcl_formspec and mcl_formspec.get_itemslot_bg_v4 then
+		parts[#parts + 1] = mcl_formspec.get_itemslot_bg_v4(0.375, 9.25, 9, 3)
+		parts[#parts + 1] = mcl_formspec.get_itemslot_bg_v4(0.375, 13.2, 9, 1)
+	end
 
 	return table.concat(parts, "\n"), page
 end
@@ -274,17 +304,18 @@ function smp_spawners.formspecs.register_handler()
 		end
 
 		-- Sell all: routes into f02 (routing.lua). Closes the menu on
-		-- success; the store is emptied by the sale.
+		-- success; the store is emptied by the sale. The message may be
+		-- f02's line list (relayed, never shown by f02 itself).
 		if fields.sell_all then
 			local ok, msg = smp_spawners.routing.sell_all(pos, player,
 				state.type_id)
 			if ok then
 				smp_core.close_session(name, FORMNAME)
 				core.close_formspec(name, FORMNAME)
-				core.chat_send_player(name, msg)
+				send_lines(name, msg)
 				return
 			else
-				core.chat_send_player(name, msg)
+				send_lines(name, msg)
 			end
 		end
 

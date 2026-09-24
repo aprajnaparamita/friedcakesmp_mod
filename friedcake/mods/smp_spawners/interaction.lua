@@ -38,7 +38,10 @@ function smp_spawners.interaction.place(placer, pointed_thing, itemstack)
 
 	local placepos = pointed_thing.above or pointed_thing.node
 	if not placepos then return itemstack end
-	if core.is_protected(placepos, "place", placer) then
+	-- f07 §4.6.6: core.is_protected(pos, player_name) — the second
+	-- argument is a PLAYER NAME (luanti builtin/game/misc.lua), not an
+	-- action tag (f07 §10, engine-truth fix).
+	if core.is_protected(placepos, placer:get_player_name()) then
 		core.chat_send_player(placer:get_player_name(),
 			S("This area is protected"))
 		return itemstack
@@ -60,9 +63,11 @@ function smp_spawners.interaction.place(placer, pointed_thing, itemstack)
 end
 
 ----------------------------------------------------------------------
--- Stacking (f07 §4.6.2, LIVE [S24] stack_mode = "all")
--- Sneak + right-click with a same-type spawner item adds the whole
--- held stack. Other types are rejected. Requires protection access.
+-- Stacking (f07 §4.6.2, §7 `spawners.stack_mode`)
+-- Sneak + right-click with a same-type spawner item adds the held
+-- stack — the whole stack for `all` (LIVE [S24], the default), one
+-- spawner for `one`. Other types are rejected. Requires protection
+-- access.
 ----------------------------------------------------------------------
 
 function smp_spawners.interaction.add_stack(pos, player, itemstack)
@@ -75,10 +80,14 @@ function smp_spawners.interaction.add_stack(pos, player, itemstack)
 		core.chat_send_player(name, S("Unknown spawner type"))
 		return itemstack
 	end
-	if core.is_protected(pos, "place", player) then
+	if core.is_protected(pos, name) then
 		core.chat_send_player(name, S("This area is protected"))
 		return itemstack
 	end
+
+	-- f07 §4.5: accrue before the state object that gets written
+	-- (F07-7). Cheap refusals above stay free.
+	smp_spawners.accrue(pos)
 
 	-- Validate first (shared §2.3).
 	local state = smp_spawners.read_state(pos)
@@ -92,6 +101,12 @@ function smp_spawners.interaction.add_stack(pos, player, itemstack)
 		return itemstack
 	end
 	local held = itemstack:get_count()
+	-- f07 §7 spawners.stack_mode: "all" (LIVE [S24], default) merges
+	-- the whole held stack; "one" adds a single spawner per click.
+	-- Any other value warned at load and behaves as "all".
+	if cfg.stack_mode == "one" then
+		held = math.min(held, 1)
+	end
 	if state.stack + held > MAX_STACK then
 		core.chat_send_player(name,
 			S("The stack would exceed the maximum size"))
@@ -111,10 +126,13 @@ end
 function smp_spawners.interaction.open_menu(pos, player)
 	local name = player:get_player_name()
 	if cfg.open_requires_access and
-	   core.is_protected(pos, "interact", player) then
+	   core.is_protected(pos, name) then
 		core.chat_send_player(name, S("This area is protected"))
 		return
 	end
+	-- f07 §4.5: a menu always shows accrual up to now (F07-7), and it
+	-- happens before the state object that render/open uses.
+	smp_spawners.accrue(pos)
 	local state = smp_spawners.read_state(pos)
 	if not state then
 		core.chat_send_player(name, S("This spawner has changed"))
@@ -131,11 +149,17 @@ end
 -- within 8 nodes. Returns the fresh state or nil. The fresh state is
 -- what every action acts on — a second collector always sees the
 -- first one's updated counts (T6).
+--
+-- Every caller also converts elapsed time here (f07 §4.5 "every
+-- interaction converts elapsed time", F07-7), so takes, Collect XP and
+-- Sell all can never show or pay less than what the spawner produced
+-- since last_update.
 ----------------------------------------------------------------------
 
 function smp_spawners.revalidate(pos, opened_type, player)
 	local node = core.get_node_or_nil(pos)
 	if not node or node.name ~= "smp_spawners:spawner" then return nil end
+	smp_spawners.accrue(pos)
 	local state = smp_spawners.read_state(pos)
 	if not state then return nil end
 	if opened_type and state.type_id ~= opened_type then return nil end

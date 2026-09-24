@@ -92,8 +92,17 @@ local registered_entities = {}
 local dropped = {}
 local shown_forms = {}
 local chats = {}
+local logs = {}
 local now = 1000000
 local function tick(t) now = now + (t or 1) end
+
+-- Hooks the f07 fix-batch tests drive: protection, inventory room and
+-- the vanilla-spawner conversion path.
+local protected_calls = {}
+local protected_forced = false
+local inv_room_ok = true
+local node_dig_calls = 0
+local vanilla_destruct_calls = 0
 
 local objects_inside_radius = {}  -- [n] = {pos, objs}; T4 probes this
 local function get_objects_inside_radius(pos, r)
@@ -147,11 +156,15 @@ local function make_player(name, x, y, z)
 	p._pos = { x = x or 0, y = y or 0, z = z or 0 }
 	p._sneak = false
 	p._inv = inv
+	p._wielded = ItemStack("")
 	p.get_player_name = function() return name end
 	p.get_pos = function() return p._pos end
 	p.get_player_control = function()
 		return { sneak = p._sneak }
 	end
+	-- The engine calls on_dig(pos, node, digger) with three arguments
+	-- only, so the dig path reads the tool off the player (f07 §10).
+	p.get_wielded_item = function() return p._wielded end
 	p.get_inventory = function()
 		return {
 			add_item = function(self, list, stack)
@@ -186,6 +199,7 @@ core = {
 		get_bool = function(_, _, default) return default end,
 	},
 	log = function(level, msg)
+		logs[#logs + 1] = tostring(level) .. ": " .. tostring(msg)
 		if level == "error" then print("[engine error] " .. tostring(msg)) end
 	end,
 	serialize = ser_value,
@@ -210,11 +224,37 @@ core = {
 		return true
 	end,
 	node_dig = function(pos, node)
+		node_dig_calls = node_dig_calls + 1
 		nodes[pk(pos)] = { name = "air" }
 		timers[pk(pos)] = nil
+		metas[pk(pos)] = nil
 	end,
-	set_node = function(pos, node) nodes[pk(pos)] = node end,
-	is_protected = function() return false end,
+	-- Engine semantics (serverenvironment.cpp): set_node/remove_node run
+	-- the old node's on_destruct and clear its metadata.
+	set_node = function(pos, node)
+		local old = nodes[pk(pos)]
+		local olddef = old and core.registered_nodes[old.name]
+		if olddef and olddef.on_destruct then olddef.on_destruct(pos) end
+		nodes[pk(pos)] = node
+		metas[pk(pos)] = nil
+		timers[pk(pos)] = nil
+	end,
+	remove_node = function(pos)
+		local old = nodes[pk(pos)]
+		local olddef = old and core.registered_nodes[old.name]
+		if olddef and olddef.on_destruct then olddef.on_destruct(pos) end
+		nodes[pk(pos)] = { name = "air" }
+		metas[pk(pos)] = nil
+		timers[pk(pos)] = nil
+	end,
+	-- core.is_protected(pos, player_name): the second argument is a
+	-- PLAYER NAME (builtin/game/misc.lua). Every call is recorded so
+	-- the f07 §4.6.6 conformance test can assert that.
+	is_protected = function(pos, name, player)
+		protected_calls[#protected_calls + 1] =
+			{ pos = pos, name = name, player = player }
+		return protected_forced
+	end,
 	item_drop = function(pos, stack)
 		dropped[#dropped + 1] = stack
 	end,
@@ -229,6 +269,31 @@ core = {
 			set_int = function(_, k2, v) t[k2] = tostring(v) end,
 			get_float = function(_, k2) return tonumber(t[k2]) or 0 end,
 			set_float = function(_, k2, v) t[k2] = tostring(v) end,
+			-- NodeMetaRef:get_inventory() always returns a valid InvRef
+			-- (l_nodemeta.cpp:63-73), even for nodes that never declared
+			-- one. `inv_room_ok` lets a test fill the hopper.
+			get_inventory = function()
+				t.inv = t.inv or { main = {} }
+				local inv = t.inv
+				return {
+					is_empty = function(_, list)
+						return #(inv[list] or {}) == 0
+					end,
+					get_size = function(_, list)
+						return #(inv[list] or {})
+					end,
+					get_stack = function(_, list, i)
+						local s = (inv[list] or {})[i]
+						return s or ItemStack("")
+					end,
+					room_for_item = function() return inv_room_ok end,
+					add_item = function(_, list, stack)
+						inv[list] = inv[list] or {}
+						inv[list][#inv[list] + 1] = stack
+						return ItemStack("")
+					end,
+				}
+			end,
 		}
 	end,
 	get_node_timer = function(pos)
@@ -254,6 +319,20 @@ core = {
 	register_node = function(name, def) core.registered_nodes[name] = def end,
 	registered_items = {},
 	register_item = function(name, def) core.registered_items[name] = def end,
+	-- builtin/game/register.lua:456 — merges into the registered item
+	-- and errors when it does not exist (hence the existence guard in
+	-- node.lua).
+	override_item = function(name, redefinition, del_fields)
+		local item = core.registered_items[name] or
+			core.registered_nodes[name]
+		if not item then
+			error("Attempt to override non-existent item " .. name, 2)
+		end
+		for k, v in pairs(redefinition) do item[k] = v end
+		for _, f in ipairs(del_fields or {}) do item[f] = nil end
+		core.registered_nodes[name] = item
+		core.registered_items[name] = item
+	end,
 	register_lbm = function() lbm_count = lbm_count + 1 end,
 	registered_entities = registered_entities,
 	register_entity = function(name, def)
@@ -320,6 +399,27 @@ mcl_experience = {
 	end,
 }
 
+-- mcl_formspec.get_itemslot_bg_v4 (mods/HUD/mcl_formspec/init.lua:26).
+mcl_formspec = {
+	get_itemslot_bg_v4 = function(x, y, w, h)
+		return string.format("image[%s,%s,%s,%s;mcl_formspec_itemslot.png]",
+			tostring(x), tostring(y), tostring(w), tostring(h))
+	end,
+}
+
+-- The vanilla dungeon spawner (mcl_mobspawners init.lua:221): no on_dig
+-- of its own (the engine default is core.node_dig), drop = "", and an
+-- on_destruct that cleans up the doll and XP. Registered BEFORE
+-- smp_spawners so node.lua's conversion override can find it.
+core.register_node("mcl_mobspawners:spawner", {
+	description = "Mob Spawner",
+	groups = { pickaxey = 1, material_stone = 1, unmovable_by_piston = 1 },
+	drop = "",
+	on_destruct = function()
+		vanilla_destruct_calls = vanilla_destruct_calls + 1
+	end,
+})
+
 ----------------------------------------------------------------------
 -- Load the mods
 ----------------------------------------------------------------------
@@ -362,6 +462,42 @@ end
 local function store_sum(pos)
 	local st = state(pos)
 	return smp_spawners.store_total(st.store)
+end
+
+-- Recorded core.log lines (the F07-10 unknown-stack_mode warning).
+local function has_log(needle)
+	for _, l in ipairs(logs) do
+		if l:find(needle, 1, true) then return true end
+	end
+	return false
+end
+
+-- Protection calls: reset and read the last one (f07 §4.6.6).
+local function reset_protected()
+	for i = #protected_calls, 1, -1 do protected_calls[i] = nil end
+end
+local function last_protected()
+	return protected_calls[#protected_calls]
+end
+
+-- An injected settings store with the engine's semantics
+-- (l_settings.cpp:119-139 + settings.cpp:485 `is_yes`): an absent key
+-- returns the default, a present one wins and is read as y/yes/true or
+-- a non-zero number.
+local function fake_settings(vals)
+	return {
+		get = function(_, k) return vals[k] end,
+		get_bool = function(_, k, default)
+			local v = vals[k]
+			if v == nil then return default end
+			if type(v) == "boolean" then return v end
+			local s = tostring(v):lower():gsub("^%s+", ""):gsub("%s+$", "")
+			if s == "y" or s == "yes" or s == "true" then return true end
+			local n = tonumber(s)
+			if n then return n ~= 0 end
+			return false
+		end,
+	}
 end
 
 ----------------------------------------------------------------------
@@ -724,37 +860,126 @@ end
 
 ----------------------------------------------------------------------
 -- T9 — sell all routes into f02 (stubbed smp_sell.sell)
+--
+-- Rewritten for F07-13: the stub now matches the real f02 contract
+-- (smp_sell/init.lua:180-186) — `true, lines` on success, `false,
+-- lines` on refusal — and both paths assert conservation: on refusal
+-- storage, version and the stacks handed over are untouched.
 ----------------------------------------------------------------------
 
 do
-	local pos = place_spawner("skeleton", 1)
-	smp_spawners.cfg.accrual_mode = "always"
-	tick(640) -- exactly 64 kills -> 64 whole bones
-	smp_spawners.accrue(pos, now)
-	smp_spawners.cfg.accrual_mode = "active_only"
+	local function seed()
+		local pos = place_spawner("skeleton", 1)
+		smp_spawners.cfg.accrual_mode = "always"
+		tick(640) -- exactly 64 kills -> 64 whole bones
+		smp_spawners.accrue(pos, now)
+		smp_spawners.cfg.accrual_mode = "active_only"
+		return pos
+	end
 
-	local routed = nil
-	smp_sell = {
-		sell = function(player, stacks)
-			routed = { player = player, stacks = stacks }
-			return true
-		end,
-	}
-	local player = make_player("p9sell", 10, 65, 10)
-	local v0 = state(pos).version
-	local ok_sell, msg = smp_spawners.routing.sell_all(pos, player,
-		"skeleton")
-	ok(ok_sell == true, "T9 sell all succeeds with f02 present: " ..
-		tostring(msg))
-	ok(routed ~= nil and routed.player == player,
-		"T9 f02.sell received the player")
-	eq(routed and #routed.stacks or 0, 1, "T9 one lot (one loot type)")
-	local lot = routed.stacks[1]
-	eq(lot:get_name(), BONE, "T9 lot is the stored item")
-	eq(lot:get_count(), 64, "T9 lot is the whole count")
-	near(state(pos).store[BONE], 0, 1e-9, "T9 storage emptied")
-	ok(state(pos).version > v0, "T9 version bumped")
-	smp_sell = nil
+	local SUMMARY = "Spawner output sent to sell routing"
+	local FALLBACK = smp_spawners.S("Spawner output could not be sold")
+
+	-- Refusal A: f02's balance-cap refusal carries its own lines
+	-- (smp_sell/sell.lua:150 via init.lua:195-203).
+	do
+		local pos = seed()
+		local player = make_player("p9sell", 10, 65, 10)
+		local store_before = core.get_meta(pos):get_string("smp:store")
+		local v0 = state(pos).version
+		local handed = nil
+		smp_sell = {
+			sell = function(p, stacks)
+				handed = { player = p, n = #stacks,
+					name = stacks[1]:get_name(),
+					count = stacks[1]:get_count() }
+				return false, { "You reached the balance limit" }
+			end,
+		}
+		local ok_sell, msg = smp_spawners.routing.sell_all(pos, player,
+			"skeleton")
+		eq(ok_sell, false, "T9 refusal A: sell_all returns false")
+		eq(core.get_meta(pos):get_string("smp:store"), store_before,
+			"T9 refusal A: storage byte-identical")
+		eq(state(pos).version, v0, "T9 refusal A: version untouched")
+		eq(type(msg), "table", "T9 refusal A: f02 lines relayed as a list")
+		eq(msg[1], "You reached the balance limit",
+			"T9 refusal A: the refusal line reaches the player")
+		ok(handed ~= nil and handed.player == player,
+			"T9 refusal A: f02 got the player")
+		eq(handed and handed.n or 0, 1, "T9 refusal A: one lot")
+		eq(handed and handed.name or "", BONE,
+			"T9 refusal A: the stored item")
+		eq(handed and handed.count or 0, 64,
+			"T9 refusal A: stacks handed over intact")
+		near(store_sum(pos), 64, 1e-9,
+			"T9 refusal A: nothing left storage")
+		smp_sell = nil
+	end
+
+	-- Refusal B: empty plan / partial — f02 returns `false, {}`, so the
+	-- player must still get our fallback line (never a silent nothing).
+	do
+		local pos = seed()
+		local player = make_player("p9sellb", 10, 65, 10)
+		local store_before = core.get_meta(pos):get_string("smp:store")
+		local v0 = state(pos).version
+		smp_sell = { sell = function() return false, {} end }
+		local ok_sell, msg = smp_spawners.routing.sell_all(pos, player,
+			"skeleton")
+		eq(ok_sell, false, "T9 refusal B: sell_all returns false")
+		eq(type(msg), "string", "T9 refusal B: empty lines -> our string")
+		eq(msg, FALLBACK, "T9 refusal B: the fallback refusal line")
+		eq(core.get_meta(pos):get_string("smp:store"), store_before,
+			"T9 refusal B: storage unchanged")
+		eq(state(pos).version, v0, "T9 refusal B: version unchanged")
+
+		-- A bare `false` (no second value at all) behaves the same.
+		smp_sell = { sell = function() return false end }
+		local ok2, msg2 = smp_spawners.routing.sell_all(pos, player,
+			"skeleton")
+		eq(ok2, false, "T9 refusal C: bare false")
+		eq(msg2, FALLBACK, "T9 refusal C: fallback refusal line")
+		eq(state(pos).version, v0, "T9 refusal C: version unchanged")
+		smp_sell = nil
+	end
+
+	-- Success: storage decreases exactly by the sold lots, and f02's
+	-- receipt lines are relayed after our summary (f02 never shows
+	-- them itself).
+	do
+		local pos = seed()
+		local player = make_player("p9sellc", 10, 65, 10)
+		local v0 = state(pos).version
+		local routed = nil
+		smp_sell = {
+			sell = function(p, stacks)
+				routed = { player = p, stacks = stacks }
+				return true, { "Sold 64 x Bone for 12.00",
+					"Balance: 12.00" }
+			end,
+		}
+		local ok_sell, msg = smp_spawners.routing.sell_all(pos, player,
+			"skeleton")
+		eq(ok_sell, true, "T9 success: sell_all returns true")
+		eq(type(msg), "table", "T9 success: lines are relayed")
+		ok(type(msg[1]) == "string" and
+			msg[1]:find(SUMMARY, 1, true) == 1,
+			"T9 success: our summary comes first — " .. tostring(msg[1]))
+		eq(msg[2], "Sold 64 x Bone for 12.00",
+			"T9 success: f02 receipt line relayed")
+		eq(msg[3], "Balance: 12.00",
+			"T9 success: second f02 receipt line relayed")
+		ok(routed ~= nil and routed.player == player,
+			"T9 f02.sell received the player")
+		eq(routed and #routed.stacks or 0, 1, "T9 one lot (one loot type)")
+		local lot = routed.stacks[1]
+		eq(lot:get_name(), BONE, "T9 lot is the stored item")
+		eq(lot:get_count(), 64, "T9 lot is the whole count")
+		near(state(pos).store[BONE], 0, 1e-9, "T9 storage emptied")
+		ok(state(pos).version > v0, "T9 version bumped")
+		smp_sell = nil
+	end
 end
 
 ----------------------------------------------------------------------
@@ -795,6 +1020,523 @@ do
 end
 
 ----------------------------------------------------------------------
+-- Fix batch f07 — F07-2/F07-8/F07-9: §7 keys really do what they say
+----------------------------------------------------------------------
+
+do
+	-- F07-2: three cases × five keys (acceptance 2).
+	local default_true = {
+		{ "spawners.require_silk_touch", "require_silk_touch" },
+		{ "spawners.blast_immune", "blast_immune" },
+		{ "spawners.enable_creeper", "enable_creeper" },
+	}
+	for _, entry in ipairs(default_true) do
+		local key, field = entry[1], entry[2]
+		local unset = smp_spawners.build_cfg(fake_settings({}))
+		eq(unset[field], true, "F07-2 " .. key .. " unset -> default true")
+		local on = smp_spawners.build_cfg(
+			fake_settings({ [key] = "true" }))
+		eq(on[field], true, "F07-2 " .. key .. " = true -> true")
+		local off = smp_spawners.build_cfg(
+			fake_settings({ [key] = "false" }))
+		eq(off[field], false,
+			"F07-2 " .. key .. " = false -> false (the old bool() bug)")
+	end
+
+	-- spawners.acquisition.admin lives in the acquisition table.
+	local acq_unset = smp_spawners.build_cfg(fake_settings({}))
+	eq(acq_unset.acquisition.admin, true,
+		"F07-2 acquisition.admin unset -> default true")
+	eq(smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition.admin"] = "true" }))
+		.acquisition.admin, true,
+		"F07-2 acquisition.admin = true -> true")
+	eq(smp_spawners.build_cfg(
+		fake_settings({ ["spawners.acquisition.admin"] = "false" }))
+		.acquisition.admin, false,
+		"F07-2 acquisition.admin = false -> false")
+
+	local open_unset = smp_spawners.build_cfg(fake_settings({}))
+	eq(open_unset.open_requires_access, false,
+		"F07-2 open_requires_access unset -> default false")
+	eq(smp_spawners.build_cfg(
+		fake_settings({ ["spawners.open_requires_access"] = "true" }))
+		.open_requires_access, true,
+		"F07-2 open_requires_access = true -> true")
+	eq(smp_spawners.build_cfg(
+		fake_settings({ ["spawners.open_requires_access"] = "false" }))
+		.open_requires_access, false,
+		"F07-2 open_requires_access = false -> false")
+
+	-- The V-04 escape hatch drives the live type gate.
+	local hatch = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.enable_creeper"] = "false" }))
+	eq(hatch.enable_creeper, false, "F07-2 enable_creeper = false parses")
+	local saved_creeper = smp_spawners.cfg.enable_creeper
+	smp_spawners.cfg.enable_creeper = hatch.enable_creeper
+	eq(smp_spawners.types.get("creeper"), nil,
+		"F07-2 enable_creeper = false removes the creeper type (V-04)")
+	smp_spawners.cfg.enable_creeper = saved_creeper
+
+	-- The live config is itself built through build_cfg, so the engine
+	-- stub's "key unset" path is what the pack boots with.
+	local live = smp_spawners.build_cfg(core.settings)
+	eq(live.require_silk_touch, true, "F07-2 live boot: silk required")
+	eq(live.open_requires_access, false, "F07-2 live boot: menu open")
+	eq(live.acquisition.admin, true, "F07-2 live boot: admin issue on")
+
+	-- F07-8: documented dotted names, compound back-compat, dotted wins.
+	local function cfg_for(vals)
+		local c = smp_spawners.build_cfg(fake_settings({}))
+		smp_spawners.apply_C_overrides(fake_settings(vals), c)
+		return c
+	end
+	local dotted = cfg_for({ ["spawners.C.skeleton"] = "999" })
+	near(dotted.C.skeleton, 999, 1e-9,
+		"F07-8 spawners.C.skeleton overrides the default")
+	near(dotted.C.zombie, 250, 1e-9,
+		"F07-8 an untouched type keeps its PROPOSED default")
+
+	local compound = cfg_for({ ["spawners.C"] = "skeleton=1000, zombie=200" })
+	near(compound.C.skeleton, 1000, 1e-9,
+		"F07-8 compound spawners.C still parses (the old parser was dead)")
+	near(compound.C.zombie, 200, 1e-9,
+		"F07-8 compound pairs beyond the first are read too")
+
+	local both = cfg_for({ ["spawners.C"] = "skeleton=1000",
+		["spawners.C.skeleton"] = "999" })
+	near(both.C.skeleton, 999, 1e-9,
+		"F07-8 the documented dotted name wins over the compound")
+
+	local garbage = cfg_for({ ["spawners.C"] = "skeleton=abc, zombie=-5",
+		["spawners.C.pig"] = "not a number" })
+	near(garbage.C.skeleton, 1505.35, 1e-9,
+		"F07-8 non-numeric compound value ignored")
+	near(garbage.C.zombie, 250, 1e-9, "F07-8 negative value ignored")
+	near(garbage.C.pig, 250, 1e-9, "F07-8 dotted garbage ignored")
+
+	-- F07-9: table key is primary, flat keys are the fallback.
+	local tbl = smp_spawners.build_cfg(fake_settings({
+		["spawners.acquisition"] = "{ shard_shop = true, admin = false }",
+	}))
+	eq(tbl.acquisition.shard_shop, true,
+		"F07-9 table key sets shard_shop = true")
+	eq(tbl.acquisition.admin, false, "F07-9 table key sets admin = false")
+	eq(tbl.acquisition.crates, false,
+		"F07-9 table key leaves crates at its default")
+	eq(tbl.acquisition.natural, false,
+		"F07-9 table key leaves natural at its default")
+
+	local flat = smp_spawners.build_cfg(fake_settings({
+		["spawners.acquisition.crates"] = "true",
+	}))
+	eq(flat.acquisition.crates, true,
+		"F07-9 flat back-compat key still works")
+	eq(flat.acquisition.admin, true, "F07-9 flat defaults unchanged")
+
+	local mixed = smp_spawners.build_cfg(fake_settings({
+		["spawners.acquisition"] = "{ admin = false }",
+		["spawners.acquisition.admin"] = "true",
+		["spawners.acquisition.crates"] = "true",
+	}))
+	eq(mixed.acquisition.admin, false,
+		"F07-9 the table key wins over the flat one for the same source")
+	eq(mixed.acquisition.crates, true,
+		"F07-9 flat key still fills a source the table does not name")
+
+	local dflt = smp_spawners.build_cfg(fake_settings({}))
+	eq(dflt.acquisition.shard_shop, false, "F07-9 default shard_shop false")
+	eq(dflt.acquisition.crates, false, "F07-9 default crates false")
+	eq(dflt.acquisition.natural, false, "F07-9 default natural false")
+	eq(dflt.acquisition.admin, true, "F07-9 default admin true")
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-3: the menu shows the player inventory
+----------------------------------------------------------------------
+
+do
+	local pos = place_spawner("skeleton", 1)
+	smp_spawners.cfg.accrual_mode = "always"
+	tick(640)
+	smp_spawners.accrue(pos, now)
+	smp_spawners.cfg.accrual_mode = "active_only"
+
+	local player = make_player("p3menu", 10, 65, 10)
+	local session = smp_core.open_session("p3menu", "smp_spawners:menu", {
+		pos = { x = pos.x, y = pos.y, z = pos.z },
+		opened_type = "skeleton",
+		page = 1,
+	})
+	local spec = smp_spawners.formspecs.render(session.pos, session)
+	ok(type(spec) == "string", "F07-3 menu renders")
+	ok(spec:find("Inventory", 1, true) ~= nil,
+		"F07-3 Inventory label present (shared/04:22)")
+	ok(spec:find("list[current_player;main;0.375,9.25;9,3;9]", 1, true) ~= nil,
+		"F07-3 player inventory rows present")
+	ok(spec:find("list[current_player;main;0.375,13.2;9,1;]", 1, true) ~= nil,
+		"F07-3 player hotbar row present")
+	ok(spec:find("mcl_formspec_itemslot.png", 1, true) ~= nil,
+		"F07-3 slot backgrounds drawn (mcl_formspec v4)")
+	ok(spec:find("size[12,14.575]", 1, true) ~= nil,
+		"F07-3 form grown for the inventory section")
+	-- The storage grid is NOT a real inventory: clicks stay take
+	-- requests against the count table (f07 §8).
+	ok(spec:find("list[nodemeta", 1, true) == nil,
+		"F07-3 virtual storage is not a list[]")
+	ok(spec:find("listring[", 1, true) == nil,
+		"F07-3 no listring into the virtual storage")
+	ok(spec:find("item_image_button[", 1, true) ~= nil,
+		"F07-3 storage slots remain take-request buttons")
+
+	-- A take still routes through the revalidating take-request path.
+	local inv_before = #player._inv
+	for _, h in ipairs(field_handlers) do
+		local good, err = pcall(h, player, "smp_spawners:menu",
+			{ slot1 = "true" })
+		ok(good, "F07-3 take-request handler runs: " .. tostring(err))
+	end
+	eq(#player._inv, inv_before + 1,
+		"F07-3 the slot click took the stored stack")
+	near(state(pos).store[BONE], 0, 1e-9,
+		"F07-3 storage emptied by the revalidated take")
+	smp_core.close_session("p3menu", "smp_spawners:menu")
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-4 / F07-5: piston immunity and hopper extraction
+----------------------------------------------------------------------
+
+do
+	local def = core.registered_nodes["smp_spawners:spawner"]
+	eq(def.groups.unmovable_by_piston, 1,
+		"F07-4 group unmovable_by_piston = 1 (mcl_pistons api.lua:56)")
+	eq(def.groups.container, 7,
+		"F07-5 group container = 7 (blocked from generic container moves)")
+	ok(type(def._on_hopper_out) == "function",
+		"F07-5 _on_hopper_out hook registered on the node def")
+
+	local pos = place_spawner("skeleton", 1)
+	local hpos = { x = 10, y = 63, z = 10 }
+	smp_spawners.cfg.accrual_mode = "always"
+	tick(640)
+	smp_spawners.accrue(pos, now)
+	smp_spawners.cfg.accrual_mode = "active_only"
+	local v0 = state(pos).version
+
+	-- Default off: nothing moves, nothing changes.
+	eq(def._on_hopper_out(pos, hpos), false,
+		"F07-5 default-off extracts nothing")
+	eq(state(pos).version, v0,
+		"F07-5 default-off leaves storage and version alone")
+
+	-- On: one item per pull.
+	smp_spawners.cfg.hopper_extraction = true
+	eq(def._on_hopper_out(pos, hpos), true,
+		"F07-5 extraction moves an item when enabled")
+	near(state(pos).store[BONE], 63, 1e-9,
+		"F07-5 exactly one item per pull")
+	local hinv = core.get_meta(hpos):get_inventory()
+	eq(hinv:get_size("main"), 1, "F07-5 the hopper received the item")
+	ok(state(pos).version > v0, "F07-5 the pull bumps the version counter")
+
+	-- A full hopper extracts nothing and touches nothing.
+	local v1 = state(pos).version
+	inv_room_ok = false
+	eq(def._on_hopper_out(pos, hpos), false,
+		"F07-5 a full hopper takes nothing")
+	near(state(pos).store[BONE], 63, 1e-9,
+		"F07-5 storage untouched when the hopper is full")
+	eq(state(pos).version, v1, "F07-5 no version bump on a refused pull")
+	inv_room_ok = true
+
+	-- Nothing stored: nothing to pull.
+	smp_spawners.cfg.accrual_mode = "always"
+	tick(1200)
+	smp_spawners.accrue(pos, now)
+	smp_spawners.cfg.accrual_mode = "active_only"
+	local player = make_player("p5h", 10, 65, 10)
+	smp_spawners.take(pos, player, "skeleton", BONE, math.huge)
+	eq(def._on_hopper_out(pos, hpos), false,
+		"F07-5 an empty spawner extracts nothing")
+
+	smp_spawners.cfg.hopper_extraction = false
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-6: convert_natural turns a dug vanilla spawner
+-- into a virtual one
+----------------------------------------------------------------------
+
+do
+	local V = "mcl_mobspawners:spawner"
+	local vdef = core.registered_nodes[V]
+	ok(vdef ~= nil and type(vdef.on_dig) == "function",
+		"F07-6 the vanilla spawner's dig is overridden")
+
+	local digger = make_player("p6conv", 20, 65, 20)
+	local silk = { _name = "mcl_tools:pickaxe", _ench = { silk_touch = 1 } }
+	local plain = { _name = "mcl_tools:pickaxe", _ench = {} }
+
+	local function seed_vanilla(mob)
+		local pos = { x = 20, y = 64, z = 20 }
+		nodes[pk(pos)] = { name = V }
+		metas[pk(pos)] = {}
+		local m = core.get_meta(pos)
+		m:set_string("Mob", mob)
+		return pos
+	end
+
+	-- Default off: the vanilla dig falls through untouched.
+	local pos = seed_vanilla("mobs_mc:skeleton")
+	local digs0 = node_dig_calls
+	vdef.on_dig(pos, { name = V }, digger, silk)
+	eq(node_dig_calls, digs0 + 1,
+		"F07-6 default-off: the vanilla dig still runs")
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-6 default-off: the vanilla node is left alone")
+
+	-- On: converted, with the type read from the vanilla `Mob` key.
+	smp_spawners.cfg.convert_natural = true
+	pos = seed_vanilla("mobs_mc:skeleton")
+	local destruct0 = vanilla_destruct_calls
+	vdef.on_dig(pos, { name = V }, digger, silk)
+	eq(core.get_node_or_nil(pos).name, "smp_spawners:spawner",
+		"F07-6 converts a vanilla spawner on a Silk Touch dig")
+	eq(core.get_meta(pos):get_string("smp:type"), "skeleton",
+		"F07-6 the type comes from the Mob key")
+	eq(core.get_meta(pos):get_int("smp:stack"), 1,
+		"F07-6 the converted node starts at stack 1")
+	eq(vanilla_destruct_calls, destruct0 + 1,
+		"F07-6 set_node ran the vanilla on_destruct (doll + XP cleanup)")
+	ok(timers[pk(pos)] ~= nil and timers[pk(pos)].running,
+		"F07-6 conversion starts the node timer")
+	local converted = smp_spawners.read_state(pos)
+	ok(converted ~= nil and converted.type_id == "skeleton",
+		"F07-6 the converted node is a working virtual spawner")
+
+	-- The same dig with only three arguments (what the engine actually
+	-- sends) still sees the wielded tool.
+	pos = seed_vanilla("mobs_mc:zombie")
+	digger._wielded = silk
+	vdef.on_dig(pos, { name = V }, digger)
+	eq(core.get_node_or_nil(pos).name, "smp_spawners:spawner",
+		"F07-6 a three-argument on_dig reads the wielded silk")
+	digger._wielded = ItemStack("")
+	eq(core.get_meta(pos):get_string("smp:type"), "zombie",
+		"F07-6 zombie spawner converts to the zombie type")
+
+	-- Without Silk Touch (silk required) the vanilla dig stands.
+	pos = seed_vanilla("mobs_mc:zombie")
+	vdef.on_dig(pos, { name = V }, digger, plain)
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-6 no Silk Touch, no conversion")
+
+	-- An unmapped mob has no type: vanilla dig stands.
+	pos = seed_vanilla("mobs_mc:silverfish")
+	vdef.on_dig(pos, { name = V }, digger, silk)
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-6 an unknown mob is not converted")
+
+	-- The creeper gate (V-04) applies to conversion too.
+	pos = seed_vanilla("mobs_mc:creeper")
+	smp_spawners.cfg.enable_creeper = false
+	vdef.on_dig(pos, { name = V }, digger, silk)
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-6 a disabled type is not converted (V-04)")
+	smp_spawners.cfg.enable_creeper = true
+
+	-- Protection blocks conversion.
+	pos = seed_vanilla("mobs_mc:cow")
+	protected_forced = true
+	vdef.on_dig(pos, { name = V }, digger, silk)
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-6 a protected vanilla spawner is not converted")
+	protected_forced = false
+
+	smp_spawners.cfg.convert_natural = false
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-7: every interaction converts elapsed time
+----------------------------------------------------------------------
+
+do
+	local player = make_player("p7acc", 10, 65, 10)
+
+	-- Menu open.
+	local pos = place_spawner("skeleton", 1)
+	tick(120)
+	smp_spawners.interaction.open_menu(pos, player)
+	near(store_sum(pos), smp_spawners.cfg.r * 2, 1e-9,
+		"F07-7 menu open accrues the full 120 s")
+	smp_core.close_session("p7acc", "smp_spawners:menu")
+
+	-- Take.
+	pos = place_spawner("skeleton", 1)
+	tick(120)
+	local taken = smp_spawners.take(pos, player, "skeleton", BONE, 64)
+	eq(taken, 12, "F07-7 take converts the elapsed 120 s first")
+
+	-- Collect XP.
+	pos = place_spawner("skeleton", 1)
+	tick(120)
+	local xp = smp_spawners.collect_xp(pos, player, "skeleton")
+	near(xp, 12 * 5, 1e-9,
+		"F07-7 Collect XP converts the elapsed 120 s first")
+
+	-- Sell all.
+	pos = place_spawner("skeleton", 1)
+	tick(120)
+	local routed = nil
+	smp_sell = {
+		sell = function(p, stacks)
+			routed = { player = p, stacks = stacks }
+			return true
+		end,
+	}
+	local ok_sell = smp_spawners.routing.sell_all(pos, player, "skeleton")
+	eq(ok_sell, true, "F07-7 sell all succeeds")
+	ok(routed ~= nil and routed.stacks[1]:get_count() == 12,
+		"F07-7 sell all converts the elapsed 120 s first")
+	smp_sell = nil
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-10: spawners.stack_mode actually works
+----------------------------------------------------------------------
+
+do
+	local pos = place_spawner("skeleton", 1)
+	local player = make_player("p10sm", 10, 65, 10)
+	local function held(n)
+		local item = ItemStack("smp_spawners:spawner_item")
+		item:set_count(n)
+		item:get_meta():set_string("type", "skeleton")
+		return item
+	end
+
+	-- Default "all": the whole held stack merges (unchanged behaviour).
+	smp_spawners.cfg.stack_mode = "all"
+	local out = smp_spawners.interaction.add_stack(pos, player, held(32))
+	eq(state(pos).stack, 33, "F07-10 stack_mode = all merges everything")
+	eq(out:get_count(), 0, "F07-10 all held items consumed")
+
+	-- "one": one spawner per click.
+	smp_spawners.cfg.stack_mode = "one"
+	local out1 = smp_spawners.interaction.add_stack(pos, player, held(32))
+	eq(state(pos).stack, 34, "F07-10 stack_mode = one adds a single one")
+	eq(out1:get_count(), 31, "F07-10 the rest comes back to the player")
+
+	-- Unknown value: kept raw, warned about, behaves like "all".
+	local unknown = smp_spawners.build_cfg(
+		fake_settings({ ["spawners.stack_mode"] = "bogus" }))
+	eq(unknown.stack_mode, "bogus",
+		"F07-10 an unknown value is kept raw")
+	smp_spawners.cfg.stack_mode = "bogus"
+	local out2 = smp_spawners.interaction.add_stack(pos, player, held(4))
+	eq(state(pos).stack, 38,
+		"F07-10 an unknown value degrades to the default behaviour")
+	eq(out2:get_count(), 0, "F07-10 unknown value consumed the stack")
+	ok(has_log("unknown spawners.stack_mode"),
+		"F07-10 an unknown value warns at build time")
+
+	smp_spawners.cfg.stack_mode = "all"
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — F07-11: blast_immune is a real toggle
+----------------------------------------------------------------------
+
+do
+	local def = core.registered_nodes["smp_spawners:spawner"]
+	eq(def.drop, "", "F07-11 the node never drops a bare node item")
+
+	local pos = place_spawner("skeleton", 1)
+	local v0 = state(pos).version
+	def.on_blast(pos, 1.0, false)
+	eq(core.get_node_or_nil(pos).name, "smp_spawners:spawner",
+		"F07-11 blast_immune (default) survives the blast")
+	eq(state(pos).version, v0, "F07-11 an immune blast touches no metadata")
+
+	-- Off: the node is removed and its timer stopped with it.
+	smp_spawners.performance.start_timer(pos)
+	smp_spawners.cfg.blast_immune = false
+	def.on_blast(pos, 1.0, false)
+	eq(core.get_node_or_nil(pos).name, "air",
+		"F07-11 blast_immune = false removes the node")
+	eq(timers[pk(pos)] and timers[pk(pos)].running or false, false,
+		"F07-11 the timer is stopped with the node")
+	smp_spawners.cfg.blast_immune = true
+end
+
+----------------------------------------------------------------------
+-- Fix batch f07 — engine truth: the protection argument and the dig
+-- tool (f07 §4.6.6, §10)
+----------------------------------------------------------------------
+
+do
+	local def = core.registered_nodes["smp_spawners:spawner"]
+	local silk = { _name = "mcl_tools:pickaxe", _ench = { silk_touch = 1 } }
+
+	-- core.is_protected(pos, player_name) — never an action tag, never
+	-- an ObjectRef (builtin/game/misc.lua; smp_world keys off the name).
+	local pos = place_spawner("skeleton", 5)
+	local digger = make_player("pGuard", 10, 65, 10)
+	reset_protected()
+	def.on_dig(pos, { name = "smp_spawners:spawner" }, digger, silk)
+	local call = last_protected()
+	ok(call ~= nil, "eng core.is_protected is consulted on a dig")
+	eq(call and call.name, "pGuard",
+		"eng core.is_protected receives the player name")
+	eq(call and call.player, nil,
+		"eng no stray third argument is passed to core.is_protected")
+
+	-- A refused dig mutates nothing.
+	local stack0 = state(pos).stack
+	protected_forced = true
+	local v0 = state(pos).version
+	def.on_dig(pos, { name = "smp_spawners:spawner" }, digger, silk)
+	eq(state(pos).version, v0, "eng a protected dig mutates nothing")
+	eq(state(pos).stack, stack0, "eng a protected dig leaves the stack alone")
+	protected_forced = false
+
+	-- Placement consults protection the same way.
+	local item = ItemStack("smp_spawners:spawner_item")
+	item:set_count(1)
+	item:get_meta():set_string("type", "skeleton")
+	local pointed = { above = { x = 30, y = 64, z = 30 },
+	                  node = { x = 30, y = 63, z = 30 } }
+	reset_protected()
+	protected_forced = true
+	local out = smp_spawners.interaction.place(digger, pointed, item)
+	eq(out:get_count(), 1, "eng a protected place consumes nothing")
+	eq(core.get_node_or_nil(pointed.above).name, "air",
+		"eng a protected place places nothing")
+	local pcall_ = last_protected()
+	ok(pcall_ ~= nil and pcall_.name == "pGuard",
+		"eng place passes the player name to core.is_protected")
+	protected_forced = false
+
+	-- The engine calls on_dig(pos, node, digger) with three arguments:
+	-- without reading the wielded tool the silk check could never pass.
+	local pos2 = place_spawner("skeleton", 1)
+	local dw = make_player("pTool", 10, 65, 10)
+	dw._wielded = silk
+	def.on_dig(pos2, { name = "smp_spawners:spawner" }, dw)
+	eq(core.get_node_or_nil(pos2).name, "air",
+		"eng a three-argument on_dig sees the wielded Silk Touch")
+
+	-- And without it the dig is still refused.
+	local pos3 = place_spawner("skeleton", 1)
+	local nb = make_player("pTool2", 10, 65, 10)
+	nb._wielded = { _name = "mcl_tools:pickaxe", _ench = {} }
+	def.on_dig(pos3, { name = "smp_spawners:spawner" }, nb)
+	eq(core.get_node_or_nil(pos3).name, "smp_spawners:spawner",
+		"eng a three-argument on_dig without silk refuses the dig")
+end
+
+----------------------------------------------------------------------
 -- in-game test suite (mods/smp_spawners/test.lua)
 ----------------------------------------------------------------------
 
@@ -808,6 +1550,8 @@ do
 		if good and type(res) == "table" then
 			eq(res.failed, 0, "in-game suite has no failures (" ..
 				tostring(res.passed) .. " passed)")
+			print(string.format("  in-game suite (test.lua): %d assertions",
+				res.passed))
 			for _, l in ipairs(res.lines or {}) do print("  " .. l) end
 		end
 	end
