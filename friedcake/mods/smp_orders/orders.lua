@@ -202,8 +202,24 @@ end
 ----------------------------------------------------------------------
 
 function smp_orders.slot_limit(name)
-	local rec = smp_store.api.get_player(name)
-	local tier = rec and rec.rank and rec.rank.tier or "default"
+	-- Prefer smp_ranks for effective tier (honours expires_at lazily).
+	-- Fall back to the stored rank.tier when smp_ranks is absent OR
+	-- when smp_ranks.tier returns nil (e.g. player not in ranks system).
+	-- f04 O5: consumer item from f13 — expired ranks must not grant capacity.
+	local tier = "default"
+	if smp_ranks and type(smp_ranks.tier) == "function" then
+		local ok, t = pcall(smp_ranks.tier, name)
+		if ok and t then
+			tier = t
+		else
+			-- smp_ranks present but returned nil/error -> fallback to stored
+			local rec = smp_store.api.get_player(name)
+			if rec and rec.rank and rec.rank.tier then tier = rec.rank.tier end
+		end
+	else
+		local rec = smp_store.api.get_player(name)
+		if rec and rec.rank and rec.rank.tier then tier = rec.rank.tier end
+	end
 	return cfg.slots[tier] or cfg.slots.default
 end
 

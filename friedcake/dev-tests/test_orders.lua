@@ -825,7 +825,7 @@ end
 seed("bob", 10)
 advance()
 local _, err_funds = smp_orders.create("bob", key_totem, 100000, 100000)
-eq(err_funds, "Insufficient funds.", "insufficient funds refusal")
+eq(err_funds, "Insufficient funds", "insufficient funds refusal")
 seed("bob", 10000)
 -- minimum price
 advance()
@@ -1536,6 +1536,86 @@ do
 	local plain2 = ItemStack("mcl_armor:helmet_netherite")
 	local acc_r = smp_orders.deliver(bob, id_e, { plain2 }, ench_reload.version)
 	eq(acc_r, nil, "T8 holds after reload")
+end
+
+print("== config: orders.sorts (O2) ==")
+do
+	-- Default sorts
+	eq(smp_orders.cfg.sorts[1], "most_per_item", "O2 default sort 1")
+	eq(smp_orders.cfg.sorts[2], "most_paid", "O2 default sort 2")
+	eq(smp_orders.cfg.sorts[3], "recently_listed", "O2 default sort 3")
+	eq(#smp_orders.cfg.sorts, 3, "O2 exactly three default sorts")
+	-- Verify SORTERS has entries for all default sorts
+	ok(smp_orders.SORTERS.most_per_item ~= nil, "O2 SORTERS.most_per_item exists")
+	ok(smp_orders.SORTERS.most_paid ~= nil, "O2 SORTERS.most_paid exists")
+	ok(smp_orders.SORTERS.recently_listed ~= nil, "O2 SORTERS.recently_listed exists")
+	-- Verify cycle_sort works with default sorts
+	eq(smp_orders.cycle_sort("most_per_item"), "most_paid", "O2 cycle 1->2")
+	eq(smp_orders.cycle_sort("most_paid"), "recently_listed", "O2 cycle 2->3")
+	eq(smp_orders.cycle_sort("recently_listed"), "most_per_item", "O2 cycle 3->1")
+end
+
+print("== config: orders.slots.* dotted keys with underscore aliases (O3) ==")
+do
+	-- Default values should match the spec (dotted primary, underscore alias fallback)
+	eq(smp_orders.cfg.slots.default, 9, "O3 default slots 9")
+	eq(smp_orders.cfg.slots.tier1, 45, "O3 tier1 slots 45")
+	eq(smp_orders.cfg.slots.tier2, 90, "O3 tier2 slots 90")
+	eq(smp_orders.cfg.slots.tier3, 90, "O3 tier3 slots 90")
+	-- slot_limit reads from cfg.slots
+	eq(smp_orders.slot_limit("newplayer"), 9, "O3 slot_limit default tier")
+end
+
+print("== config: eco.order_alerts toggle (O4) ==")
+do
+	-- Test alerts_on with smp_settings stubbed
+	-- Case 1: smp_settings absent -> default on (nil -> true)
+	local old_settings = _G.smp_settings
+	_G.smp_settings = nil
+	eq(smp_orders.alerts_on("testplayer"), true, "O4 alerts_on: no smp_settings -> true")
+	-- Case 2: smp_settings.get returns nil -> default on
+	_G.smp_settings = { get = function(name, key) return nil end }
+	eq(smp_orders.alerts_on("testplayer"), true, "O4 alerts_on: smp_settings.get returns nil -> true")
+	-- Case 3: smp_settings.get returns true -> notify sends
+	_G.smp_settings = { get = function(name, key) return true end }
+	eq(smp_orders.alerts_on("testplayer"), true, "O4 alerts_on: smp_settings.get returns true -> true")
+	-- Case 4: smp_settings.get returns false -> notify suppressed
+	_G.smp_settings = { get = function(name, key) return false end }
+	eq(smp_orders.alerts_on("testplayer"), false, "O4 alerts_on: smp_settings.get returns false -> false")
+	-- Restore
+	_G.smp_settings = old_settings
+end
+
+print("== config: slot_limit honours expired rank via smp_ranks (O5) ==")
+do
+	-- Test slot_limit with smp_ranks stubbed
+	local old_ranks = _G.smp_ranks
+	-- Case 1: smp_ranks absent -> fallback to stored rank (default)
+	_G.smp_ranks = nil
+	local rec = smp_store.api.ensure_player("test_rank1")
+	rec.rank = { tier = "tier1" }
+	smp_store.api.upsert_player(rec)
+	eq(smp_orders.slot_limit("test_rank1"), 45, "O5 slot_limit: no smp_ranks -> stored tier1")
+	-- Case 2: smp_ranks.tier returns "default" for expired rank
+	_G.smp_ranks = { tier = function(name) return "default" end }
+	eq(smp_orders.slot_limit("test_rank1"), 9, "O5 slot_limit: expired rank (smp_ranks returns default) -> default")
+	-- Case 3: smp_ranks.tier returns "tier2" for live rank
+	_G.smp_ranks = { tier = function(name) return "tier2" end }
+	eq(smp_orders.slot_limit("test_rank1"), 90, "O5 slot_limit: live rank (smp_ranks returns tier2) -> tier2")
+	-- Case 4: smp_ranks.tier returns nil -> fallback to stored
+	_G.smp_ranks = { tier = function(name) return nil end }
+	rec.rank = { tier = "tier3" }
+	smp_store.api.upsert_player(rec)
+	eq(smp_orders.slot_limit("test_rank1"), 90, "O5 slot_limit: smp_ranks returns nil -> stored tier3")
+	-- Restore
+	_G.smp_ranks = old_ranks
+end
+
+print("== config: flush_interval reads store.flush_interval first (O8) ==")
+do
+	-- The cfg.flush_interval should default to 10 (from store.flush_interval default)
+	-- We can't easily test different settings without reload, but we verify the default
+	eq(smp_orders.cfg.flush_interval, 10, "O8 flush_interval default 10 (from store.flush_interval)")
 end
 
 print("== in-game test suite (mods/smp_orders/test.lua) ==")

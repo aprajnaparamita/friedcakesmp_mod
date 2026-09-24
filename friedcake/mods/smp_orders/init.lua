@@ -11,7 +11,7 @@
 -- Submodules (loaded below in dependency order):
 --   orders.lua    data layer: CRUD, id/buyer/key indexes, persistence
 --   escrow.lua    deposit / payout / refund with ledger entries (R3)
---   au_bridge.lua smp_ah bridge — TODO(f03) stubs
+--   au_bridge.lua smp_ah bridge — degrades gracefully when smp_ah is absent
 --   display.lua   plural/singular names, enchantment lines, tooltips
 --   formspec.lua  every menu, verbatim strings
 --   routing.lua   creation + auction sweep + routing-in API (f02/f03)
@@ -36,24 +36,57 @@ local function num(key, default)
 	return v
 end
 
+local function csv(key, default_list)
+	-- Parse a comma-separated list, trim entries, skip garbage, fall back
+	-- to default_list when the setting is absent/empty or nothing parses.
+	local raw = core.settings:get(key)
+	if not raw or raw == "" then return default_list end
+	local out = {}
+	for part in raw:gmatch("[^,]+") do
+		part = part:match("^%s*(.-)%s*$")
+		if part ~= "" then out[#out + 1] = part end
+	end
+	if #out == 0 then return default_list end
+	return out
+end
+
 local cfg = {
 	-- LIVE [S17]: tier1 45, tier2 90; default and tier3 PROPOSED
+	-- Dotted keys are the primary spelling per D7; underscore aliases
+	-- are accepted for back-compat (f04 O3).
 	slots = {
-		default = num("orders.slots_default", 9),
-		tier1   = num("orders.slots_tier1", 45),
-		tier2   = num("orders.slots_tier2", 90),
-		tier3   = num("orders.slots_tier3", 90),
+		default = num("orders.slots.default", num("orders.slots_default", 9)),
+		tier1   = num("orders.slots.tier1",   num("orders.slots_tier1",   45)),
+		tier2   = num("orders.slots.tier2",   num("orders.slots_tier2",   90)),
+		tier3   = num("orders.slots.tier3",   num("orders.slots_tier3",   90)),
 	},
 	duration = num("orders.duration", 604800),          -- PROPOSED 7 days
-	sorts = { "most_per_item", "most_paid", "recently_listed" }, -- OBSERVED [F0180]
+	-- OBSERVED [F0180]: read from config, default to the three observed sorts.
+	-- Garbage entries are skipped; if nothing valid remains, default list is used.
+	sorts = (function()
+		local default_sorts = { "most_per_item", "most_paid", "recently_listed" }
+		local raw_list = csv("orders.sorts", default_sorts)
+		local valid = {}
+		local seen = {}
+		for _, s in ipairs(raw_list) do
+			if (s == "most_per_item" or s == "most_paid" or s == "recently_listed")
+			   and not seen[s] then
+				valid[#valid + 1] = s
+				seen[s] = true
+			end
+		end
+		if #valid == 0 then return default_sorts end
+		return valid
+	end)(),
 	default_amount = num("orders.default_amount", 1),   -- OBSERVED [F0199]
 	allow_self_delivery = core.settings:get_bool("orders.allow_self_delivery") or false,
 	page_size = num("orders.page_size", 45),            -- PROPOSED (mirrors ah)
 	min_price = num("orders.min_price", 100),           -- PROPOSED $1 ("Minimum: $ 1" [F0202])
-	flush_interval = num("orders.flush_interval", 10),  -- shared §2.2
+	-- f04 O8: read shared store.flush_interval first, orders.flush_interval as alias.
+	flush_interval = num("store.flush_interval", num("orders.flush_interval", 10)),
 	expire_check_interval = num("orders.expire_check_interval", 60),
 	create_interval = 1,                                -- R9 (PROPOSED)
-	blacklist = { "mcl_amethyst:" },                    -- LIVE [S9]
+	blacklist = { "mcl_amethyst:" },                    -- LIVE [S9],
 }
 do
 	local raw = core.settings:get("orders.blacklist")

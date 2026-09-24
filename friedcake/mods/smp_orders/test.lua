@@ -3,10 +3,10 @@
 -- generic test loader — see f04 §10), and by the standalone harness in
 -- friedcake/dev-tests/test_orders.lua. Returns {passed, failed, lines}.
 --
--- Covers spec/features/f04-orders.md §9 T1–T14. The heavy economy paths
--- run in the standalone harness (which stubs the store); this file
--- exercises what is safely re-runnable on a live server:
--- display strings, keys, tooltip order, sort cycling, parsing.
+-- Covers spec/features/f04-orders.md §9 display strings, keys, tooltip
+-- order, sort cycling, parsing, and UI flows (wizard, board, delivery).
+-- The heavy economy paths (T6–T14) run in the standalone harness
+-- friedcake/dev-tests/test_orders.lua which stubs the store.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later

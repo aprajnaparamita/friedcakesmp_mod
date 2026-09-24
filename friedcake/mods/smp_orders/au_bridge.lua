@@ -21,7 +21,7 @@
 --
 -- The bridge takes the shape f04 §6.1 specifies (listings_at_or_below
 -- without the `now` argument; consume_listing without the reason) and
--- fills the f03-specific arguments in. Until smp_ah ships, every call
+-- fills the f03-specific arguments in. When smp_ah is absent, every call
 -- degrades to "no listings" so orders work standalone.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
@@ -39,7 +39,7 @@ function smp_orders.au.listings_at_or_below(key, unit_price)
 				.. tostring(res))
 		end
 	end
-	return {} -- TODO(f03)
+	return {} -- degrades gracefully when smp_ah is absent
 end
 
 -- Close listing `listing_id` as consumed by `buyer` at `price` cents.
@@ -53,5 +53,5 @@ function smp_orders.au.consume_listing(listing_id, buyer, price)
 		core.log("error", "[smp_orders] smp_ah.consume_listing failed: "
 			.. tostring(res))
 	end
-	return false -- TODO(f03)
+	return false -- degrades gracefully when smp_ah is absent
 end

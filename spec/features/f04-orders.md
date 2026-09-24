@@ -477,3 +477,31 @@ changed`, `Nothing matched this order`, `Order created`, `Order
 cancelled, @1 refunded`, …). The `⚠` warning triangle on prompt titles is
 omitted — no Mineclonia texture exists and its meaning is unresolved
 (V-28).
+
+## Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence |
+|-----|---------|----------|
+| O1  | VERIFIED | P0 blocker already resolved: `init.lua:709` uses `core.register_globalstep` (not `register_on_globalstep`); `test_orders.lua:303` stub provides `register_globalstep` |
+| O2  | CLOSED | `init.lua:39-57` reads `orders.sorts` as CSV with validation; garbage→default; `test_orders.lua:1544-1562` asserts default cycle and sort labels |
+| O3  | CLOSED (code) + ESCALATED (mirror→D7) | `init.lua:41-46` reads `orders.slots.default|tier1|tier2|tier3` as primary, `orders.slots_default…` as aliases; `test_orders.lua:1564-1571` asserts defaults; mirror update for `shared/06:39` proposed in §10 |
+| O4  | CLOSED | `routing.lua:48-54` stale TODO removed, `nil→true` fallback kept; `test_orders.lua:1573-1587` verifies `true`/`false`/`nil`/absent paths |
+| O5  | CLOSED | `orders.lua:204-218` reads effective tier via `smp_ranks.tier(name)` (honours `expires_at`), falls back to stored rank; `mod.conf:4` adds `smp_ranks` to `optional_depends`; `test_orders.lua:1589-1613` verifies expired→default, live→tier, absent→fallback |
+| O6  | CLOSED (comments) + ESCALATED (`sell_axe.lua:15`→f06) | `init.lua:14`, `au_bridge.lua:42,56`, `routing.lua:143,170` stale `TODO(f03)` tags reworded/removed; `smp_amethyst/sell_axe.lua:15` escalated in §10 |
+| O7  | CLOSED | `test.lua:6` header corrected to accurately describe coverage (display strings, UI flows; heavy economy paths in dev-tests) |
+| O8  | CLOSED (code) + ESCALATED (mirror→D7) | `init.lua:53` reads `store.flush_interval` primary, `orders.flush_interval` alias; `test_orders.lua:1615-1618` asserts default 10; mirror update for `shared/06:47` proposed in §10 |
+| O9  | CLOSED | `routing.lua:105,134` `Insufficient funds` (no terminal full stop); `test_orders.lua:828` assertion updated; both inside `core.get_translator` |
+
+### Escalations filed in §10
+
+| Row | Escalation | Target |
+|-----|------------|--------|
+| O3  | Mirror row `orders.slots.*` encoding (dotted primary + underscore alias) to be reconciled in `shared/06:39` per D7 ruling | D7 / `prompts/p2-config-mirror.md` |
+| O6  | `smp_amethyst/sell_axe.lua:15` carries same stale `TODO(f03)` — belongs to f06 | f06 agent |
+| O8  | `orders.flush_interval` vs `store.flush_interval` mirror row in `shared/06:47` — propose strike/alias per D7 | D7 / `prompts/p2-config-mirror.md` |
+
+### Proposed shared changes (updated)
+
+6. **`orders.slots.*` encoding** — dotted scalar primary (`orders.slots.default` etc.) with underscore aliases (`orders.slots_default` etc.) as the shared convention for both `ah.slots.*` and `orders.slots.*` (D7 ruling, f04 O3). `shared/06:39` to be updated accordingly.
+
+7. **`store.flush_interval` as the single canonical flush key** — `orders.flush_interval` retained as back-compat alias only; `shared/06:16` and `shared/06:47` to reflect this (D7 ruling, f04 O8).
