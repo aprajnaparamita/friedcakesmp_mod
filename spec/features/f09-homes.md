@@ -201,11 +201,11 @@ end
 
 | Key | Default | Status |
 |---|---|---|
-| `homes.slots` | `{default = 2, tier1 = 9, tier2 = 27, tier3 = 90}` | LIVE [S17]; default LEGACY [S25] |
-| `homes.name_max` | 32 | PROPOSED |
-| `homes.tabs_before_more` | 3 | **OBSERVED** [F0061] (inferred from one layout) |
-| `homes.default_icon` | bed | PROPOSED |
-| `homes.delete_confirm` | true | PROPOSED |
+| `homes.slots_default`, `homes.slots_tier1`, `homes.slots_tier2`, `homes.slots_tier3` | `{default = 2, tier1 = 9, tier2 = 27, tier3 = 90}` | LIVE [S17]; default LEGACY [S25] |
+| `smp_tp.homes.name_max` | 32 | PROPOSED |
+| `smp_tp.homes.tabs_before_more` | 3 | **OBSERVED** [F0061] (inferred from one layout) |
+| `smp_tp.homes.default_icon` | bed | PROPOSED |
+| `smp_tp.homes.delete_confirm` | true | PROPOSED |
 
 ## 8. Mineclonia implementation
 

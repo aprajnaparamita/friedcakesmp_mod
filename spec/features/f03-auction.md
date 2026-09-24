@@ -299,6 +299,12 @@ end
 | `ah.listing_fee_pct`, `ah.sale_tax_pct` | 0, 0 | PROPOSED |
 | `ah.min_price`, `ah.max_price` | $1, $10¹² | PROPOSED ($1 floor consistent with [F0142]) |
 | `ah.page_size` | 45 | PROPOSED |
+| `ah.reclaim_days` | 30 d | PROPOSED |
+| `ah.insert_slots` | 5 | PROPOSED |
+| `ah.rate_limit` | 1 | PROPOSED |
+| `ah.sweep_interval` | 60 s | PROPOSED |
+| `ah.sweep_budget` | 200 | PROPOSED |
+| `ah.history_page`, `ah.history_pages` | 100, 10 | PROPOSED |
 | `ah.sorts` | `{lowest_price, highest_price, recently_listed}` | **OBSERVED** [F0118] |
 | `ah.history` | 100 per page, 10 pages | LIVE [S23] |
 

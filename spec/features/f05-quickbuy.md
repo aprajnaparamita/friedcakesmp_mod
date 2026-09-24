@@ -141,6 +141,7 @@ end
 |---|---|---|
 | `quickbuy.price_guard` | 3.0 | LIVE [S7] |
 | `quickbuy.max_entries` | 45 | PROPOSED |
+| `quickbuy.page_size` | 45 | PROPOSED |
 
 ## 8. Mineclonia implementation
 

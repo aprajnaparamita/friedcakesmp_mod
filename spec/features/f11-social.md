@@ -241,6 +241,9 @@ observed server gives a single generic refusal.
 | `social.max_follows` | 200 | PROPOSED |
 | `social.friend_notify` | true | PROPOSED |
 | `social.tpa_hint` | true | **OBSERVED** in substituted form [F0270] |
+| `findplayer.spawn_radius` | 512 | PROPOSED |
+| `findplayer.region_band` | 2048 | PROPOSED |
+| `info.help`, `info.rules`, `info.discord`, `info.media`, `info.link`, `info.store`, `info.website`, `info.ranks`, `info.medal` | `""` (unset; the screen shows `This text is not configured`) | PROPOSED |
 
 ## 8. Mineclonia implementation
 

@@ -218,6 +218,7 @@ end
 | `spawners.C.skeleton` | 1505.35 | LIVE [S24] |
 | `spawners.timer_interval` | 60 s | PROPOSED |
 | `spawners.accrual_mode` | `active_only` | PROPOSED |
+| `spawners.offline_cap_hours` | 24 | PROPOSED |
 | `spawners.stack_mode` | `all` | LIVE [S24] |
 | `spawners.storage.per_spawner` | 2,880 | PROPOSED |
 | `spawners.storage.hard_cap` | 2,147,483,647 | PROPOSED |
@@ -227,6 +228,8 @@ end
 | `spawners.open_requires_access` | false | PROPOSED |
 | `spawners.blast_immune` | true | PROPOSED |
 | `spawners.convert_natural` | false | PROPOSED |
+| `spawners.hopper_extraction` | false | PROPOSED |
+| `spawners.enable_creeper` | true | PROPOSED |
 | `spawners.acquisition` | `{shard_shop = false, crates = false, natural = false, admin = true}` | LIVE [S10] |
 
 ## 8. Mineclonia implementation

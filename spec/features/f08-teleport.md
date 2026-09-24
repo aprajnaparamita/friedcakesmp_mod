@@ -298,21 +298,23 @@ end
 
 | Key | Default | Status |
 |---|---|---|
-| `tp.warmup` | 5 s | CLONE [C7] |
-| `tp.cancel_move_distance` | 1 node | PROPOSED |
-| `tp.confirm_menu` | true | CLONE [C1]; the decided substitute for clickable chat |
-| `rtp.cooldown` | `{default = 60, tier1 = 30}` s | PROPOSED (Donut: shorter for Donut+ [S27]) |
-| `rtp.min_radius`, `rtp.max_radius` | 500; the border minus 500 | PROPOSED |
-| `rtp.scan.overworld` | y from −32 to 256 (adjust to the world's terrain) | PROPOSED |
-| `rtp.scan.nether` | `mg_nether_min` to a few nodes below `mg_bedrock_nether_top_max` | PROPOSED |
-| `rtp.scan.end` | `mg_end_min` to `mg_end_min + 128` | PROPOSED |
-| `rtp.max_attempts` | 10 | PROPOSED |
-| `rtp.menu_enabled` | false (menu removed 15 June 2026) | LIVE [S14] |
-| `rtp.zone_delay` | 3 s | PROPOSED |
-| `rtp.regions` | `{}` | PROPOSED |
-| `rtpqueue.timeout` | 300 s | PROPOSED |
-| `rtpqueue.separation` | 16 to 32 nodes | PROPOSED |
-| `tpa.expiry` | 60 s | PROPOSED |
+| `smp_tp.tp.warmup` | 5 s | CLONE [C7] |
+| `smp_tp.tp.cancel_move_distance` | 1 node | PROPOSED |
+| `smp_tp.tp.confirm_menu` | true | CLONE [C1]; the decided substitute for clickable chat |
+| `smp_tp.tp.back_enabled` | false | PROPOSED |
+| `rtp.cooldown_default`, `rtp.cooldown_tier1`, `rtp.cooldown_tier2`, `rtp.cooldown_tier3`, `rtp.cooldown_media` | `{default = 60, tier1 = 30}` s | PROPOSED (Donut: shorter for Donut+ [S27]) |
+| `smp_tp.rtp.min_radius`, `smp_tp.rtp.max_radius` | 500; the border minus 500 | PROPOSED |
+| `smp_tp.rtp.scan.overworld` | y from −32 to 256 (adjust to the world's terrain) | PROPOSED |
+| `smp_tp.rtp.scan.nether` | `mg_nether_min` to a few nodes below `mg_bedrock_nether_top_max` | PROPOSED |
+| `smp_tp.rtp.scan.end` | `mg_end_min` to `mg_end_min + 128` | PROPOSED |
+| `smp_tp.rtp.max_attempts` | 10 | PROPOSED |
+| `smp_tp.rtp.menu_enabled` | false (menu removed 15 June 2026) | LIVE [S14] |
+| `smp_tp.rtp.zone_delay` | 3 s | PROPOSED |
+| `smp_tp.rtp.regions` | `{}` | PROPOSED |
+| `smp_tp.rtpqueue.timeout` | 300 s | PROPOSED |
+| `smp_tp.rtpqueue.min_separation` | 16 nodes | PROPOSED |
+| `smp_tp.rtpqueue.max_separation` | 32 nodes | PROPOSED |
+| `smp_tp.tpa.expiry` | 60 s | PROPOSED |
 
 ## 8. Mineclonia implementation
 

@@ -151,6 +151,8 @@ end
 | `sell.mode` | `button` | **OBSERVED** [F0094] |
 | `sell.multiplier` | 1.0 (Donut used a temporary 3.0 [S2]) | PROPOSED |
 | `sell.history_size` | 100 | PROPOSED |
+| `sell.history_page_size` | 5 | PROPOSED |
+| `sell.receipt_max_lines` | 8 | PROPOSED |
 | `sell.meta_exempt` | amethyst items | PROPOSED |
 | `sell.base_prices` | reloadable table | LIVE [S2] |
 
