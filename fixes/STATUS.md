@@ -251,6 +251,20 @@ The audit above is the *baseline*; this records what happened next.
 - **f11 open rows after the merge:** F11-3 (follow block check), F11-4
   (`blocks_only` predicate), F11-5 (D10 honesty cleanup) — that is the
   f11-finish agent's scope.
+- **The `smp_stats ↔ smp_combat` boot-aborting cycle closed (pack-level,
+  overseer):** `smp_stats/mod.conf` lost its redundant `smp_combat`
+  `optional_depends` edge; **`smp_combat`'s `smp_stats` edge stays** — it
+  is the order-critical one (`smp_stats/combat.lua:11-14`: stats'
+  leaveplayer callback must run before `smp_combat.on_leave` untags the
+  logger). One edge removed = cycle gone, documented callback order
+  preserved. f14's Depends row annotated (verify, don't touch either
+  `mod.conf`). Note: the drafted plan said to edit `smp_combat`'s conf —
+  that would have deleted the order-critical edge, so the other side was
+  cut instead. The remaining cycles (`sell↔orders`,
+  `orders→shardshop→amethyst→orders`) stay with their owning briefs
+  (f02/f04, f04/f06 — each owns its own `mod.conf`).
 - **Still open, unchanged:** GAP-1 (f08/f09/f10 briefs), NOTE-1 (E-09,
-  f01's), the boot-aborting `optional_depends` cycles on the f01/f02/f04/
-  f06/f14 Depends rows, push blocked (SSH passphrase).
+  f01's), `smp_economy.give` (f01's P5 finding), the two remaining
+  `optional_depends` cycles (f02/f04 = `sell ↔ orders`; f04/f06 =
+  `orders → shardshop → amethyst → orders`), push blocked (SSH
+  passphrase).
