@@ -188,7 +188,7 @@ end)
 | `combat.tag_seconds` | 20 | PROPOSED |
 | `combat.blocked_commands` | `{rtp, rtpqueue, tpa, tpahere, tpaccept, homes, spawn, warp, world, shop}` | LIVE [S7][S27] and PROPOSED |
 | `combat.disable_elytra` | false | PROPOSED |
-| `combat.keep_pearls_on_death` | false (per-player setting, `f12`) | LIVE [S20] |
+| `combat.keep_pearls_on_death` | false | PROPOSED — `pending:f08 §4.6` (no production reader; only consumer is spec-deferred ender pearls) |
 | `combat.log_broadcast` | true | PROPOSED |
 | `bounty.min_amount` | $1,000 | PROPOSED |
 | `bounty.pair_cooldown` | 3,600 s | PROPOSED |
@@ -241,6 +241,15 @@ end)
 | V-71 | Does `/bounty` have a menu, or is it chat-only? |
 | V-72 | Should `/sethome`, `/delhome`, `/back`, `/tpacancel` and `/tpadeny` also be blocked? They are not escape paths in the current list; `/tpacancel` is arguably one |
 | V-73 | Should right-click-only TNT ignition (flint and steel, fire, redstone) and respawn-anchor charging be attributed? The ring currently records only node placement and punches (best effort, §4.2.1) |
+
+### Fix-wave record (fix brief, 2026-09-25)
+
+| Row | Outcome | Evidence (file:line) |
+|-----|---------|----------------------|
+| C1  | CLOSED  | `friedcake/mods/smp_combat/elytra.lua` (new); `friedcake/dev-tests/test_combat.lua:176-212` (C1 test cases); `friedcake/dev-tests/harness_f10.lua:452-456` (player `get_attach`/`set_attach`/`set_detach` stubs) |
+| C2  | CLOSED  | `spec/features/f10-combat.md:191` (§7 row updated to `pending:f08 §4.6`); `spec/features/f10-combat.md:333-337` (note 16 documenting re-scope) |
+| C3  | VERIFIED | `friedcake/mods/smp_combat/mod.conf:4` (`optional_depends = ..., smp_stats` kept); `friedcake/mods/smp_stats/combat.lua:11-14` (load-order comment); `friedcake/mods/smp_combat/*.lua` + `smp_bounty/*.lua` (no `core.register_on_globalstep` / `core.modpath` / `get_player_names` B1-era refs found) |
+| C4  | VERIFIED | `friedcake/mods/smp_bounty/init.lua:144` (string `Player @1 does not exist` — no terminal full stop); `friedcake/dev-tests/test_bounty.lua:122` (assertion `"Player ghost does not exist"` — matches) |
 
 ### 10.1 Implementation notes — agent f10 (September 2026)
 
@@ -322,12 +331,22 @@ end)
     `smp_bounty`'s own mod-storage namespace as JSON, written
     synchronously on every mutation (same pattern as `smp_orders`).
     Money and ledger always go through `smp_store.api`.
-14. `combat.disable_elytra` is read but **no hook is built** (§4.2.5
-    marks it fragile); `= true` only logs a warning.
+14. `combat.disable_elytra` is implemented (2026-09-25 fix brief C1):
+    when true, elytra flight is refused while a player is combat-tagged
+    (blocks the `attach` method of `mcl_armor:elytra_entity` and
+    force-detaches already-flying tagged players on globalstep). Default
+    `false` changes no behaviour out of the box.
 15. `smp:combat_logged` respawn keeps the flag if
     `mcl_spawn.get_world_spawn_pos` fails, so the respawn retries on the
     next join instead of silently dropping the punishment.
-16. Verified against `~/dev/mineclonia-git` at implementation time:
+16. `combat.keep_pearls_on_death` re-scoped to `pending:f08 §4.6` (2026-09-25
+    fix brief C2): the key has no production reader in the codebase
+    (grep finds it only in test files). Its only documented consumer is
+    f08's ender pearl retention, which is spec-deferred. Rather than leave
+    a lying config key, the §7 row is updated to reflect the pending
+    status. If f08 lands the pearl feature, a death-drop seam in
+    `smp_combat` or `mcl_death_drop` would be needed to honour it.
+17. Verified against `~/dev/mineclonia-git` at implementation time:
     `mcl_death_drop.registered_dropped_lists` entries are
     `{inv, listname, drop}` with `inv = "PLAYER" | function` (iterated,
     never hard-coded); `mcl_title.set` mutates a HUD text and hides it

@@ -141,7 +141,7 @@ local function bounty_add(player_name, rest)
 	end
 	local target = resolve_target(target_raw)
 	if not target then
-		return false, S("Player @1 does not exist.", target_raw)
+		return false, S("Player @1 does not exist", target_raw)
 	end
 	if player_name:lower() == target:lower() then
 		return false, S("You cannot place a bounty on yourself.")

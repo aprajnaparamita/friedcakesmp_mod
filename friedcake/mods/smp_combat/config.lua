@@ -19,10 +19,12 @@ cfg.combat = cfg.combat or {}
 -- undocumented).
 cfg.combat.tag_seconds = tonumber(setting("combat.tag_seconds", 20)) or 20
 
--- Elytra disabling (f10 §4.2.5). Mineclonia implements gliding in
--- playerphysics/elytra.lua with no public toggle, so the hook is
--- deliberately NOT built: the spec marks it fragile. The setting is read
--- so operators see the expected key; when true it only logs.
+-- Elytra (f10 §4.2.5). Mineclonia ships no public toggle for gliding,
+-- so elytra.lua hooks the entity prototype in core.registered_entities
+-- plus the mcl_serverplayer capability gate (see its header for the
+-- seam evidence). Default false: the hook checks this key at call time,
+-- so leaving it off changes nothing. When true, elytra flight is
+-- refused while a player is combat-tagged.
 cfg.combat.disable_elytra = setting("combat.disable_elytra", "false") == "true"
 
 -- Broadcast combat logs to chat (§4.3.3, PROPOSED; V-69).

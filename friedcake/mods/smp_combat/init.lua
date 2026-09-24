@@ -17,6 +17,9 @@
 -- Commands:
 --   /combat untag <player>       clear a combat tag (smp_admin)
 --
+-- combat.disable_elytra (§4.2.5) is enforced by elytra.lua: while a
+-- player is tagged an elytra launch is refused and any glide ends.
+--
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
@@ -33,6 +36,7 @@ dofile(MP .. "/attribution.lua")
 dofile(MP .. "/blocks.lua")
 dofile(MP .. "/countdown.lua")
 dofile(MP .. "/combatlog.lua")
+dofile(MP .. "/elytra.lua")
 
 ----------------------------------------------------------------------
 -- Engine callbacks. Named functions so the dev harness and test.lua can
@@ -135,13 +139,19 @@ core.register_on_placenode(smp_combat.attribution.on_placenode)
 core.register_on_punchnode(smp_combat.attribution.on_punchnode)
 core.register_globalstep(function(dtime)
 	smp_combat.countdown.step(dtime)
+	-- combat.disable_elytra (§4.2.5): a no-op unless the key is true.
+	smp_combat.elytra.step()
 end)
 
-if smp_combat.cfg.combat.disable_elytra then
-	core.log("warning",
-		"[smp_combat] combat.disable_elytra = true, but the hook into "
-		.. "playerphysics/elytra.lua is NOT built (spec §4.2.5 marks it "
-		.. "fragile); the setting has no effect")
+-- The elytra entity def is registered by Mineclonia's `playerphysics`
+-- mod, whose load order relative to smp_combat is unspecified, so the
+-- hook installs once every mod has loaded. The dev harness has no
+-- core.register_on_mods_loaded — it installs eagerly there (and the
+-- wrapper itself re-checks on every step, so a late def is picked up).
+if core.register_on_mods_loaded then
+	core.register_on_mods_loaded(smp_combat.elytra.install)
+else
+	smp_combat.elytra.install()
 end
 
 ----------------------------------------------------------------------
