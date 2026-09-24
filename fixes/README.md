@@ -29,7 +29,7 @@ paste it). No other context is required.
 |---|---|---|---|---:|---|---|
 | 00 | [`00-P0-blockers.md`](00-P0-blockers.md) | cross-cutting | `smp_store`, `smp_ah`, `smp_orders`, `smp_shards`, `smp_amethyst`, `smp_stats`, `smp_tp` | 3 classes | **✅ fixed — pack boots** | `agent/p0-engine-apis` |
 | 01 | [`01-integrator-decisions.md`](01-integrator-decisions.md) | spec-side | `spec/*`, mirrors, `smp_admin` | 12 decisions | **✅ ruled & executed 2026-09-24 (P1–P6 merged)** | `agent/integrator-decisions` |
-| f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | high | `agent/f01-economy-fixes` |
+| f01 | [`f01-economy-core.md`](f01-economy-core.md) | Economy core | `smp_economy`, `smp_items` | ~14 | **✅ merged 2026-09-25 (`f0c66bb`) — 18 rows closed (incl. E-01 wiring, E-18 `give` clamp, E-20 reversible codec, E-22 settings chain), 8 escalated in §10.1 (E-05/06/12/15/17/19/21 = store/core, E-28), findings F-1…F-8 in §10.2; suite now 27 (`test_items.lua` added)** | merged → `agent/integrator-decisions` |
 | f07 | [`f07-spawners.md`](f07-spawners.md) | Virtual spawners | `smp_spawners` | 14 | **high — item loss** | `agent/f07-spawner-fixes` |
 | f09 | [`f09-homes.md`](f09-homes.md) | Homes | `smp_tp` (homes) | 4 | **high — 3/4 gaps closed by P0-B3 (verify rows), config row open** | `agent/f09-homes-fixes` |
 | f11 | [`f11-social.md`](f11-social.md) | Social | `smp_social` | 5 | **✅ merged 2026-09-25 (`8cd7620`) — F11-2 contract test, F11-3 `follow_blocked`, F11-4 `blocks_only` (+ consumer switch escalated to f08 TP13), F11-5 D10 honesty, F11-6 N/A, F11-7/8 verified; record in `spec/features/f11-social.md` §10.2** | merged → `agent/integrator-decisions` |
@@ -38,7 +38,7 @@ paste it). No other context is required.
 | f06 | [`f06-shards.md`](f06-shards.md) | Shards | `smp_shards`, `smp_shardshop`, `smp_amethyst` | 5 | medium | `agent/f06-shard-fixes` |
 | f01→f03 | [`f03-auction.md`](f03-auction.md) | Auction | `smp_ah` | 4 | medium | `agent/f03-auction-fixes` |
 | f04 | [`f04-orders.md`](f04-orders.md) | Orders | `smp_orders` | 3 + 1 consumer | medium | `agent/f04-orders-fixes` |
-| f12 | [`f12-settings.md`](f12-settings.md) | Settings | `smp_settings` | 4 | medium | `agent/f12-settings-fixes` |
+| f12 | [`f12-settings.md`](f12-settings.md) | Settings | `smp_settings` | 7 | **✅ merged 2026-09-25 (`ffb6a08`) — F12-1 closed (⚠ in both renders + byte-exact tests) · F12-2, F12-3 ESCALATED → D3 (ruled A; pre-applied, verified) · F12-4 closed (T9 leg in `test_social.lua`) · F12-5, F12-6 closed (hygiene) · F12-7 ESCALATED → D7 (mirror already at `shared/06:124`, verified)** | merged → `agent/integrator-decisions` |
 | f10 | [`f10-combat.md`](f10-combat.md) | Combat | `smp_combat`, `smp_bounty` | 2 | low — two dead config knobs; cycle context verified | `agent/f10-combat-fixes` |
 | f02 | [`f02-sell.md`](f02-sell.md) | Sell | `smp_sell` | 2 | low | `agent/f02-sell-fixes` |
 | f13 | [`f13-ranks.md`](f13-ranks.md) | Ranks | `smp_ranks` | 2 (consumer-side) | low — coordination | `agent/f13-ranks-fixes` |

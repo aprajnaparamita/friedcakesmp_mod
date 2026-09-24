@@ -360,7 +360,54 @@ The audit above is the *baseline*; this records what happened next.
   - **f09 (homes)** — same mod as the running f08 (`smp_tp`; homes are
     teleport destinations, so their file sets overlap), and the spec
     dependency runs f09 → f08. **Sequence: after f08 merges.**
-- **Still running:** f01, f07 (wave A) plus f08, f06, f03, f12, f10. Still open: NOTE-1
+- **f12 merged** (`ffb6a08` → merge `9c57fad`, 6 files, gate 26/26 at
+  that point). F12-1 (⚠ triangle both renders, byte-exact tests), F12-4
+  (T9 leg in `test_social.lua`), F12-5/F12-6 closed; F12-2/F12-3
+  escalated → D3 (ruled A, pre-applied, verified), F12-7 → D7 (mirror
+  already present at `shared/06:124`). Record in
+  `spec/features/f12-settings.md` §10 "Fix-wave record"; index row
+  annotated with the agent's supplied text.
+- **f01 merged** (`f0c66bb` → merge `eb2fa2e`, 8 files, **gate now
+  27/27** — `dev-tests/test_items.lua` is new). 18 rows closed: E-01
+  (guarded `smp_social.blocks` both directions, `init.lua:395-398`), E-02,
+  E-03/E-24 (D9 flag), E-04 (1 s `/pay` cooldown), E-07, E-08, E-09 (+
+  `PROPOSED` `/smp test` generalisation), E-10/E-25, E-11/E-13 (string
+  audits), E-18 (`economy.max_balance` clamp — **`smp_economy.give` now
+  exists at `init.lua:127`, closing the old P5 finding**), E-20
+  (reversible M2 codec), E-22 (settings → `record.social` chain), E-23,
+  E-26; E-14/E-16 verified as integrator-resolved; E-27 verified (D1/P1).
+  Commit `f0c66bb`, 8 files, clean scope (guard-checked: no `fixes/`,
+  `spec/shared/`, or other mods; `mod.conf` gained only
+  `optional_depends = smp_admin, smp_settings`).
+- **f01 escalations (§10.1) — 7 integrator/store-owned, D13+ candidates
+  awaiting a ruling:** E-05 (ledger reversal helper, R11 — no reversal
+  code exists pack-wide), E-06 (pending marker on multi-record ops, R12 —
+  also blocks a true T8 crash simulation), E-12 (`smp_store/init.lua:326`
+  chat string untranslated), E-15 (ledger `counterparty` written `""`),
+  E-17 (mod_storage `flush` no-op — §2.2 dirty-flag batching
+  unimplemented), E-19 (`smp_core` event bus/config loader/widget helpers
+  missing; `show_formspec`'s 4th arg bound to `_`), E-21 (`auto` backend
+  never picks sqlite — `init.lua:46-50` guards on a `package.loaded`
+  entry nobody preloads). E-28 is a depends-note (B1-1/B4-1 class; the
+  forbidden-symbol guard is clean on this branch).
+- **f01 findings (§10.2) routed:** **F-1** `optional_depends = smp_social`
+  NOT added on purpose — verified real cycle
+  `economy → social → combat → stats → economy` (social→combat,
+  combat→stats, stats→economy hard); guarded call-only wiring ships
+  instead. **Decision needed** (see §11 decisions). **F-6** live
+  `Insufficient funds.` period divergence at `smp_bounty:159` (f10's —
+  C4-class), `smp_quickbuy/buy.lua:70` (no brief owns quickbuy →
+  overseer sweep), `smp_orders/routing.lua:104,133` (f04's, held).
+  **F-2** (`/smp test` generalisation), **F-3** (`/payto` mirror row),
+  **F-5** (f12 must register `eco.pay_accept` — f12 already merged, so
+  this is a follow-up row now) and **F-7** are integrator asks.
+- **V-48 ruling now actionable (both sides merged):** `/pay` tests
+  `smp_social.blocks()` (`smp_economy/init.lua:395-398`, block OR ignore)
+  while f11 §4.3's PROPOSED payments row says ignore → *no* (block-only),
+  and `blocks_only()` exists (`smp_social/graph.lua:134`). One line to
+  switch, or amend the spec row — **decision needed**.
+- **Still running:** f07 (wave A) plus f08, f06, f03, f10 (wave 2).
+  Merged so far: f14, f11, f12, f01. Still open: NOTE-1
   (E-09), `smp_economy.give`, the two `optional_depends` cycles
   (f02/f04, f04/f06), push blocked (SSH passphrase), E-06/E-17/E-21
   store-side escalations (D13+ candidates), V-48 ruling above.
