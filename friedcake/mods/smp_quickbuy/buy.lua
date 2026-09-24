@@ -84,7 +84,7 @@ function smp_quickbuy.buy.entry(player, entry_index, shown_price, confirmed)
 	end
 
 	if bought == 0 then
-		return refuse(player, S("This item was already bought."))
+		return refuse(player, S("This item was already bought"))
 	end
 
 	-- T6: money_spent_on_shop increments by exactly the amount paid.

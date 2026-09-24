@@ -31,7 +31,7 @@ Skeleton Spawner x128
   Stored 12,480 / 368,640          XP 3,210 / 256,000
   ┌──────────────────────────────────────────────┐
   │ [bone 64][bone 64][bone 64] …   5 × 9        │
-  │ [< Prev]  Page 1/5  [Next >]  [Sell all][XP] │
+  │ [< Prev] Page 1 of 5 [Next >] [Sell all][XP] │
   └──────────────────────────────────────────────┘
   Inventory
 ```
@@ -126,7 +126,7 @@ configurable:
 2. **Stacking.** Sneak and right-click with a spawner item of the same type
    adds the whole held stack [S24] (`spawners.stack_mode = "all"`). Other
    types are rejected. Requires protection access.
-3. **Menu.** Header `<Type> Spawner ×n`, a storage page, Sell all, Collect XP,
+3. **Menu.** Header `<Type> Spawner x<n>`, a storage page, Sell all, Collect XP,
    paging, and lines for rate per minute, stored versus capacity, and stored
    XP. Clicking an item takes one stack; shift-clicking takes as much as fits.
 4. **Sell all.** Sells stored output through `f02` routing, so higher-paying

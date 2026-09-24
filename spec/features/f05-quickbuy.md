@@ -191,7 +191,7 @@ end
   from `smp_ah.buy` (f03 §6.2). Quick Buy itself does not send a success
   line; it sends its own refusals (`Quick Buy is unavailable during combat.`,
   `There are not enough listings to fill this entry.`, `Insufficient funds.`)
-  and reuses `This item was already bought.` when every listing was raced.
+  and reuses `This item was already bought` when every listing was raced.
 - **Capacity.** `quickbuy.max_entries` 45 is enforced by `entries.add`
   returning `nil, "capacity"`.
 

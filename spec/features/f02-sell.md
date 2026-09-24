@@ -137,7 +137,10 @@ function smp_sell.sell(player, stacks)
     end
   end
   smp_store.append_sell_history(player, receipt)
-  receipt:show(player)
+  -- The chat receipt is the design (D2); there is no formspec receipt.
+  for _, line in ipairs(receipt:messages(cfg.receipt_max_lines)) do    -- receipt.lua:164
+    core.chat_send_player(player, line)
+  end
 end
 ```
 
@@ -183,7 +186,7 @@ end
 |---|---|
 | V-11 | **Closed.** A confirm control exists, so `sell.mode` defaults to `button` |
 | V-54 | What is the green pane's tooltip? Never legible |
-| V-55 | Is there a receipt screen? `$ 189` appears on the HUD but no breakdown was shown |
+| V-55 | **Closed (D2, 2026-09-24): the chat receipt is the design; no formspec receipt. §6 amended.** Is there a receipt screen? `$ 189` appears on the HUD but no breakdown was shown |
 | V-56 | Is routing surfaced to the seller at all, or is it silent? |
 | V-57 | **Closed (PROPOSED).** The grid accepts any item on drop and rejects ineligible items on confirm, returning them — the §4.1 "returned, not consumed" reading. Drop-time refusal was rejected because it contradicts T3/T6 (there would be nothing to return) and because the price table is reloadable, so eligibility can change while a menu is open. |
 | V-88 | **[NEW, PROPOSED]** The cobblestone "6" and cobblestone-wall "7" prices in [S2] state no unit. `prices_default.lua` reads them as **dollars** (600/700 cents), matching the inflated Donut economy seen elsewhere (`$30K` totems, `$ 4M` helmets). |

@@ -124,7 +124,11 @@ toggle-row pattern; whether any category has a non-toggle control.
 ## 4. Behaviour
 
 1. **Categories.** `/settings` opens a seven-button category menu
-   (`OBSERVED`). Each button opens `Settings - <Category>` (`OBSERVED` for
+   (`OBSERVED`). The seven categories, in observed order — `chat`,
+   `notifications`, `pvp`, `visuals`, `privacy`, `scoreboard`, `general` —
+   are **OBSERVED** [F0237] (documented here because D3 struck the §7
+   `settings.categories` config-key row; the fact itself is unchanged).
+   Each button opens `Settings - <Category>` (`OBSERVED` for
    Chat; `PROPOSED` by symmetry for the rest).
 2. **Toggles.** A setting is a button labelled `<Name>: <Value>`. Clicking
    advances to the next value and redraws in place (`OBSERVED`).
@@ -137,8 +141,11 @@ toggle-row pattern; whether any category has a non-toggle control.
    only stores and presents values. `f11` enforces the chat settings.
 6. **Persistence.** JSON in player meta `smp:settings`. Unknown keys are
    preserved on write so a downgrade does not discard a newer setting.
-7. **Defaults.** Every setting defaults to its most permissive value except
-   where stated. `PROPOSED`.
+7. **Defaults.** The four chat-adjacent settings (`chat.private_messages`,
+   `chat.death_messages`, `chat.advancements`, `chat.join_leave`) default to
+   `FRIENDS_FOLLOWED` so a fresh profile reproduces the observed first-open
+   screen [F0242] (§0.5 fidelity) — settled by D3, 2026-09-24. Every other
+   setting defaults to its most permissive value (`ON`) — `PROPOSED`.
 8. **Back** returns to the category menu; closing the category menu closes the
    interface.
 
@@ -179,7 +186,7 @@ smp_settings.register("chat.private_messages", {
   category = "chat",
   label    = S("Private Messages"),
   values   = { "ON", "FRIENDS_FOLLOWED", "OFF" },
-  default  = "ON",
+  default  = "FRIENDS_FOLLOWED",
   display  = { FRIENDS_FOLLOWED = S("Friends/Followed") },
 })
 ```
@@ -202,7 +209,6 @@ end
 
 | Key | Default | Status |
 |---|---|---|
-| `settings.categories` | `{chat, notifications, pvp, visuals, privacy, scoreboard, general}` | **OBSERVED** [F0237] |
 | `settings.cycle_order` | `{ON, FRIENDS_FOLLOWED, OFF}` | PROPOSED |
 | `server.name` | `Donut SMP` | **OBSERVED** [F0236] |
 
@@ -246,8 +252,8 @@ end
 | V-38 | Is category 6 `Scoreboard` or `Social`? Four frames to one favour `Scoreboard` |
 | V-39 | Where did v0.1's clone-derived settings go — `pay_accept`, `ah_alerts`, `order_alerts`, `tpa_enabled`, `auto_accept`, `keep_pearls_on_death`? `keep_pearls_on_death` is documented as living under General [S20]; the rest are unplaced |
 | F12-A | **Canonical accessor name: `smp_settings.get(player_or_name, id)`.** f11 §6 and `smp_orders/routing.lua` already call `get`; f01 §6 and `claim-f08` call `get_name`. Only `get` is implemented — integrator should normalise `get_name` → `get` at those two call sites |
-| F12-B | **Defaults conflict.** §4.7 says "most permissive" and §5.1's sample shows `default = "ON"` for `chat.private_messages`, but §5's stored schema and the first-open frames [F0242] show `Friends/Followed`. Implemented: four rows (`private_messages`, `death_messages`, `advancements`, `join_leave`) default `FRIENDS_FOLLOWED`, the rest `ON`, so a fresh profile reproduces the observed screen (§0.5 fidelity). Reverting to §4.7 is one `default` line per setting in `chat.lua` |
-| F12-C | §7's `settings.cycle_order` is read from config (comma list); `settings.categories` is NOT — the seven categories are registered in observed order in code (structure, not a rate/timer per G3). PROPOSED: leave as code, or wire a config read if the integrator wants it |
+| F12-B | **Defaults conflict.** §4.7 says "most permissive" and §5.1's sample shows `default = "ON"` for `chat.private_messages`, but §5's stored schema and the first-open frames [F0242] show `Friends/Followed`. Implemented: four rows (`private_messages`, `death_messages`, `advancements`, `join_leave`) default `FRIENDS_FOLLOWED`, the rest `ON`, so a fresh profile reproduces the observed screen (§0.5 fidelity). Reverting to §4.7 is one `default` line per setting in `chat.lua` — **decided: D3, 2026-09-24 — §4.7 rewritten to the implemented defaults and the §5.1 sample set to `FRIENDS_FOLLOWED`; code unchanged.** |
+| F12-C | §7's `settings.cycle_order` is read from config (comma list); `settings.categories` is NOT — the seven categories are registered in observed order in code (structure, not a rate/timer per G3). PROPOSED: leave as code, or wire a config read if the integrator wants it — **decided: D3, 2026-09-24 — leave as code; the `settings.categories` row is struck from §7 and the OBSERVED list moved to §4.1 prose.** |
 | F12-D | `server.name` (§7, the genericised key) is read and falls back to `Donut SMP`. The engine's own setting is `server_name` (verified in luanti `builtin/settingtypes.txt`) — deliberately NOT aliased; the two must not be conflated |
 
 ### Candidate settings for the unopened categories
@@ -299,7 +305,8 @@ are in the table above (F12-A … F12-D); the rest are settled here.
   PROPOSED), screen geometry (sizes/pitch, follows the §4.9 prompt-menu
   scale), the `Click to toggle` row tooltip (§4.9 pattern, row hover not
   captured on video), `/settings`'s house-style description string, and
-  keeping `settings.categories` as code (F12-C).
+  keeping `settings.categories` as code (F12-C) — decided: D3,
+  2026-09-24, §4.7 rewritten, row struck.
 - **Storage limitation:** player meta exists only for online players,
   so `get` on an offline name returns the registered default and `set`
   on an offline name returns `false`. f01's `get_name(target, …)` calls

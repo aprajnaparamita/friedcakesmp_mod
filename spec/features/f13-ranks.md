@@ -111,7 +111,7 @@ function smp_ranks.grant(name, tier, days)
   local base = (rec.rank and rec.rank.tier == tier and rec.rank.expires_at > now)
                and rec.rank.expires_at or now
   rec.rank = { tier = tier, expires_at = base + days * 86400 }
-  smp_store.mark_dirty("players", name)
+  smp_store.api.upsert_player(rec) -- single read-modify-write, no yields
 end
 ```
 
