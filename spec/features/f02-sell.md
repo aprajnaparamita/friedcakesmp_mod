@@ -199,46 +199,67 @@ end
 | V-93 | **[NEW, PROPOSED]** Routing is surfaced in chat only: `You sold @1 @2 to an open order and received @3`, emitted only when routing actually happened. V-56's "silent" alternative is retained for the HUD (no routing breakdown appears in any frame). |
 | V-94 | **[NEW]** Sell history currently lives in `smp_sell`'s own mod-storage namespace, not in a `smp_store` table (shared §2.2), because `smp_store` has no such API and its sqlite/postgres backends persist exactly six nested player blobs. The smp_store extension is proposed in §11 below; the seam is local (`history.lua` `_read`/`_write`). **Decided (D12, 2026-09-24): `smp_store.api.append_history` now exists — see §11; the f02 brief wires `history.lua` onto it and closes this row (paged read still proposed).** |
 
+### Fix-wave record (fix brief, 2026-09-25)
+
+| Row ID | Outcome | Evidence |
+|---|---|---|
+| F02-1 | **ESCALATED → D12 (integrator)** | `history.lua:43-59,101-117` wired to `smp_store.api.append_history`; V-94 updated; paged read stays local |
+| F02-2 | **VERIFIED (D2, 2026-09-24)** | §6 amended per D2 Option A; V-55 closed; `receipt.lua:164-214` chat path is the design |
+| F02-3 | **ESCALATED → D7** | `init.lua:94` reads `sell.base_prices`; proposed in §11 item 5 for mirror |
+| F02-4 | **DEPENDS-BLOCKER (B4-1)** | `test_sell.lua:685` shim for `register_on_globalstep`; fixed by 00-P0-blockers.md |
+
+**Additional escalations noted:**
+- `smp_sell ↔ smp_orders` `optional_depends` cycle in `mod.conf:4` (P5 finding, f04 shares blame) — recorded for integrator resolution; not fixed here to avoid breaking cross-mod routing adapter.
+- `smp_economy.give` referenced in §6 pseudocode but code uses `smp_store.api.add_money` (f01 coordination) — pseudocode reflects intent; implementation follows shared §2.3 via store API.
+
 ## 11. Proposed shared changes (for the integrator)
 
 Flagging per AGENTS.md rule 1; none of these are required for smp_sell to ship
 standalone — every one degrades gracefully at runtime.
 
 1. **`smp_store` history seam — decided (D12, 2026-09-24): one generic API.**
-   `smp_sell` still keeps history in its own mod storage (V-94); the seam is
-   local (`history.lua` `_read`/`_write`) until the f02 brief wires
-   `history.lua` onto the API. The append half of the proposal is ruled:
-   one generic `smp_store.api.append_history(kind, name, entry, cap) -> id`
-   serves every feature, so the sell call is
-   `smp_store.api.append_history("sell", player, entry)` (see §6) —
-   append-only per `(kind, name)`, FIFO-pruned to `cap` (optional argument,
-   default 100, matching `sell.history_size`), with a monotonic integer id
-   per `(kind, name)` and money inside the entry kept as integer cents. The
-   paged read half of the original proposal —
-   `smp_store.api.sell_history_for(name, page, size) -> {entries, total_pages}`
-   — is **not** covered by D12 and stays proposed for the integrator; until it
-   lands, `history.lua` remains the implementation of reads.
+    `smp_sell` still keeps history in its own mod storage (V-94); the seam is
+    local (`history.lua` `_read`/`_write`) until the f02 brief wires
+    `history.lua` onto the API. The append half of the proposal is ruled:
+    one generic `smp_store.api.append_history(kind, name, entry, cap) -> id`
+    serves every feature, so the sell call is
+    `smp_store.api.append_history("sell", player, entry)` (see §6) —
+    append-only per `(kind, name)`, FIFO-pruned to `cap` (optional argument,
+    default 100, matching `sell.history_size`), with a monotonic integer id
+    per `(kind, name)` and money inside the entry kept as integer cents. The
+    paged read half of the original proposal —
+    `smp_store.api.sell_history_for(name, page, size) -> {entries, total_pages}`
+    — is **not** covered by D12 and stays proposed for the integrator; until it
+    lands, `history.lua` remains the implementation of reads.
+    **Wiring (this brief):** `history.lua` now delegates `append()` to
+    `smp_store.api.append_history` when the API is present (mod loaded after
+    `smp_store`), falling back to local mod storage. Reads stay local.
 2. **`smp_store.api.add_money` item detail.** The ledger row a sale writes
-   uses reason `sell` with the item key and quantity in `ref`
-   (`"sell:<key>:<qty>"`) because `add_money` has no `item_key`/`qty`
-   parameters. Proposing an `opts` table (`add_money(name, cents, reason,
-   ref, { item_key = …, qty = … })`) so the ledger columns are populated
-   directly (X4 reconstruction).
+    uses reason `sell` with the item key and quantity in `ref`
+    (`"sell:<key>:<qty>"`) because `add_money` has no `item_key`/`qty`
+    parameters. Proposing an `opts` table (`add_money(name, cents, reason,
+    ref, { item_key = …, qty = … })`) so the ledger columns are populated
+    directly (X4 reconstruction).
 3. **`smp_items` key format + plainness.** smp_sell delegates M0/M1/M2 keys
-   to `smp_items.key(stack, level)` when present (owner: f04) and keeps
-   its own equivalent when smp_items is still the stub. Two proposals:
-   (a) `smp_items.named()` should not treat a derived tooltip `description`
-   meta as a custom name — Mineclonia's `tt.reload_itemstack_description`
-   sets it on enchanted tools and shulker boxes, which would reject them at
-   M1; (b) a `sell.meta_exempt` exemption (amethyst `smp:expires_at` timers,
-   §4.1 [S9]) needs a way into the shared plainness check, e.g. a
-   `ctx`/`exempt` parameter on `smp_items.plain`/`key`.
+    to `smp_items.key(stack, level)` when present (owner: f04) and keeps
+    its own equivalent when smp_items is still the stub. Two proposals:
+    (a) `smp_items.named()` should not treat a derived tooltip `description`
+    meta as a custom name — Mineclonia's `tt.reload_itemstack_description`
+    sets it on enchanted tools and shulker boxes, which would reject them at
+    M1; (b) a `sell.meta_exempt` exemption (amethyst `smp:expires_at` timers,
+    §4.1 [S9]) needs a way into the shared plainness check, e.g. a
+    `ctx`/`exempt` parameter on `smp_items.plain`/`key`.
 4. **Glass-pane itemstrings.** shared/04-ui-kit.md §4.3 lists
-   `mcl_core:glass_pane_lime`, which does not exist in Mineclonia. The real
-   names (verified against `~/dev/mineclonia-git` `mcl_panes`) are
-   `mcl_panes:pane_lime_flat` / `mcl_panes:pane_lime` (and `_silver` for the
-   light-grey `List` pane). smp_sell resolves the pane at runtime from a
-   candidate list, so the shared table can be corrected without breaking it.
+    `mcl_core:glass_pane_lime`, which does not exist in Mineclonia. The real
+    names (verified against `~/dev/mineclonia-git` `mcl_panes`) are
+    `mcl_panes:pane_lime_flat` / `mcl_panes:pane_lime` (and `_silver` for the
+    light-grey `List` pane). smp_sell resolves the pane at runtime from a
+    candidate list, so the shared table can be corrected without breaking it.
+5. **Config mirror: `sell.base_prices`.** The key is declared in §7 and read
+    at `init.lua:94` (`cfg.base_prices_path = get_str("sell.base_prices", "")`)
+    but is absent from `spec/shared/06-config-reference.md`. Proposing mirror
+    row through D7 (2026-09-24 ruling: mirror and §7 follow code, both
+    directions). This is a declared-only key for the config mirror guard.
 
 ## 12. Implementation status (agent/f02-sell)
 

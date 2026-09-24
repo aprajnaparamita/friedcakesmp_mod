@@ -17,6 +17,11 @@
 -- The seam is deliberate: `_read` / `_write` are the only two places that
 -- touch storage, so moving this to a store table later is a local change.
 --
+-- WIRING (D12, 2026-09-24): `append()` now delegates to
+-- `smp_store.api.append_history(kind, name, entry, cap) -> id` when the API
+-- is present (mod loaded after `smp_store`), falling back to local mod storage.
+-- Reads stay local until `smp_store.api.sell_history_for` lands.
+--
 -- Layout (keys in smp_sell's core.get_mod_storage()):
 --   sellhist:<player>  ->  { version = 1, next_id = N, entries = { ... } }
 --   entries are stored NEWEST FIRST and trimmed to `history_size`.
@@ -98,15 +103,40 @@ end
 ----------------------------------------------------------------------
 
 -- Append one sale. Returns the stored entry (with its id).
+-- Delegates to smp_store.api.append_history when available (D12),
+-- otherwise falls back to local mod storage.
+-- During transition, writes to BOTH so local reads still work.
 function H.append(name, entry)
 	if type(name) ~= "string" or name == "" then return nil end
+
+	local stored = nil
+	local used_store = false
+
+	-- Try the smp_store history API first (D12: append_history(kind, name, entry, cap) -> id).
+	if smp_store and smp_store.api and smp_store.api.append_history then
+		local cap = math.max(1, math.floor(tonumber(cfg.history_size) or 100))
+		local ok, result = pcall(smp_store.api.append_history, "sell", name, entry, cap)
+		if ok and result then
+			-- The store API returns the assigned id (integer).
+			-- Build a normalized entry for callers.
+			stored = sanitize_entry(entry or {}, result, os.time())
+			stored.id = result
+			used_store = true
+		elseif not ok then
+			core.log("warning", "[smp_sell] smp_store append_history failed for " .. name
+				.. ": " .. tostring(result) .. " — falling back to local storage")
+		end
+	end
+
+	-- Always write to local mod storage so reads (list/page) work during transition.
+	-- When smp_store.api.sell_history_for lands, we can stop writing here.
 	local doc = H._read(name) or { version = 1, next_id = 1, entries = {} }
-	local stored = sanitize_entry(entry or {}, doc.next_id, os.time())
-	stored.id = doc.next_id
+	local local_stored = sanitize_entry(entry or {}, doc.next_id, os.time())
+	local_stored.id = doc.next_id
 	doc.next_id = doc.next_id + 1
 
 	-- Newest first.
-	table.insert(doc.entries, 1, stored)
+	table.insert(doc.entries, 1, local_stored)
 
 	-- Trim to the configured window (f02 §7, default 100).
 	local keep = math.max(1, math.floor(tonumber(cfg.history_size) or 100))
@@ -115,7 +145,13 @@ function H.append(name, entry)
 	end
 
 	H._write(name, doc)
-	return stored
+
+	-- Return the store entry if we used it (it has the global monotonic ID),
+	-- otherwise return the local entry.
+	if used_store and stored then
+		return stored
+	end
+	return local_stored
 end
 
 -- All entries, newest first.
