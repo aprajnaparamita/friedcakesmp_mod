@@ -305,4 +305,23 @@ do
 	eq(def.drop, "", "the node never drops a bare node item (F07-11)")
 end
 
+----------------------------------------------------------------------
+-- S06/SP-1 — /spawner is admin-gated
+----------------------------------------------------------------------
+
+do
+	local def = core.registered_chatcommands and
+		core.registered_chatcommands["spawner"]
+	ok(def ~= nil, "SP-1 /spawner is registered")
+	-- The engine reads ONLY `privs` (builtin/common/chatcommands.lua:
+	-- `def.privs = def.privs or {}`), so the old `privilege =
+	-- "smp_admin"` key asked for nothing and every player could mint
+	-- spawners. dev-tests/test_chatcmds.lua is the pack-wide lint that
+	-- fails on that key.
+	eq(def and def.privilege, nil, "SP-1 the ignored `privilege` key is gone")
+	eq(def and def.privs and def.privs.smp_admin, true,
+		"SP-1 privs.smp_admin gates the command")
+	ok(type(def and def.func) == "function", "SP-1 the command has a func")
+end
+
 return results

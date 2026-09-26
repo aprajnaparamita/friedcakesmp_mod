@@ -119,8 +119,15 @@ local function on_dig(pos, node, player, tool)
 	if not player then return end
 	local stack = smp_spawners.make_item(state.type_id, count)
 	local inv = player:get_inventory()
-	if not inv:add_item("main", stack) then
-		core.item_drop({ x = pos.x, y = pos.y + 0.5, z = pos.z }, stack)
+	-- S06/SP-2: add_item returns the leftover stack (always truthy), so
+	-- the old `if not inv:add_item(...)` never fired and a full
+	-- inventory silently destroyed the spawner items. Leftovers are
+	-- dropped at the node instead (core.add_item(pos, stack); the old
+	-- `core.item_drop(pos, stack)` had the arguments the wrong way
+	-- round too — the signature is (itemstack, dropper, pos)).
+	local left = inv:add_item("main", stack)
+	if left and not left:is_empty() then
+		core.add_item(vector.offset(pos, 0, 0.5, 0), left)
 	end
 end
 

@@ -36,10 +36,15 @@ smp_spawners.routing = {}
 
 function smp_spawners.routing.sell_all(pos, player, opened_type)
 	-- Re-validate; the action is part of the menu contract (R7, T10).
+	-- S06/SP-4: Sell all is mutating, so the protection check applies.
 	-- It also converts elapsed time first (f07 §4.5, F07-7), so a sale
 	-- takes everything produced since last_update.
-	local state = smp_spawners.revalidate(pos, opened_type, player)
+	local state, why = smp_spawners.revalidate(pos, opened_type, player,
+		true)
 	if not state then
+		-- "protected" already reached the player as a chat line
+		-- (revalidate); do not follow it with a wrong "removed".
+		if why == "protected" then return false, nil end
 		return false, S("This spawner has been removed")
 	end
 
@@ -63,11 +68,26 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 		return false, S("Selling is not available yet")
 	end
 
+	-- S06/SP-3: `ItemStack:set_count(n)` CLEARS the stack for
+	-- n > 65535 (l_item.cpp:91-96), so one oversized lot used to
+	-- become an empty stack, sell "the rest" and then have EVERY lot
+	-- subtracted from the store. Split each lot into stacks of at most
+	-- stack_max (u16, hence the 65535 clamp) before handing it over,
+	-- and remember exactly what was handed.
 	local stacks = {}
+	local handed = {}
 	for _, lot in ipairs(lots) do
-		local stack = ItemStack(lot.name)
-		stack:set_count(lot.count)
-		stacks[#stacks + 1] = stack
+		local stack_max = math.max(1,
+			math.min(ItemStack(lot.name):get_stack_max(), 65535))
+		local left = lot.count
+		while left > 0 do
+			local c = math.min(stack_max, left)
+			local stack = ItemStack(lot.name)
+			stack:set_count(c)
+			stacks[#stacks + 1] = stack
+			handed[lot.name] = (handed[lot.name] or 0) + c
+			left = left - c
+		end
 	end
 
 	-- f02 routes better-paying orders first, then the server [S2]. It
@@ -82,14 +102,18 @@ function smp_spawners.routing.sell_all(pos, player, opened_type)
 	-- the caller is the only place they can be shown: relay them.
 	local ok, lines = smp_sell.sell(player, stacks)
 	if not ok then
+		-- `false` = nothing moved (f02 all-or-nothing contract), so
+		-- NOTHING is subtracted from the store (S06/SP-3).
 		if type(lines) == "table" and #lines > 0 then
 			return false, lines
 		end
 		return false, S("Spawner output could not be sold")
 	end
 
-	for _, lot in ipairs(lots) do
-		state.store[lot.name] = (state.store[lot.name] or 0) - lot.count
+	-- `true` = every stack handed over was consumed and paid for, so
+	-- subtract exactly the handed counts — never more (S06/SP-3).
+	for name, n in pairs(handed) do
+		state.store[name] = (state.store[name] or 0) - n
 	end
 	smp_spawners.write_state(state)
 
