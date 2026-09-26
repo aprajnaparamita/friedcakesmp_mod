@@ -295,6 +295,14 @@ function H.teleport(name, id)
 	end
 	local player = core.get_player_by_name(name)
 	if not player then return false end
+	-- Combat check in the command, like every other teleport command
+	-- (f08 §4.1: the command checks is_tagged and the warm-up checks
+	-- it again). /home and /homes route through here, so without this
+	-- line they were the one exception (S08 verified-OK list).
+	if smp_tp.bridge.is_tagged(name) then
+		chat(name, S("You cannot teleport while in combat"))
+		return false
+	end
 	if smp_tp.teleport_with_warmup then
 		smp_tp.teleport_with_warmup(player, { x = h.pos.x, y = h.pos.y, z = h.pos.z }, "home")
 	end
