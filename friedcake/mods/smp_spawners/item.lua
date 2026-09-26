@@ -28,7 +28,7 @@ function smp_spawners.item_type(stack)
 	return nil
 end
 
-core.register_item("smp_spawners:spawner_item", {
+core.register_craftitem("smp_spawners:spawner_item", {
 	description = S("Spawner"),
 	tiles = { "mcl_mobspawners:mob_spawner.png" },
 	groups = {

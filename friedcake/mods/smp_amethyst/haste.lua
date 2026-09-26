@@ -48,7 +48,7 @@ am.register_join_hook(function(player)
 	end
 end)
 
-core.register_item("smp_amethyst:haste_potion", {
+core.register_craftitem("smp_amethyst:haste_potion", {
 	description = S("Shard Potion of Haste"),
 	inventory_image = "mcl_potions_haste.png",
 	stack_max = 16,

@@ -28,7 +28,7 @@ local function is_water(node)
 	return (groups.water or 0) > 0 or (groups.liquid_water or 0) > 0
 end
 
-core.register_item("smp_amethyst:bucket", {
+core.register_craftitem("smp_amethyst:bucket", {
 	description = S("Amethyst Bucket"),
 	inventory_image = "mcl_amethyst_shard.png",
 	wield_image = "mcl_amethyst_shard.png",
