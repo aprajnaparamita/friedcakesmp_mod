@@ -220,6 +220,41 @@ local function stub_sha1(s)
 	return string.format("%08x%08x%08x%08x%08x", v1, v2, v3, v4, v5)
 end
 
+-- MS-3 (S01 brief, per-suite): the engine's C functions take a NAME and
+-- raise through luaL_checkstring when they are handed anything else —
+-- an ObjectRef included. A lenient stub silently accepts whatever it is
+-- given, which is how lifecycle handlers that pass the player OBJECT
+-- where a name belongs slip through. The message below mirrors the
+-- engine's `bad argument`.
+local function checkstring(fn, value)
+	if type(value) ~= "string" then
+		error(string.format(
+			"bad argument #1 to '%s' (string expected, got %s)",
+			fn, type(value)), 2)
+	end
+end
+
+-- EC-7 (S01): stand-in for the engine's SecureRandom class
+-- (doc/lua_api.md; src/script/lua_api/l_noise.cpp). Deterministic for
+-- the suite but fresh bytes per CONSTRUCTION, 20 per draw — the shape
+-- `smp_stats.api.make_key` reads. Installed as a global because that is
+-- how the engine exposes it (not `core.SecureRandom`).
+local sr_seq = 0
+local function stub_SecureRandom()
+	sr_seq = sr_seq + 1
+	local obj = {}
+	function obj.next_bytes(_, count)
+		count = tonumber(count) or 16
+		local out = {}
+		for i = 1, count do
+			out[i] = string.char((sr_seq * 31 + i * 7 + (sr_seq % 13) * 17) % 256)
+		end
+		return table.concat(out)
+	end
+	return obj
+end
+_G.SecureRandom = stub_SecureRandom
+
 core = {
 	get_current_modname = function() return modname end,
 	get_translator = function(_) return S_factory() end,
@@ -245,7 +280,10 @@ core = {
 	close_formspec = function(pname, _)
 		shown[pname] = nil
 	end,
-	get_player_by_name = function(n) return players[n] end,
+	get_player_by_name = function(n)
+		checkstring("get_player_by_name", n)
+		return players[n]
+	end,
 	get_connected_players = function() return connected end,
 	register_chatcommand = function(name, def) commands[name] = def end,
 	registered_chatcommands = commands,
@@ -266,7 +304,10 @@ core = {
 	register_on_mods_loaded = function(fn) mods_loaded_handlers[#mods_loaded_handlers + 1] = fn end,
 	register_on_player_receive_fields = function(fn) field_handlers[#field_handlers + 1] = fn end,
 	get_gametime = function() return 0 end,
-	chat_send_player = function(pname, msg) chats[#chats + 1] = pname .. ":" .. msg end,
+	chat_send_player = function(pname, msg)
+		checkstring("chat_send_player", pname)
+		chats[#chats + 1] = pname .. ":" .. msg
+	end,
 	chat_send_all = function(msg) chats[#chats + 1] = "*" .. msg end,
 	get_worldpath = function() return "/tmp/friedcake_stats_world" end,
 	mkdir = function() return true end,
@@ -822,6 +863,60 @@ do
 	smp_stats.cfg.api_mode = saved_mode
 	ok(ran_off, "S6 api.lua runs under off mode without erroring")
 	eq(#logs, before_off, "S6 off logs nothing at load")
+end
+
+----------------------------------------------------------------------
+-- S01/EC-7: API keys come from the OS CSPRNG and FAIL CLOSED
+----------------------------------------------------------------------
+
+print("--- EC-7: SecureRandom API keys ---")
+do
+	-- The observable form is unchanged: fcsmp_ + 40 hex chars (20
+	-- bytes), one key per call, never derived from time/name/PRNG.
+	local key = smp_stats.api.make_key("alice")
+	ok(type(key) == "string", "EC-7 make_key answers a key")
+	ok(type(key) == "string" and key:match("^fcsmp_[0-9a-f]+$") ~= nil,
+		"EC-7 the key keeps the fcsmp_ + hex form: " .. tostring(key))
+	eq(#(key or ""), 46, "EC-7 46 chars = 6 prefix + 40 hex (20 secure bytes)")
+	local key2 = smp_stats.api.make_key("alice")
+	ok(type(key2) == "string" and key2 ~= key,
+		"EC-7 every call draws fresh bytes")
+
+	local saved_SR = _G.SecureRandom
+
+	-- Branch 1: the class THROWS (the engine does when the OS has no
+	-- secure random device — l_noise.cpp create_object) -> no key.
+	_G.SecureRandom = function() error("no secure random device", 0) end
+	eq(smp_stats.api.make_key("ec7_ghost"), nil,
+		"EC-7 a throwing SecureRandom mints no key")
+
+	-- Branch 2: a stubbed engine may answer nil instead -> no key.
+	_G.SecureRandom = function() return nil end
+	eq(smp_stats.api.make_key("ec7_ghost"), nil,
+		"EC-7 a nil constructor mints no key")
+
+	-- Branch 3: the class is missing entirely -> no key.
+	_G.SecureRandom = nil
+	eq(smp_stats.api.make_key("ec7_ghost"), nil,
+		"EC-7 a missing SecureRandom mints no key")
+
+	-- End to end: /api refuses, stores NOTHING, and names the failure —
+	-- never a predictable key and never a half-written record.
+	_G.SecureRandom = function() error("no secure random device", 0) end
+	r, m = commands["api"].func("ec7_ghost", "")
+	eq(r, false, "EC-7 /api refuses when no secure key can be minted")
+	ok(tostring(m):find("Could not generate an API key", 1, true) ~= nil,
+		"EC-7 the refusal says why: " .. tostring(m))
+	eq(smp_store.api.get_player("ec7_ghost"), nil,
+		"EC-7 no player record is created by the failed issue")
+	eq(smp_stats.api.key_of("ec7_ghost"), nil,
+		"EC-7 no key is stored by the failed issue")
+
+	_G.SecureRandom = saved_SR
+	-- The healthy path still works after the failure branches.
+	local back = smp_stats.api.make_key("alice")
+	ok(type(back) == "string" and #back == 46,
+		"EC-7 the stub is restored and mints keys again")
 end
 
 -- Snapshot files land in the world directory after a rebuild.

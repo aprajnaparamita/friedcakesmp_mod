@@ -57,6 +57,14 @@ local cfg = {
 	flag_min_playtime = tonumber(core.settings:get("economy.flag_min_playtime")) or 7200, -- 2h
 	server_name       = core.settings:get("server.name") or "FriedcakeSMP",
 	ledger_page_size  = tonumber(core.settings:get("ledger.page_size")) or 20,
+	-- EC-5 (S01): the SECOND cap `/pay` has to respect. This mod's own
+	-- `economy.max_balance` is `max_balance` above; `store.max_balance`
+	-- is the cap `smp_store.api.add_money` clamps to silently
+	-- (smp_store/init.lua:264-288), reading `store.<key>`
+	-- (smp_store/init.lua:30). Read the same key with the same fallback
+	-- so a credit that would cross EITHER cap can be refused up front
+	-- instead of being clipped after the debit already landed.
+	store_max_balance = tonumber(core.settings:get("store.max_balance")) or 1e15,
 }
 
 -- Reload handler: /smp reload re-reads the settings and re-resolves the
@@ -69,6 +77,7 @@ local function reload_cfg()
 	cfg.flag_min_playtime = tonumber(core.settings:get("economy.flag_min_playtime")) or cfg.flag_min_playtime
 	cfg.server_name       = core.settings:get("server.name") or cfg.server_name
 	cfg.ledger_page_size  = tonumber(core.settings:get("ledger.page_size")) or cfg.ledger_page_size
+	cfg.store_max_balance = tonumber(core.settings:get("store.max_balance")) or cfg.store_max_balance
 end
 
 ----------------------------------------------------------------------
@@ -237,23 +246,116 @@ end
 -- The ledger cannot answer "what did I receive while offline": its
 -- `counterparty` field is always "" (E-15, integrator-owned) and
 -- `ledger_for` pagination was the E-16 defect. So this mod keeps its own
--- pending list — one mod-storage key per recipient — appended at pay time
+-- pending list — one mod-storage key per recipient — written at pay time
 -- when the target is offline and drained by the join handler with no
 -- yield between read and clear (shared §2.3).
+--
+-- EC-3 (S01): the list used to be one row per `/pay`, appended and
+-- re-serialised on every call. `min_pay` is 1 cent and the cooldown is
+-- 1 s PER SENDER, so k alts could add k rows per second forever — O(n)
+-- rewrite per append and an unbounded join message. It is now an
+-- AGGREGATE:
+--
+--   * one summed amount per distinct sender (two pays from the same
+--     sender are ONE row);
+--   * at most MAX_PENDING_SENDERS distinct senders; anything past the
+--     cap is counted in `dropped` and shown as a single "and N others"
+--     line;
+--   * at most MAX_SUMMARY_LINES sender lines in the join message.
+--
+-- The payload is versioned (`v = 2`); a legacy row list is folded into
+-- the aggregate on the next read, so an already-large queue collapses
+-- the first time anyone is paid or joins.
+-- PROPOSED constants: 50 senders / 20 lines (unobserved — the spec only
+-- says "a summary on next join", f01 §4.2.4).
 ----------------------------------------------------------------------
+
+local MAX_PENDING_SENDERS = 50
+local MAX_SUMMARY_LINES   = 20
 
 local function pending_key(name) return "pending:" .. name end
 
-local function add_pending(target, from, cents)
-	local key = pending_key(target)
-	local list = {}
-	local raw = storage:get_string(key)
-	if raw ~= "" then
-		local ok, decoded = pcall(core.parse_json, raw)
-		if ok and type(decoded) == "table" then list = decoded end
+-- Enforce the distinct-sender cap. Kept rows are the largest senders
+-- (ties by name) so the interesting money is never the part that goes
+-- missing; the rest is folded into `dropped`.
+local function cap_pending(p)
+	local rows = {}
+	for name, amount in pairs(p.senders) do
+		rows[#rows + 1] = { name = name, amount = amount }
 	end
-	list[#list + 1] = { from = tostring(from or ""), amount = tonumber(cents) or 0 }
-	storage:set_string(key, core.write_json(list))
+	if #rows <= MAX_PENDING_SENDERS then return p end
+	table.sort(rows, function(a, b)
+		if a.amount == b.amount then return a.name < b.name end
+		return a.amount > b.amount
+	end)
+	local senders = {}
+	for i = 1, MAX_PENDING_SENDERS do
+		senders[rows[i].name] = rows[i].amount
+	end
+	p.senders = senders
+	p.dropped = p.dropped + (#rows - MAX_PENDING_SENDERS)
+	return p
+end
+
+-- Decode a stored payload into { senders = { [name] = cents },
+-- dropped = n }. An unreadable payload answers the empty aggregate: the
+-- summary is a notification only — the money itself always landed in
+-- the store and the ledger at pay time.
+local function decode_pending(raw)
+	local out = { senders = {}, dropped = 0 }
+	if not raw or raw == "" then return out end
+	local ok, decoded = pcall(core.parse_json, raw)
+	if not ok or type(decoded) ~= "table" then return out end
+	if decoded.v ~= nil then
+		local senders = type(decoded.senders) == "table"
+			and decoded.senders or {}
+		for name, amount in pairs(senders) do
+			local n = tonumber(amount)
+			if type(name) == "string" and n and n > 0 then
+				out.senders[name] = (out.senders[name] or 0) + math.floor(n)
+			end
+		end
+		out.dropped = math.max(0, math.floor(tonumber(decoded.dropped) or 0))
+		return cap_pending(out)
+	end
+	-- Legacy v1: a flat array of { from = ..., amount = ... } rows, one
+	-- per pay. Fold it into the aggregate.
+	for _, e in ipairs(decoded) do
+		if type(e) == "table" then
+			local from = tostring(e.from or "")
+			local amount = tonumber(e.amount)
+			if from ~= "" and amount and amount > 0 then
+				out.senders[from] = (out.senders[from] or 0) + math.floor(amount)
+			end
+		end
+	end
+	return cap_pending(out)
+end
+
+local function read_pending(key)
+	return decode_pending(storage:get_string(key))
+end
+
+local function add_pending(target, from, cents)
+	from = tostring(from or "")
+	cents = math.floor(tonumber(cents) or 0)
+	if from == "" or cents <= 0 then return end
+	local key = pending_key(target)
+	local p = read_pending(key)
+	local n = 0
+	for _ in pairs(p.senders) do n = n + 1 end
+	if p.senders[from] == nil and n >= MAX_PENDING_SENDERS then
+		-- Cap reached: count the sender as dropped instead of growing
+		-- the payload. The credit itself already happened.
+		p.dropped = p.dropped + 1
+	else
+		p.senders[from] = (p.senders[from] or 0) + cents
+	end
+	-- One write per pay, over an aggregate bounded by MAX_PENDING_SENDERS
+	-- instead of a row list that grew without limit.
+	storage:set_string(key, core.write_json({
+		v = 2, senders = p.senders, dropped = p.dropped,
+	}))
 end
 
 local function take_pending(name)
@@ -262,9 +364,9 @@ local function take_pending(name)
 	if raw == "" then return nil end
 	-- Read and clear back to back: no callback, no yield in between.
 	storage:set_string(key, "")
-	local ok, list = pcall(core.parse_json, raw)
-	if not ok or type(list) ~= "table" then return nil end
-	return list
+	local p = cap_pending(decode_pending(raw))
+	if next(p.senders) == nil and p.dropped == 0 then return nil end
+	return p
 end
 
 ----------------------------------------------------------------------
@@ -421,6 +523,16 @@ core.register_chatcommand("pay", {
 		if sender_rec.money < cents then
 			return false, S("Insufficient funds")
 		end
+		-- EC-5 (S01): pre-flight the RECEIVER's headroom too. The old
+		-- code debited in full and then called `add_money`, which clamps
+		-- to the cap and returns the APPLIED delta — which was ignored,
+		-- so the overflow was destroyed (money left the sender, never
+		-- reached the target). Refuse instead, still inside the validate
+		-- phase: nothing has mutated yet (shared §2.3).
+		local cap = math.min(cfg.max_balance, cfg.store_max_balance)
+		if smp_economy.get(target) + cents > cap then
+			return false, S("That would push @1 over the balance cap", target)
+		end
 
 		-- Transaction (no yields; spec §2.3).
 		smp_store.api.take_money(player_name, cents, "pay", target)
@@ -462,10 +574,13 @@ core.register_chatcommand("pay", {
 -- against the online player list; we layer an alias below that resolves
 -- an exact name. Operators can disable this with economy.tab_complete = false.
 if core.settings:get_bool("economy.tab_complete", true) then
-	-- register_on_chatcommand is not a real hook; the chat window's
-	-- completion is driven by the engine. The closest thing is to add
-	-- an alternative syntax /pay:<name> that the server also accepts.
-	-- We register /payto for explicit-by-name, which makes scripting easier.
+	-- E-10: there is no server-driven ARGUMENT-completion hook in
+	-- `doc/lua_api.md`, so the chat window's completion stays engine
+	-- side. (`core.register_on_chatcommand` itself IS a real hook —
+	-- EC-4 below uses it — it just cannot drive completion.) The
+	-- closest server-side affordance is an alternative syntax the
+	-- server also accepts; we register /payto for explicit-by-name,
+	-- which also makes scripting easier.
 	core.register_chatcommand("payto", {
 		params = S("<player> <amount>"),
 		description = S("Send money to a player by exact name (scripting-friendly alias for /pay)"),
@@ -507,16 +622,47 @@ core.register_chatcommand("paymenttoggle", {
 --
 -- We render a chat-only leaderboard; the spec also has a menu (f14).
 -- Both are valid; the chat form is what the reference server shows first.
+--
+-- EC-4 (S01): this used to load every player record and re-sort, per
+-- call, from any player — and with the postgres backend every
+-- `get_player` is a BLOCKING HTTP ROUND-TRIP ON THE MAIN THREAD
+-- (smp_store/backends/postgres.lua:32-48). Two defuses, both in this
+-- mod:
+--
+--   1. the sorted table is built at most once every
+--      BALTOP_CACHE_SECONDS (60 s), shared by every caller;
+--   2. a per-player cooldown, enforced in `core.register_on_chatcommand`
+--      below rather than in the func — `smp_stats` OVERRIDES this
+--      command's func (smp_stats/init.lua, F14-D7) and replaces it
+--      outright, so a check inside the func alone would be bypassed in
+--      production the moment the first board rebuild lands.
+--
+-- PROPOSED: 60 s cache / 10 s per-player gap (unobserved; the spec has
+-- no timing for /baltop, f01 §2).
 ----------------------------------------------------------------------
 
-local function page_baltop(page)
-	page = page or 1
-	if page < 1 then page = 1 end
-	local size = 10
-	local names = smp_store.api.all_player_names()
-	-- Build (name, money) pairs and sort desc.
+local BALTOP_CACHE_SECONDS  = 60
+local BALTOP_COOLDOWN_SECONDS = 10
+
+local baltop_cache = { rows = nil, built_at = nil }
+local baltop_cooldown = {}   -- [name] = gametime until which /baltop is refused
+local baltop_from_hook = {}  -- [name] = true while the hook already vouched
+
+-- Test hook (house style: `smp_economy._reset_pay_cooldown`).
+function smp_economy._reset_baltop_cooldown(name)
+	baltop_cooldown[name] = nil
+	baltop_from_hook[name] = nil
+end
+
+-- Sorted (name, money) rows, rebuilt at most once a minute.
+local function baltop_rows()
+	local now = now_seconds()
+	if baltop_cache.rows and baltop_cache.built_at
+	   and now - baltop_cache.built_at < BALTOP_CACHE_SECONDS then
+		return baltop_cache.rows
+	end
 	local rows = {}
-	for _, n in ipairs(names) do
+	for _, n in ipairs(smp_store.api.all_player_names()) do
 		local r = smp_store.api.get_player(n)
 		if r then rows[#rows + 1] = { name = n, money = r.money or 0 } end
 	end
@@ -524,6 +670,16 @@ local function page_baltop(page)
 		if a.money == b.money then return a.name < b.name end
 		return a.money > b.money
 	end)
+	baltop_cache.rows = rows
+	baltop_cache.built_at = now
+	return rows
+end
+
+local function page_baltop(page)
+	page = page or 1
+	if page < 1 then page = 1 end
+	local size = 10
+	local rows = baltop_rows()
 	local total = #rows
 	local total_pages = math.max(1, math.ceil(total / size))
 	local start = (page - 1) * size + 1
@@ -535,16 +691,58 @@ local function page_baltop(page)
 	return table.concat(out, "\n"), total_pages
 end
 
+-- Shared refusal sentence for the cooldown (hook and func).
+local function baltop_refusal(name)
+	local until_t = baltop_cooldown[name]
+	if until_t ~= nil and now_seconds() < until_t then
+		return S("Please wait a moment before asking again")
+	end
+	return nil
+end
+
 core.register_chatcommand("baltop", {
 	params = S("[page]"),
 	description = S("Show the money leaderboard"),
 	func = function(player_name, param)
+		-- The hook (below) arms the window before dispatch; consume its
+		-- vouch so this invocation is not refused by its own cooldown.
+		-- A direct call (another mod, a harness) is checked here.
+		if type(player_name) == "string" and player_name ~= "" then
+			if baltop_from_hook[player_name] then
+				baltop_from_hook[player_name] = nil
+			else
+				local refusal = baltop_refusal(player_name)
+				if refusal then return false, refusal end
+				baltop_cooldown[player_name] =
+					now_seconds() + BALTOP_COOLDOWN_SECONDS
+			end
+		end
 		local page = tonumber(param and param:match("^%s*(%d+)") or "1") or 1
 		local body = page_baltop(page)
 		core.chat_send_player(player_name, body)
 		return true
 	end,
 })
+
+-- The cooldown at the chat-command choke point: it applies to whichever
+-- implementation serves the command (this one, or smp_stats' snapshot
+-- override) and to /moneytop, and it refuses BEFORE the leaderboard is
+-- touched. Returning true marks the command handled
+-- (doc/lua_api.md `core.register_on_chatcommand`), so the func never
+-- runs during the window.
+if type(core.register_on_chatcommand) == "function" then
+	core.register_on_chatcommand(function(name, command, param)
+		if command ~= "baltop" and command ~= "moneytop" then return end
+		if type(name) ~= "string" or name == "" then return end -- console
+		local refusal = baltop_refusal(name)
+		if refusal then
+			core.chat_send_player(name, refusal)
+			return true
+		end
+		baltop_cooldown[name] = now_seconds() + BALTOP_COOLDOWN_SECONDS
+		baltop_from_hook[name] = true
+	end)
+end
 
 core.register_chatcommand("moneytop", {
 	params = S("[page]"),
@@ -854,8 +1052,25 @@ core.register_chatcommand("smp", {
 -- summarise payments received while offline on join (f01 §4.2.4).
 ----------------------------------------------------------------------
 
-core.register_on_leaveplayer(function(player_name)
-	smp_core.close_all_sessions(player_name)
+core.register_on_leaveplayer(function(player)
+	-- EC-2 (S01): `core.register_on_leaveplayer(function(ObjectRef,
+	-- timed_out))` hands us a player OBJECT (doc/lua_api.md), so the old
+	-- `close_all_sessions(player_name)` indexed `_sessions[ObjectRef]`
+	-- and cleared nothing — sessions survived a relog, which is how a
+	-- modified client could replay a stale Quick Buy "confirm" and skip
+	-- the 3x price guard. Resolve the name first. A plain name is still
+	-- accepted (the same dual-form normalisation the join handler below
+	-- uses) so harnesses that fire this hook with a name keep working;
+	-- anything else is ignored rather than trusted.
+	local name
+	if type(player) == "string" then
+		name = player
+	elseif type(player) == "table"
+	   and type(player.get_player_name) == "function" then
+		name = player:get_player_name()
+	end
+	if type(name) ~= "string" or name == "" then return end
+	smp_core.close_all_sessions(name)
 end)
 
 core.register_on_joinplayer(function(player)
@@ -871,13 +1086,29 @@ core.register_on_joinplayer(function(player)
 
 	-- Read and clear first: no yield between the two (shared §2.3), then
 	-- render. An unreadable payload is dropped rather than re-shown.
-	local list = take_pending(name)
-	if not list then return end
-	local lines = { S("Payments received while you were offline:") }
-	for _, e in ipairs(list) do
-		lines[#lines + 1] = S("From @1: @2",
-			tostring(e.from or "?"), money_chat(tonumber(e.amount) or 0))
+	local pending = take_pending(name)
+	if not pending then return end
+	-- EC-3: the aggregate is capped at MAX_PENDING_SENDERS rows and
+	-- MAX_SUMMARY_LINES lines; the rest collapses into "and N others".
+	local rows = {}
+	for sender, amount in pairs(pending.senders) do
+		rows[#rows + 1] = { from = sender, amount = amount }
 	end
+	table.sort(rows, function(a, b)
+		if a.amount == b.amount then return a.from < b.from end
+		return a.amount > b.amount
+	end)
+	local shown = math.min(#rows, MAX_SUMMARY_LINES)
+	local hidden = (#rows - shown) + pending.dropped
+	local lines = { S("Payments received while you were offline:") }
+	for i = 1, shown do
+		lines[#lines + 1] = S("From @1: @2",
+			rows[i].from, money_chat(rows[i].amount))
+	end
+	if hidden > 0 then
+		lines[#lines + 1] = S("and @1 others", hidden)
+	end
+	-- One message, however large the queue was: never N chat lines.
 	core.chat_send_player(name, table.concat(lines, "\n"))
 end)
 
