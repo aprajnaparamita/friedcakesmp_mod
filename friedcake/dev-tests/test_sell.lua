@@ -556,6 +556,12 @@ local SETTINGS = {
 	["sell.mode"] = "button",
 	["sell.multiplier"] = "1.0",
 	["sell.history_size"] = "100",
+	-- The eligibility tests below (T3, T5, T8, /sell hand, /sell all) pin
+	-- the "unpriced and enchanted items are returned" path, so the default
+	-- price and enchanted selling start OFF; the V-98/V-99 section turns
+	-- them on.
+	["sell.default_price"] = "0",
+	["sell.enchanted"] = "false",
 	["mcl_chests_serialize_uncompressed"] = "true",
 }
 
@@ -1979,6 +1985,90 @@ do
 	eq(smp_core.fmt_money(70000, "body"), "$ 700", "shared §0.6 body spacing")
 	eq(smp_core.fmt_money(70000, "inline"), "$700", "shared §0.6 inline spacing")
 	eq(smp_core.fmt_money(3000000, "body"), "$ 30K", "shared §0.6 suffix spacing")
+end
+
+----------------------------------------------------------------------
+-- V-98 / V-99: default price for unlisted items, enchantment bonus
+----------------------------------------------------------------------
+
+print("\n== V-98/V-99: default price and enchanted gear ==")
+
+do
+	SETTINGS["sell.default_price"] = "100"
+	SETTINGS["sell.enchanted"] = "true"
+	SETTINGS["sell.enchant_bonus"] = "50000"
+	smp_sell.reload()
+
+	local function enchanted_pick(ench)
+		local st = ItemStack("mcl_tools:pick_diamond")
+		st:get_meta():set_string("mcl_enchanting:enchantments", ser(ench))
+		return st
+	end
+	local ENCH = { efficiency = 5, unbreaking = 3, curse_of_vanishing = 1 }
+
+	-- Pricing: base $21,000 + 8 levels x $500 (the curse adds nothing).
+	eq(smp_sell.prices.enchant_bonus(smp_sell.items.enchantments(enchanted_pick(ENCH)),
+		50000), 400000, "V-99 bonus is per level, curses excluded")
+
+	-- Routing sees a distinct M1 key per enchantment set.
+	local seen = {}
+	smp_sell.orders.source = {
+		open_orders_above = function(key_m1) seen[#seen + 1] = key_m1; return {} end,
+		absorb_from_sell = function() return 0, 0 end,
+	}
+
+	set_money("alice", 0)
+	alice._inv:set_list("main", {})
+	open_sell("alice")
+	put_in_container("alice", enchanted_pick(ENCH), 1)
+	put_in_container("alice", ItemStack("mcl_tools:pick_diamond"), 2)
+	put_in_container("alice", ItemStack("smp_test:junk 5"), 3)
+	put_in_container("alice", ItemStack("mcl_mobitems:bone 10"), 4)
+	local msgs = confirm("alice")
+
+	eq(money("alice"), 2500000 + 2100000 + 5 * 100 + 10 * 1000,
+		"V-98/V-99 enchanted pick, plain pick, junk at the default and bones all sold")
+	eq(count_inventory(alice), 0, "V-98/V-99 nothing came back")
+	eq(#seen, 4, "V-98/V-99 four groups were offered to routing (two picks, junk, bones)")
+	local plain_key = smp_sell.items.plain_m1("mcl_tools:pick_diamond")
+	local distinct = 0
+	for _, k in ipairs(seen) do
+		if k ~= plain_key and k:find("efficiency", 1, true) then distinct = distinct + 1 end
+	end
+	eq(distinct, 1, "V-99 the enchanted pick routes under its own M1 key, never the plain one")
+	local joined = table.concat(msgs, "\n")
+	check(not joined:find("could not be sold", 1, true),
+		"V-98/V-99 no refusal lines when everything sold")
+
+	-- A worn enchanted item is still returned (only unworn gear sells).
+	set_money("alice", 0)
+	alice._inv:set_list("main", {})
+	open_sell("alice")
+	local worn = enchanted_pick(ENCH)
+	worn:set_wear(1000)
+	put_in_container("alice", worn, 1)
+	confirm("alice")
+	eq(money("alice"), 0, "V-99 a worn enchanted pick is not bought")
+	eq(count_inventory(alice), 1, "V-99 the worn enchanted pick came back")
+
+	-- /worth shows the bonus and flags the default price.
+	alice._inv:set_list("main", {})
+	alice._inv:set_stack("main", 1, enchanted_pick(ENCH))
+	alice:set_wield_index(1)
+	local ok, out = commands.worth.func("alice", "")
+	check(ok and out:find("$ 25K each", 1, true) ~= nil
+		and out:find("enchantment bonus", 1, true) ~= nil,
+		"V-99 /worth prices the held enchanted stack with its bonus")
+	ok, out = commands.worth.func("alice", "smp_test:junk")
+	check(ok and out:find("$ 1 each", 1, true) ~= nil
+		and out:find("default price", 1, true) ~= nil,
+		"V-98 /worth reports the default price for an unlisted item")
+
+	-- The operator can still switch both off.
+	SETTINGS["sell.default_price"] = "0"
+	SETTINGS["sell.enchanted"] = "false"
+	smp_sell.reload()
+	smp_sell.orders.source = nil
 end
 
 ----------------------------------------------------------------------

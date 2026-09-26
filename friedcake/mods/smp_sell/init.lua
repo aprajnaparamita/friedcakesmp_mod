@@ -92,12 +92,18 @@ local function reload_cfg()
 	cfg.history_page_size  = math.floor(get_num("sell.history_page_size", 5))
 	cfg.receipt_max_lines  = math.floor(get_num("sell.receipt_max_lines", 8))
 	cfg.base_prices_path   = get_str("sell.base_prices", "")
+	-- PROPOSED (f02 §10 V-98/V-99): server price for unlisted items, and the
+	-- per-enchantment-level bonus, both integer cents.
+	cfg.default_price      = math.max(0, math.floor(get_num("sell.default_price", 100)))
+	cfg.enchant_bonus      = math.max(0, math.floor(get_num("sell.enchant_bonus", 50000)))
+	cfg.sell_enchanted     = get_str("sell.enchanted", "true") ~= "false"
 	cfg.max_balance        = get_num("economy.max_balance",
 	                             get_num("store.max_balance", 1e15))
 	cfg.meta_exempt_raw    = get_str("sell.meta_exempt", "smp:expires_at,mcl_amethyst:*")
 	cfg.meta_exempt_keys, cfg.meta_exempt_items = parse_meta_exempt(cfg.meta_exempt_raw)
 
 	if prices then
+		prices.set_default_price(cfg.default_price)
 		prices.reload(cfg.base_prices_path)
 	end
 end
@@ -411,27 +417,35 @@ core.register_chatcommand("worth", {
 		end
 
 		local key = items.stack_name(stack)
-		local unit = smp_sell.unit_value(key)
 		local name = items.display_name(stack)
+		local ok, reason, ench = items.sellable(stack, {
+			meta_exempt = cfg.meta_exempt_keys,
+			item_exempt = cfg.meta_exempt_items,
+			sell_enchanted = cfg.sell_enchanted,
+		})
+		local bonus = ok and prices.enchant_bonus(ench, cfg.enchant_bonus) or 0
+		local unit = prices.unit_value(key, cfg.multiplier, bonus)
 		if not unit then
 			return true, S("@1 has no server price", name)
 		end
 
 		local out = { S("@1: @2 each", name, smp_core.fmt_money(unit, "body")) }
+		local base, is_default = prices.base_price(key)
+		if bonus > 0 then
+			out[#out + 1] = S("Base price @1 + enchantment bonus @2",
+				smp_core.fmt_money(base, "body"), smp_core.fmt_money(bonus, "body"))
+		end
+		if is_default then
+			out[#out + 1] = S("(default price for items without a listed price)")
+		end
 		if cfg.multiplier ~= 1 then
 			out[#out + 1] = S("Base price: @1 each (multiplier @2x)",
-				smp_core.fmt_money(smp_sell.base_price(key), "body"),
-				tostring(cfg.multiplier))
+				smp_core.fmt_money(base, "body"), tostring(cfg.multiplier))
 		end
-		-- M0 only prices plain stacks (shared §2.5): say so when the held
-		-- stack could not actually be sold as it is.
-		local plain, reason = items.is_plain(stack, {
-			meta_exempt = cfg.meta_exempt_keys,
-			item_exempt = cfg.meta_exempt_items,
-		})
-		if not plain and reason and reason ~= "no_price" then
+		-- Say so when the held stack could not actually be sold as it is.
+		if not ok and reason and reason ~= "no_price" then
 			local words = {
-				enchanted = "enchanted", worn = "worn", named = "renamed",
+				worn = "worn", named = "renamed",
 				metadata = "modified", container = "not empty", empty = "empty",
 			}
 			out[#out + 1] = S("This stack cannot be sold as it is (@1)",

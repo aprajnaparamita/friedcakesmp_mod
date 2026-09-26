@@ -361,6 +361,23 @@ local function is_plain(stack, ctx)
 end
 M.is_plain = defer("is_plain", is_plain)
 
+-- What /sell accepts: a plain stack, or (PROPOSED — f02 §10 V-99) an
+-- enchanted stack that is otherwise plain (unworn, unnamed, no contents, no
+-- other metadata). Returns `ok, reason, ench` where `ench` is the sorted
+-- "id:level" list ({} for a plain stack).
+local function sellable(stack, ctx)
+	local plain, reason = is_plain(stack, ctx)
+	if plain then return true, nil, {} end
+	if reason ~= "enchanted" then return false, reason end
+	if ctx and ctx.sell_enchanted == false then return false, reason end
+	if wear(stack) ~= 0                  then return false, "worn" end
+	if is_named(stack)                   then return false, "named" end
+	if has_contents(stack)               then return false, "container" end
+	if #nonvolatile_meta(stack, ctx) > 0 then return false, "metadata" end
+	return true, nil, enchantments(stack)
+end
+M.sellable = sellable
+
 ----------------------------------------------------------------------
 -- Canonical keys (§2.5)
 --
@@ -529,7 +546,8 @@ M.group_m0 = defer("group_m0", group_m0)
 -- collect(): the shulker-aware intake step
 --
 -- Turns an array of ItemStacks into
---   { groups  = { {key, key_m1, count, lots = {{stack, count, box_index, slot}}} },
+--   { groups  = { {id, key, key_m1, ench, count,
+--                  lots = {{stack, count, box_index, slot}}} },
 --     returns = { ItemStack, ... },      -- give these back, unconditionally
 --     rejected = { {stack, reason}, ... } -- same stacks, with a reason
 --   }
@@ -550,11 +568,21 @@ local function collect(stacks, ctx)
 		return_slots[#returns] = slot
 	end
 
-	local function add_lot(key, key_m1, stack, count, box_index, slot)
-		local g = by_key[key]
+	-- Groups are keyed by name for plain stacks and by "name#ench" for
+	-- enchanted ones, so each enchantment set is priced and routed apart.
+	-- `key` is always the bare item name (history, ledger, display).
+	local function add_lot(key, ench, stack, count, box_index, slot)
+		local id = key
+		if #ench > 0 then id = key .. "#" .. table.concat(ench, ",") end
+		local g = by_key[id]
 		if not g then
-			g = { key = key, key_m1 = key_m1, count = 0, lots = {} }
-			by_key[key] = g
+			local k1 = key_m1(stack, ctx)
+			if not k1 and #ench == 0 then k1 = M.plain_m1(key) end
+			-- An enchanted stack with no M1 key is not routed at all:
+			-- falling back to the plain key would fill a plain order.
+			g = { id = id, key = key, key_m1 = k1, ench = ench, count = 0,
+			      lots = {} }
+			by_key[id] = g
 			groups[#groups + 1] = g
 		end
 		g.count = g.count + count
@@ -574,15 +602,15 @@ local function collect(stacks, ctx)
 				for i = 1, M.SHULKER_SLOTS do
 					local inner = contents[i]
 					if inner and not inner:is_empty() then
-						local plain, reason = is_plain(inner, ctx)
-						local key = plain and stack_name(inner) or nil
+						local ok, reason, ench = sellable(inner, ctx)
+						local key = ok and stack_name(inner) or nil
 						if key and ctx.base_price and ctx.base_price(key) then
-							add_lot(key, key_m1(inner, ctx) or M.plain_m1(key),
-								inner, inner:get_count(), #returns + 1, i)
+							add_lot(key, ench, inner, inner:get_count(),
+								#returns + 1, i)
 						else
 							kept[i] = inner
 							any_kept = true
-							if not plain then
+							if not ok then
 								rejected[#rejected + 1] = { stack = inner, reason = reason }
 							end
 						end
@@ -591,23 +619,22 @@ local function collect(stacks, ctx)
 				encode_contents(box, any_kept and kept or {})
 				add_return(box, input_index)
 			else
-				local plain, reason = is_plain(stack, ctx)
-				local key = plain and stack_name(stack) or nil
+				local ok, reason, ench = sellable(stack, ctx)
+				local key = ok and stack_name(stack) or nil
 				if key and ctx.base_price and ctx.base_price(key) then
-					add_lot(key, key_m1(stack, ctx) or M.plain_m1(key),
-						stack, stack:get_count(), nil, nil)
+					add_lot(key, ench, stack, stack:get_count(), nil, nil)
 				else
 					add_return(ItemStack(stack), input_index)   -- copy
 					rejected[#rejected + 1] = {
 						stack = stack,
-						reason = (not plain) and reason or "no_price",
+						reason = (not ok) and reason or "no_price",
 					}
 				end
 			end
 		end
 	end
 
-	table.sort(groups, function(a, b) return a.key < b.key end)
+	table.sort(groups, function(a, b) return a.id < b.id end)
 	return {
 		groups = groups, returns = returns, return_slots = return_slots,
 		rejected = rejected,

@@ -155,6 +155,9 @@ end
 | `sell.receipt_max_lines` | 8 | PROPOSED |
 | `sell.meta_exempt` | amethyst items | PROPOSED |
 | `sell.base_prices` | reloadable table | LIVE [S2] |
+| `sell.default_price` | 100 ($1); 0 disables | PROPOSED (V-98) |
+| `sell.enchant_bonus` | 50000 ($500) per enchantment level, curses excluded; 0 disables | PROPOSED (V-99) |
+| `sell.enchanted` | `true` — sell unworn enchanted stacks | PROPOSED (V-99) |
 
 ## 8. Mineclonia implementation
 
@@ -198,7 +201,9 @@ end
 | V-92 | **[NEW, PROPOSED]** The confirm pane tooltip is `Confirm` / `Click to sell items`, without the parenthesised amount that the delivery confirm carries [F0222]. Showing a live total would require re-rendering the formspec on every container change, which risks cancelling an in-flight drag. |
 | V-93 | **[NEW, PROPOSED]** Routing is surfaced in chat only: `You sold @1 @2 to an open order and received @3`, emitted only when routing actually happened. V-56's "silent" alternative is retained for the HUD (no routing breakdown appears in any frame). |
 | V-94 | **[NEW]** Sell history currently lives in `smp_sell`'s own mod-storage namespace, not in a `smp_store` table (shared §2.2), because `smp_store` has no such API and its sqlite/postgres backends persist exactly six nested player blobs. The smp_store extension is proposed in §11 below; the seam is local (`history.lua` `_read`/`_write`). **Decided (D12, 2026-09-24): `smp_store.api.append_history` now exists — see §11; the f02 brief wires `history.lua` onto it and closes this row (paged read still proposed).** |
-| V-97 | **Closed (user-supplied guide, 2026-09-27): no bulk-sell removal; the grid is the design.** The guide describes `/sell` as a drop-in GUI that, on confirm, fills matching player orders (`/order`) at the order price and sells the rest to the server at the fixed baseline — exactly §4 items 3–4 and §6. Order-first routing only when the order beats the baseline is kept (it gives the seller "the best possible price right now"). **Open gap (PROPOSED, not implemented):** an item with no server base price is currently returned as ineligible even if an open order wants it (§6: `if not base then return_to`); the guide implies it should still route to the order. Needs an f02/f04 decision. |
+| V-97 | **Closed (user-supplied guide, 2026-09-27): no bulk-sell removal; the grid is the design.** The guide describes `/sell` as a drop-in GUI that, on confirm, fills matching player orders (`/order`) at the order price and sells the rest to the server at the fixed baseline — exactly §4 items 3–4 and §6. Order-first routing only when the order beats the baseline is kept (it gives the seller "the best possible price right now"). The gap it recorded — unlisted items returned even when an order wants them — is addressed by V-98. |
+| V-98 | **[NEW, PROPOSED — implemented, user decision 2026-09-27]** Every registered item has a server price. A user-supplied guide says "every single item in the game has a default … value" shown by `/worth`. Items missing from the price table now sell at `sell.default_price` (default $1) instead of being returned, which also lets them route to open orders first. An entry configured as `0`/`false` still makes an item unsellable (the operator's deny list); `air`/`ignore`/`unknown` never sell. `smp_sell.base_price` returns the default too, so `/worth` and `smp_orders.worth_of` agree; `/worth` marks it "(default price …)". |
+| V-99 | **[NEW, PROPOSED — implemented, user decision 2026-09-27]** Enchanted gear sells. The same guide says high-tier enchantments "add a flat cash bonus on top of the /worth base price". An enchanted stack that is otherwise plain (unworn, unnamed, no contents, no other metadata) now sells for `base + sell.enchant_bonus × Σ levels` (curses excluded), times `sell.multiplier`. It groups and routes under its own M1 key (never the plain key; an enchanted stack `smp_items` cannot key is simply not routed). Worn gear is still returned. Armour-trim bonuses ("certain updates") are not implemented. `sell.enchanted = false` restores the old refusal. |
 
 ### Fix-wave record (fix brief, 2026-09-25)
 
@@ -261,6 +266,10 @@ standalone — every one degrades gracefully at runtime.
     but is absent from `spec/shared/06-config-reference.md`. Proposing mirror
     row through D7 (2026-09-24 ruling: mirror and §7 follow code, both
     directions). This is a declared-only key for the config mirror guard.
+6. **Config mirror: `sell.default_price`, `sell.enchant_bonus`,
+    `sell.enchanted`** (V-98, V-99). Declared in §7 and read in `init.lua`
+    `reload_cfg`; proposing mirror rows in `spec/shared/06-config-reference.md`
+    through D7. Until then `test_config_mirror.lua` lists them as violations.
 
 ## 12. Implementation status (agent/f02-sell)
 

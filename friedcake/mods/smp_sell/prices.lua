@@ -30,6 +30,19 @@ local overrides = {}
 local lookup = {}          -- resolved itemstring -> cents (never negative)
 local override_path = nil
 local override_err = nil
+local fallback = 0         -- sell.default_price: cents for unlisted items
+
+-- Names that are never real, holdable items.
+local NOT_ITEMS = { [""] = true, air = true, ignore = true, unknown = true }
+
+-- True when `name` is a registered item the server may buy at the default
+-- price. Before registration completes (and in bare dev-tests) there is no
+-- registry, so nothing gets the default.
+local function registered(name)
+	if NOT_ITEMS[name] then return false end
+	local reg = core.registered_items
+	return type(reg) == "table" and reg[name] ~= nil
+end
 
 local function load_defaults()
 	local modpath = core.get_modpath("smp_sell")
@@ -149,29 +162,63 @@ local function strip_prefix(key)
 	return key
 end
 
+-- `sell.default_price` (integer cents; 0 disables). PROPOSED — f02 §10
+-- V-98: every registered item the price table does not list sells at this
+-- price, so /sell never hands back an ordinary item for want of a price.
+function P.set_default_price(cents)
+	cents = math.floor(tonumber(cents) or 0)
+	fallback = cents > 0 and cents or 0
+end
+
 -- Base price in cents for an item key, or nil when the item is not sellable.
+-- Returns `cents, is_default`. A configured price wins; an entry configured
+-- as 0/false keeps the item unsellable (the operator's deny list); any other
+-- registered item gets `sell.default_price`.
 function P.base_price(key)
 	key = strip_prefix(key)
 	if not key then return nil end
 	local cents = lookup[key]
+	local resolved = items.resolve_name(key)
 	if cents == nil then
 		-- Try the resolved name (a stack's name is always resolved; a
 		-- configured key may not be, and vice versa).
-		cents = lookup[items.resolve_name(key)]
+		cents = lookup[resolved]
+	end
+	if cents == false then return nil end
+	if cents == nil then
+		if fallback > 0 and registered(resolved) then return fallback, true end
+		return nil
 	end
 	if type(cents) ~= "number" or cents <= 0 then return nil end
-	return cents
+	return cents, false
 end
 
--- Unit value actually paid by the server: base_price * sell.multiplier.
--- Integer cents. Rounding is to the nearest cent (PROPOSED — f02 §10 V-89;
--- §0.7 only pins rounding for fees).
-function P.unit_value(key, multiplier)
+-- Enchantment bonus in integer cents for a sorted "id:level" list (the
+-- items.enchantments form): `per_level` cents per enchantment level, curses
+-- excluded. PROPOSED — f02 §10 V-99.
+function P.enchant_bonus(ench, per_level)
+	per_level = math.floor(tonumber(per_level) or 0)
+	if per_level <= 0 or type(ench) ~= "table" then return 0 end
+	local levels = 0
+	for _, e in ipairs(ench) do
+		local id, level = tostring(e):match("^(.-):(%d+)$")
+		if id and not id:find("curse", 1, true) then
+			levels = levels + tonumber(level)
+		end
+	end
+	return levels * per_level
+end
+
+-- Unit value actually paid by the server: (base_price + bonus) *
+-- sell.multiplier. Integer cents. Rounding is to the nearest cent
+-- (PROPOSED — f02 §10 V-89; §0.7 only pins rounding for fees).
+function P.unit_value(key, multiplier, bonus)
 	local base = P.base_price(key)
 	if not base then return nil end
 	multiplier = tonumber(multiplier) or 1
 	if multiplier ~= multiplier or multiplier < 0 then multiplier = 1 end
-	return math.floor(base * multiplier + 0.5)
+	bonus = math.max(0, math.floor(tonumber(bonus) or 0))
+	return math.floor((base + bonus) * multiplier + 0.5)
 end
 
 function P.count()

@@ -55,11 +55,14 @@ function R.new(source)
 		returned     = {},      -- { { name = <display>, reason = <key> } }
 	}
 
+	-- `key` is the item name, or "name#ench" for an enchanted group
+	-- (sell.lua); the line's `item` is always the bare name.
 	function self:line(key)
 		local l = self.by_key[key]
 		if not l then
 			l = {
-				item = key, qty = 0, server = 0, order = 0, order_ids = {},
+				item = (key:match("^([^#]*)")), qty = 0, server = 0, order = 0,
+				order_ids = {},
 				server_cents = 0, order_cents = 0,
 			}
 			self.by_key[key] = l

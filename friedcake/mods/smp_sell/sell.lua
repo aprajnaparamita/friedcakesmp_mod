@@ -42,6 +42,7 @@ local function collect_ctx()
 		base_price  = function(key) return prices.base_price(key) end,
 		meta_exempt = cfg.meta_exempt_keys,
 		item_exempt = cfg.meta_exempt_items,
+		sell_enchanted = cfg.sell_enchanted,
 	}
 end
 E.collect_ctx = collect_ctx
@@ -81,17 +82,25 @@ function E.plan(player_name, stacks, source)
 	local multiplier = tonumber(cfg.multiplier) or 1
 	for _, g in ipairs(collected.groups) do
 		local base = prices.base_price(g.key)
-		local unit = prices.unit_value(g.key, multiplier)
+		-- Enchanted stacks earn a flat bonus per enchantment level on top of
+		-- the base price (PROPOSED — f02 §10 V-99).
+		local bonus = prices.enchant_bonus(g.ench, cfg.enchant_bonus)
+		local unit = prices.unit_value(g.key, multiplier, bonus)
 		if base and unit and unit > 0 then
 			local entry = {
-				key = g.key, key_m1 = g.key_m1, unit = unit, count = g.count,
-				lots = g.lots, server_qty = 0, server_cents = 0, routes = {},
+				key = g.key, line = g.id or g.key, key_m1 = g.key_m1,
+				unit = unit, count = g.count, lots = g.lots,
+				server_qty = 0, server_cents = 0, routes = {},
 			}
 			local left = g.count
 
 			-- 2. Route to better-paying orders first, descending unit price
-			--    [S4]. Only the units an order can still take are routed.
-			for _, o in ipairs(orders.open_orders_above(g.key_m1, unit, player_name)) do
+			--    [S4]. Only the units an order can still take are routed. A
+			--    group with no M1 key (an enchanted stack smp_items cannot
+			--    key) is never routed.
+			local candidates = g.key_m1
+				and orders.open_orders_above(g.key_m1, unit, player_name) or {}
+			for _, o in ipairs(candidates) do
 				if left <= 0 then break end
 				local n = math.min(left, o.remaining)
 				if n > 0 then
@@ -99,7 +108,7 @@ function E.plan(player_name, stacks, source)
 						order = o, qty = n, cents = n * o.unit_price,
 						unit_price = o.unit_price,
 					}
-					plan.receipt:add_order(g.key, n, o.unit_price, o.id)
+					plan.receipt:add_order(entry.line, n, o.unit_price, o.id)
 					plan.order_total = plan.order_total + n * o.unit_price
 					left = left - n
 				end
@@ -109,7 +118,7 @@ function E.plan(player_name, stacks, source)
 			if left > 0 then
 				entry.server_qty = left
 				entry.server_cents = left * unit
-				plan.receipt:add_server(g.key, left, unit)
+				plan.receipt:add_server(entry.line, left, unit)
 				plan.server_total = plan.server_total + left * unit
 			end
 
@@ -224,7 +233,7 @@ function E.pay(player_name, plan)
 
 		-- The receipt was planned before payment; rewrite the line with what
 		-- actually happened so history and chat never disagree.
-		plan.receipt:set_line(g.key, server_qty, server_cents,
+		plan.receipt:set_line(g.line or g.key, server_qty, server_cents,
 			order_qty, order_cents, order_ids)
 
 		result.paid[i] = true
