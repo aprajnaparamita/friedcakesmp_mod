@@ -75,6 +75,7 @@ end
 local BLOCKED = {
 	"rtp", "rtpqueue", "tpa", "tp", "tpahere", "tpaccept",
 	"homes", "home", "spawn", "warp", "world", "shop",
+	"kill", -- S07/CB-2: no self-kill credit handover while tagged
 }
 for _, cmd in ipairs(BLOCKED) do
 	yes(smp_combat.blocks.is_blocked(cmd), "T3 /" .. cmd .. " is blocked")
@@ -82,6 +83,15 @@ end
 for _, cmd in ipairs({ "sell", "msg", "ah", "bounty" }) do
 	yes(not smp_combat.blocks.is_blocked(cmd),
 		"T3 /" .. cmd .. " is allowed in combat")
+end
+
+-- CB-1 (S07): the combat-log drop registered LAST — deferred to
+-- on_mods_loaded, after every mod's load-time registration (the list
+-- is plain append, so "last registered" is "runs last").
+if core.registered_on_leaveplayers then
+	eq(core.registered_on_leaveplayers[#core.registered_on_leaveplayers],
+		smp_combat.on_leave,
+		"CB-1 the combat-log drop is the last leave handler")
 end
 
 -- Refusals only fire while tagged.

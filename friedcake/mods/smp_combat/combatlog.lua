@@ -127,7 +127,17 @@ smp_combat.drop_death_lists = smp_combat.combatlog.drop_death_lists
 -- credit_kill: statistics (f14) + kill listeners (bounty §4.4).
 ----------------------------------------------------------------------
 
-function smp_combat.credit_kill(killer, victim, pos)
+-- `source` (S07/CB-2.1, optional — the §6 pseudo-code's three-argument
+-- call stays valid) tells the listeners HOW the attribution was
+-- reached:
+--   "death"     killer_from(reason) named the killer (punch/projectile)
+--   "fallback"  last attacker on a reason-less death (fall, lava, void,
+--               set_hp(0) / /kill) — statistics still credit it
+--   "combatlog" the victim logged out while tagged
+--   nil         a direct call (legacy callers)
+-- Statistics credit regardless; smp_bounty pays only for "death" and
+-- "combatlog" (a combat log IS a real fight: the victim fled it).
+function smp_combat.credit_kill(killer, victim, pos, source)
 	local kname = smp_combat.name_of(killer)
 	local vname = smp_combat.name_of(victim)
 	if not kname or not vname or kname == vname then return false end
@@ -140,7 +150,7 @@ function smp_combat.credit_kill(killer, victim, pos)
 		end
 	end
 	for _, fn in ipairs(smp_combat.kill_listeners) do
-		local ok, err = pcall(fn, kname, vname, pos)
+		local ok, err = pcall(fn, kname, vname, pos, source)
 		if not ok then
 			core.log("error",
 				"[smp_combat] kill listener failed: " .. tostring(err))
@@ -169,7 +179,10 @@ function smp_combat.on_leave(player)
 			smp_combat.S("@1 has logged out during combat.", name))
 	end
 	if attacker and attacker ~= name then
-		smp_combat.credit_kill(attacker, name, pos)
+		-- "combatlog": a payout from a logout-while-tagged kill is the
+		-- designed behaviour (f10 §4.4.3, T5) — the victim fled a real
+		-- fight, unlike a reason-less death (CB-2.1 "fallback").
+		smp_combat.credit_kill(attacker, name, pos, "combatlog")
 	end
 	smp_combat.untag(name)
 	return true

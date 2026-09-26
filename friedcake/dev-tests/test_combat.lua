@@ -12,12 +12,16 @@
 --       outstanding bounty from escrow
 --   T6  the combat-logged player respawns at world spawn on next join;
 --       the flag then clears
---   T7  /kill (suicide reason) while tagged credits the last attacker
---       and pays the bounty
+--   T7  a reason-less death (set_hp(0) / /kill) while tagged credits
+--       the last attacker in STATISTICS but pays no bounty (S07/CB-2.1)
 --   T11 tag state does not survive a restart (in-memory only)
 --   T12 untagging on the death of either party, including a third
 --       party whose opponent died
 --   C1  combat.disable_elytra — elytra flight refused while tagged
+--   CB-1 the combat-log drop is registered LAST (on_mods_loaded), so a
+--       temporary-container mod that hands its grid back on leave
+--       cannot smuggle valuables out of the drop (S02 SE-4)
+--   CB-2 /kill is blocked while tagged (S07/CB-2.3)
 -- plus: explosion ring attribution (TNT, punched crystal, 10 s window),
 -- the spawn safe zone (X10: no PvP tag inside it) and the action-bar
 -- countdown.
@@ -42,6 +46,30 @@ end
 assert(DEV, "run this test as friedcake/dev-tests/test_combat.lua from the repo root (or inside it)")
 
 local H = dofile(DEV .. "harness_f10.lua")
+
+-- MS-3 (strict engine stub, S07): Luanti's bindings take
+-- `const std::string &name`, so a call with a non-string (an ObjectRef
+-- passed where a name belongs — the QB-1 class of bug) RAISES through
+-- luaL_checkstring instead of quietly returning nil. The stubs in this
+-- file must be as strict as the engine. Defined here in the test file
+-- on purpose — S09 owns the pack-wide shared-harness variant.
+local function strict(fn, api)
+	return function(name, ...)
+		if type(name) ~= "string" then
+			error(string.format(
+				"bad argument #1 to '%s' (string expected, got %s)",
+				api, type(name)), 2)
+		end
+		return fn(name, ...)
+	end
+end
+core.get_player_by_name = strict(core.get_player_by_name, "get_player_by_name")
+core.get_player_ip = strict(core.get_player_ip, "get_player_ip")
+core.player_exists = strict(core.player_exists, "player_exists")
+core.chat_send_player = strict(core.chat_send_player, "chat_send_player")
+core.show_formspec = strict(core.show_formspec, "show_formspec")
+core.close_formspec = strict(core.close_formspec, "close_formspec")
+core.check_player_privs = strict(core.check_player_privs, "check_player_privs")
 
 -- C1 (§4.2.5): a stand-in for Mineclonia's playerphysics/elytra.lua
 -- entity def. The harness registers no engine entities, and smp_combat's
@@ -70,17 +98,45 @@ local elytra_def = {
 }
 core.registered_entities = { ["mcl_armor:elytra_entity"] = elytra_def }
 
-H.load_stack()
+-- Load phase: every mod's main chunk, exactly as the engine runs them.
+H.load("smp_core")
+H.load("smp_store")
+H.load("smp_combat")
+H.load("smp_bounty")
+
+-- CB-1 (S07): a fake temporary-container mod — the stand-in for
+-- smp_sell (optional_depends = smp_combat, so it always loads after it)
+-- and smp_orders. Its leave handler hands the parked grid contents back
+-- into `main`, exactly like smp_sell/init.lua:604. Registered AFTER
+-- smp_combat's main chunk has run and BEFORE on_mods_loaded: the engine
+-- fires that event only once every mod has loaded (src/server/mods.cpp),
+-- so the combat-log drop must still end up registered AFTER this one.
+local parked = {} -- [name] = { stacks parked in the container }
+core.register_on_leaveplayer(function(player)
+	local name = player:get_player_name()
+	local grid = parked[name]
+	if not grid then return nil end
+	local main = player._inv.main
+	for i = 1, #grid do main[#main + 1] = grid[i] end
+	parked[name] = nil
+	return nil
+end)
+
+H.mods_loaded() -- engine: fires after every mod's main chunk
 
 local punch = H.callbacks.punch[1]
 local hpchange = H.callbacks.hpchange[1]
 local on_die = H.callbacks.die[1]
-local on_leave = H.callbacks.leave[1]
+local on_leave = smp_combat.on_leave
 local on_join = H.callbacks.join[1]
 local place = H.callbacks.place[1]
 local punchnode = H.callbacks.punchnode[1]
 H.yes(punch and hpchange and on_die and on_leave and on_join,
 	"all smp_combat callbacks registered")
+H.eq(H.callbacks.leave[#H.callbacks.leave], smp_combat.on_leave,
+	"CB-1 combat-log drop is the last leave handler (registered in on_mods_loaded)")
+H.yes(#H.callbacks.leave >= 3,
+	"CB-1 fake container mod and smp_bounty hooks registered before it")
 
 ----------------------------------------------------------------------
 -- Players
@@ -156,6 +212,7 @@ H.no(smp_combat.is_tagged("carol"), "T2 fall damage does not tag")
 local BLOCKED = {
 	"rtp", "rtpqueue", "tpa", "tp", "tpahere", "tpaccept",
 	"homes", "home", "spawn", "warp", "world", "shop",
+	"kill", -- S07/CB-2: no self-kill credit handover while tagged
 }
 H.yes(smp_combat.is_tagged("alice"), "precondition: alice tagged")
 for _, cmd in ipairs(BLOCKED) do
@@ -302,11 +359,18 @@ local b, err = smp_bounty.escrow_deposit("carol", "alice", 500000)
 H.yes(b and not err, "T5 seed a bounty on alice")
 H.eq(H.money("carol"), carol_before - 500000, "T5 bounty debited into escrow")
 local bob_before = H.money("bob")
+-- CB-2.2: the claimant is an established account — a missing record
+-- would count as 0 playtime and refuse the payout (anti-alt rule,
+-- f10 §10). update_player_field, because get_player returns a copy.
+smp_store.api.ensure_player("bob")
+smp_store.api.update_player_field("bob", "playtime", 999999)
 H.wipe(H.added)
 H.wipe(H.all_chat)
 
-H.yes(on_leave(alice), "alice's logout is a combat log")
-H.callbacks.leave[2](alice) -- smp_bounty's own leave hook (IP remember)
+-- Fire EVERY leave handler in registration order, like the engine
+-- (core.run_callbacks iterates forward). The combat-log drop runs last
+-- (CB-1), after any container mod has handed its contents back.
+H.yes(H.fire_leave(alice), "alice's logout is a combat log")
 
 -- T4: every registered list dropped at the logout position
 H.eq(#H.added, 5, "T4 five stacks dropped")
@@ -358,8 +422,8 @@ H.eq(alice:get_pos().y, 100, "T6 respawn y is world spawn")
 H.eq(alice:get_pos().z, 0, "T6 respawn z is world spawn")
 
 ----------------------------------------------------------------------
--- T7: /kill (no attacker in the reason) while tagged credits the
--- last attacker and pays the bounty
+-- T7: a reason-less death (set_hp(0) / /kill) while tagged credits
+-- the last attacker in STATISTICS only — no bounty payout (CB-2.1)
 ----------------------------------------------------------------------
 
 local xavier = H.player("xavier", { x = 840, y = 10, z = 840 }, "9.9.9.9")
@@ -369,12 +433,31 @@ punch(dave, eve) -- dave.last_attacker = eve; both tagged
 local seed7, err7 = smp_bounty.escrow_deposit("carol", "dave", 250000)
 H.yes(seed7 and not err7, "T7 seed a bounty on dave")
 local eve_before = H.money("eve")
-on_die(dave, { type = "set_hp", mcl_damage = true,
-	_mcl_reason = { type = "generic" } })
-H.eq(H.money("eve"), eve_before + 250000,
-	"T7 /kill credit pays the bounty to the last attacker")
+
+-- CB-2.1: a reason-less death (the literal set_hp(0) shape) while
+-- tagged pays NO bounty — the last-attacker fallback keeps crediting
+-- statistics only.
+on_die(dave, { type = "set_hp" })
+H.eq(H.money("eve"), eve_before, "CB-2 set_hp(0) pays no bounty")
+H.yes(smp_bounty.get("dave"), "CB-2 the bounty survives the refused claim")
+local eve_kill_stats = false
+for _, s in ipairs(H.stats) do
+	if s.name == "eve" and s.key == "kills" then eve_kill_stats = true end
+end
+H.yes(eve_kill_stats, "CB-2 statistics still credit the last attacker")
 H.no(smp_combat.is_tagged("dave"), "T7 victim untagged on death")
 H.no(smp_combat.is_tagged("eve"), "T7 opponent untagged on death")
+
+-- The /kill shape (Mineclonia wraps set_hp in an _mcl_reason that
+-- carries no attacker): same rule, still no payout — and the command
+-- itself is blocked while tagged (CB-2.3, asserted in T3 above).
+punch(dave, eve) -- retag for the second death
+on_die(dave, { type = "set_hp", mcl_damage = true,
+	_mcl_reason = { type = "generic" } })
+H.eq(H.money("eve"), eve_before, "CB-2 /kill-style death pays no bounty")
+H.yes(smp_bounty.get("dave"), "CB-2 bounty still escrowed after /kill")
+H.no(smp_combat.is_tagged("dave"), "T7 victim untagged on the second death")
+H.no(smp_combat.is_tagged("eve"), "T7 opponent untagged on the second death")
 
 ----------------------------------------------------------------------
 -- T12: untag on the death of either party
@@ -399,6 +482,32 @@ for _, s in ipairs(H.stats) do
 	if s.name == "mallory" and s.key == "kills" then mallory_kill = true end
 end
 H.yes(mallory_kill, "T12 killer from the death reason is credited")
+
+----------------------------------------------------------------------
+-- CB-1: the drop is the LAST leave handler, so a temporary container
+-- mod cannot hand its grid back after we have emptied the inventory
+-- (S02 SE-4 repro: parked valuables used to survive the combat log)
+----------------------------------------------------------------------
+
+local parker = H.player("parker", { x = 850, y = 10, z = 850 }, "11.11.11.11")
+H.join(parker)
+punch(parker, mallory) -- mallory was untagged after the T12 death
+H.yes(smp_combat.is_tagged("parker"), "CB-1 parker is tagged")
+
+-- The diamond is parked in the container, NOT in the player inventory.
+parker._inv.main = { H.stack("mcl_core:apple") }
+parked.parker = { H.stack("mcl_core:diamond") }
+H.wipe(H.added)
+
+H.yes(H.fire_leave(parker), "CB-1 parker's logout is a combat log")
+H.yes(parked.parker == nil, "CB-1 the container handed its grid back first")
+local diamond_down = false
+for _, e in ipairs(H.added) do
+	if e.name == "mcl_core:diamond" then diamond_down = true end
+end
+H.yes(diamond_down,
+	"CB-1 parked diamond fell into the drop (our handler ran last)")
+H.eq(#parker._inv.main, 0, "CB-1 the player inventory was emptied by the drop")
 
 ----------------------------------------------------------------------
 -- Escrow conservation across everything above (X3, lite)
@@ -426,4 +535,4 @@ H.load("smp_combat") -- a restarted process: fresh Lua state
 H.no(smp_combat.is_tagged("bob"), "T11 tags do not survive a restart")
 H.no(smp_combat.is_tagged("alice"), "T11 no tags survive a restart")
 
-H.done("test_combat (T1-T7, T11, T12, X10)")
+H.done("test_combat (T1-T7, T11, T12, X10, CB-1)")
