@@ -67,3 +67,11 @@ Before building each phase, re-check its open questions
 
 Each answer replaces a `PROPOSED` value with an `OBSERVED` one and may change
 acceptance tests; update the feature file and its test matrix together.
+
+## Museum deployment (cross-repo)
+
+FriedcakeSMP is being deployed as the gameplay layer on top of the 2b2t
+museum-import-kit world, with a weekly re-seed/re-import loop and a planned
+**f17 player-bases** feature (claim → protect → survive re-import). See
+[`INTEGRATION-museum-import-kit.md`](../../INTEGRATION-museum-import-kit.md)
+for the brief; f17 has no feature file or owner yet.

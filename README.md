@@ -40,6 +40,7 @@ load order are documented in [`friedcake/README.md`](friedcake/README.md).
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Human workflow: branching model, feature ownership, merge contract. |
 | [`HANDOFF.md`](HANDOFF.md) | Background on how the specification was produced, including the source-video link. |
 | [`INTEGRATION.md`](INTEGRATION.md) | Integrator's notes from the first merge pass: what merged, what was fixed, what remains. |
+| [`INTEGRATION-museum-import-kit.md`](INTEGRATION-museum-import-kit.md) | Deployment brief: running FriedcakeSMP on the 2b2t museum world with a weekly re-seed loop. |
 | [`MANUAL_TEST_GUIDE.md`](MANUAL_TEST_GUIDE.md) | End-to-end manual verification procedure for the merged mod set. |
 | [`SPEC-CONFORMANCE-REPORT.md`](SPEC-CONFORMANCE-REPORT.md) | Audit of specification against implementation (2026-09-23), with a per-feature verdict. |
 | [`fixes/`](fixes/) | One self-contained fix brief per gap found by that audit. `fixes/00-P0-blockers.md` is the boot blocker. |
