@@ -150,7 +150,12 @@ function smp_tp.teleport_with_warmup(player, pos, kind, opts)
 		end
 		smp_tp.cancel_warmup(name, true)
 		p:set_pos(vector.new(w.to))
-		p:set_player_velocity(vector.new(0, 0, 0))
+		-- Luanti 5.17 has no set_player_velocity; cancel any residual
+		-- velocity (e.g. fall momentum) via the knockback primitive.
+		local vel = p:get_velocity()
+		if vel then
+			p:add_velocity(vector.new(-vel.x, -vel.y, -vel.z))
+		end
 	end)
 
 	return true
