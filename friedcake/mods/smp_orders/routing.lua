@@ -7,6 +7,18 @@
 -- specs — f02 §6, f03 §6.1):
 --   smp_orders.best_open_order(key)                  -> order | nil   [f03]
 --   smp_orders.fill_from_stack(order, player, stack) -> result | nil  [f03]
+--       SUCCESS is a TABLE: { accepted, payout, remaining = 0 }.
+--       REFUSAL is `nil, reason_string`.
+--       Test `type(r) == 'table'` — NEVER `r ~= false` (nil passes) and
+--       never pcall's success flag (it only says the call did not raise).
+--       Both mistakes deleted items on refusal: f03 AH-1, f06 AX-1
+--       (S04/OR-2).
+--   smp_orders.can_take_stack(order, name, stack)    -> bool, reason  [f03]
+--       The predicate form of the exact same check: `true` when
+--       fill_from_stack would take the stack, `false, reason_string`
+--       when it would refuse. Call it BEFORE fill_from_stack to skip
+--       orders that cannot take the stack (the reason string is the one
+--       fill_from_stack would have returned).
 --   smp_orders.open_orders_above(key, unit, [seller])-> {orders}      [f02]
 --   smp_orders.absorb_from_sell(o, player, key, n)   -> n, cents      [f02]
 --
@@ -38,7 +50,7 @@ function smp_orders.apply_delivery(o, supplier_name, accepted)
 	o.version = o.version + 1
 	o.suppliers[supplier_name] = (o.suppliers[supplier_name] or 0) + accepted
 	if o.delivered >= o.qty then o.state = "filled" end
-	smp_orders.mark_dirty(o.id)
+	smp_orders.save_one(o)   -- S04/OR-1: written through with the payout
 end
 
 ----------------------------------------------------------------------
@@ -107,7 +119,21 @@ function smp_orders.create(player, key, qty, unit_price)
 
 	-- 2. Mutate — no yields from here (shared §2.3)
 	smp_orders._last_create[name] = now
-	local id = smp_orders.insert_order({
+	-- S04/OR-1: reserve the id, take the escrow, THEN write the record.
+	-- The order matters: money writes through immediately, so the record
+	-- must not become durable before the escrow has actually been taken —
+	-- that would leave a funded-less open order that anyone can fill and
+	-- be paid from (minted money). A crash inside the gap instead costs
+	-- the buyer the escrow (bounded loss), which is the safe direction.
+	local id = smp_orders.reserve_id()
+	local taken = smp_orders.escrow.deposit(name, total, id)
+	if not taken then
+		-- Cannot happen without yields (the balance was checked above)
+		-- and nothing has been written yet — nothing to roll back (R2).
+		return nil, S("Insufficient funds")
+	end
+	smp_orders.insert_order({
+		id = id,
 		buyer = name,
 		key = key,
 		template = parsed.name,
@@ -123,16 +149,6 @@ function smp_orders.create(player, key, qty, unit_price)
 		expires = os.time() + cfg.duration,
 		suppliers = {},
 	})
-	local taken = smp_orders.escrow.deposit(name, total, id)
-	if not taken then
-		-- Balance raced away between check and take (cannot happen without
-		-- yields, but never leave a funded-less order open — R2).
-		local o = smp_orders.get_order(id)
-		o.state = "cancelled"
-		o.version = o.version + 1
-		smp_orders.mark_dirty(id)
-		return nil, S("Insufficient funds")
-	end
 
 	-- 3. Sweep the auction house: buy matching listings at or below the
 	--    unit price, cheapest first, until filled [S2][S6].
@@ -151,6 +167,11 @@ end
 -- reference behaviour for a too-large listing is unobserved).
 -- The seller receives THEIR OWN listing price (§4.5); unused escrow
 -- stays with the order.
+-- S04/OR-3: the price paid is `l.price`, not floor(l.price/count)×count —
+-- the old form silently dropped up to count−1 cents (a listing of 3 for
+-- 1000 paid 999). The at-or-below check stays on the UNIT price: the
+-- listing's own implied unit price must not exceed what the order pays,
+-- and the total must fit the escrow (R2).
 function smp_orders.absorb_listing(o, l)
 	if not o or o.state ~= "open" then return false end
 	local count = math.floor(tonumber(l.count) or 0)
@@ -159,9 +180,18 @@ function smp_orders.absorb_listing(o, l)
 		count = stack:get_count()
 	end
 	if count <= 0 or count > smp_orders.remaining(o) then return false end
-	local unit = math.floor(tonumber(l.unit_price) or (l.price / math.max(count, 1)) or 0)
-	local cost = unit * count
-	if cost > o.escrow then
+	local price = math.floor(tonumber(l.price) or 0)
+	local listed_unit = math.floor(tonumber(l.unit_price) or 0)
+	if price <= 0 then
+		-- Degenerate record with no total: fall back to unit × count so
+		-- the old behaviour survives for callers that only send a unit.
+		if listed_unit <= 0 then return false end
+		price = listed_unit * count
+	end
+	-- Unit-price check, on the price the listing actually asks for.
+	local unit = math.floor(price / count)
+	if unit > o.unit_price then return false end
+	if price > o.escrow then
 		-- Cannot happen for listings at-or-below the order price; never
 		-- pay beyond escrow (R2).
 		return false
@@ -169,9 +199,9 @@ function smp_orders.absorb_listing(o, l)
 	-- Remove the source first: f03 must acknowledge the listing change
 	-- before money moves. When smp_ah is absent the bridge degrades and
 	-- returns false, so nothing happens.
-	if not smp_orders.au.consume_listing(l.id, o.buyer, cost) then return false end
+	if not smp_orders.au.consume_listing(l.id, o.buyer, price) then return false end
 
-	local paid = smp_orders.escrow.payout(o, l.seller, cost)
+	local paid = smp_orders.escrow.payout(o, l.seller, price)
 	smp_orders.apply_delivery(o, l.seller, count)
 	smp_orders.notify_buyer(o, S("@1 delivered @2 @3 to your order",
 		l.seller, display.qty(count), display.order_name(o)))
@@ -223,30 +253,20 @@ end
 -- consumes the WHOLE stack or refuses — never a partial consumption
 -- (the leftover would be lost, X1). The seller is paid the order unit
 -- price from escrow.
--- Returns { accepted, payout, remaining = 0 } or nil, message.
+--
+-- RETURN CONTRACT (S04/OR-2 — see the header): a TABLE on success,
+-- `nil, reason_string` on refusal. Test `type(r) == 'table'`.
+--
+-- The validation below is the same check as can_take_stack; keep the
+-- two in step by calling it (they can never drift apart).
 function smp_orders.fill_from_stack(order, player, stack)
 	local o = (type(order) == "table") and order or smp_orders.get_order(order)
 	local name = smp_orders.player_name(player)
-	if not o or o.state ~= "open" or not name then
-		return nil, S("This order has changed")
-	end
-	if o.buyer == name and not cfg.allow_self_delivery then
-		return nil, S("You cannot deliver to your own order")
-	end
-	if not smp_items.matches(stack, o.key, "M1") then
-		return nil, S("Nothing matched this order")
-	end
-	local take = stack:get_count()
-	if take <= 0 then
-		return nil, S("This order has changed")
-	end
-	if take > smp_orders.remaining(o) then
-		-- Whole-stack or nothing (see header). f03 will list the stack
-		-- normally instead.
-		return nil, "full"
-	end
+	local can, why = smp_orders.can_take_stack(o, name, stack)
+	if not can then return nil, why end
 
 	-- No yields from here (shared §2.3)
+	local take = stack:get_count()
 	local payout = take * o.unit_price
 	local applied = smp_orders.escrow.payout(o, name, payout)
 	stack:take_item(take)
@@ -254,6 +274,41 @@ function smp_orders.fill_from_stack(order, player, stack)
 	smp_orders.notify_buyer(o, S("@1 delivered @2 @3 to your order",
 		name, display.qty(take), display.order_name(o)))
 	return { accepted = take, payout = applied, remaining = 0 }
+end
+
+-- Predicate form of fill_from_stack's validation (S04/OR-2).
+--   -> true                     the stack would be taken
+--   -> false, reason_string     it would be refused (the SAME reason
+--                               fill_from_stack returns)
+-- Pure read: never consumes the stack, never mutates the order, never
+-- yields, so callers may use it before deciding whether to route.
+-- `order` may be a record or an id; `name` a name or a PlayerRef.
+function smp_orders.can_take_stack(order, name, stack)
+	local o = (type(order) == "table") and order or smp_orders.get_order(order)
+	local pname = smp_orders.player_name(name)
+	if not o or o.state ~= "open" or not pname then
+		return false, S("This order has changed")
+	end
+	if o.buyer == pname and not cfg.allow_self_delivery then
+		return false, S("You cannot deliver to your own order")
+	end
+	-- An ItemStack is a userdata in the engine and a table in the
+	-- dev-test harness; anything else cannot match.
+	if (type(stack) ~= "table" and type(stack) ~= "userdata")
+	   or not smp_items.matches(stack, o.key, "M1") then
+		return false, S("Nothing matched this order")
+	end
+	local take = stack:get_count()
+	if take <= 0 then
+		return false, S("This order has changed")
+	end
+	if take > smp_orders.remaining(o) then
+		-- Whole-stack or nothing (see fill_from_stack). f03 lists the
+		-- stack normally instead. Raw token, not translated: callers
+		-- (f03, f06) match on it.
+		return false, "full"
+	end
+	return true
 end
 
 ----------------------------------------------------------------------
@@ -340,7 +395,8 @@ function smp_orders.collect(order, player)
 	-- No yields between the adds and the record update
 	o.collected = o.collected + taken
 	o.version = o.version + 1
-	smp_orders.mark_dirty(o.id)
+	smp_orders.save_one(o)   -- S04/OR-1: materialised items must be durable
+	                         -- before the next restart, or collect() repeats
 	return taken
 end
 
@@ -362,7 +418,7 @@ function smp_orders.cancel(order, player_or_name, by_admin)
 	local refunded = smp_orders.escrow.refund(o, o.escrow)
 	o.state = "cancelled"
 	o.version = o.version + 1
-	smp_orders.mark_dirty(o.id)
+	smp_orders.save_one(o)   -- S04/OR-1: state durable with the refund
 	core.log("action", string.format(
 		"[smp_orders] order %d cancelled by %s, refunded %d cents",
 		o.id, by_admin and (tostring(name) .. " (admin)") or tostring(name),
