@@ -23,12 +23,9 @@ local function die(msg)
 	error(msg)
 end
 
--- 1. Try to obtain the insecure environment.
-if not core.request_insecure_environment then
-	die("core.request_insecure_environment is not available; the engine was "
-		.. "built without insecure support. Use store.backend = mod_storage instead.")
-end
-local insecure = core.request_insecure_environment()
+-- 1. The insecure environment was fetched in smp_store's main chunk and
+-- passed in through the backend environment (see init.lua).
+local insecure = insecure_env
 if not insecure then
 	die("insecure environment denied. Add `secure.trusted_mods = smp_store` "
 		.. "to minetest.conf and restart the server.")

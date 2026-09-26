@@ -35,6 +35,20 @@ cfg.max_balance      = tonumber(cfg.max_balance)      or 1e15
 cfg.ledger_page_size = tonumber(cfg.ledger_page_size) or 20
 
 ----------------------------------------------------------------------
+-- Engine APIs for backends
+--
+-- core.request_http_api() and core.request_insecure_environment() only
+-- succeed when called DIRECTLY from a mod's main chunk (the secure origin
+-- check rejects calls from helper functions). Backends are loaded via
+-- loadfile+pcall, so we fetch these once here and hand them to the
+-- backends through their environment.
+----------------------------------------------------------------------
+
+local insecure_env = core.request_insecure_environment
+	and core.request_insecure_environment()
+local http_api = core.request_http_api and core.request_http_api()
+
+----------------------------------------------------------------------
 -- Backend selection
 ----------------------------------------------------------------------
 
@@ -101,9 +115,11 @@ local function try_load(name)
 		return nil, "loadfile failed: " .. tostring(err)
 	end
 	local env = setmetatable({
-		core = core,
-		S    = S,
-		cfg  = cfg,
+		core         = core,
+		S            = S,
+		cfg          = cfg,
+		insecure_env = insecure_env,
+		http_api     = http_api,
 	}, { __index = _G })
 	setfenv(chunk, env)
 	local ok, driver = pcall(chunk)

@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS players (
   first_join    INTEGER NOT NULL,
   money         INTEGER NOT NULL DEFAULT 0,
   shards        INTEGER NOT NULL DEFAULT 0,
+  shards_for_playtime INTEGER NOT NULL DEFAULT 0,
   playtime      INTEGER NOT NULL DEFAULT 0,
   rank_json     TEXT NOT NULL DEFAULT '{}',
   homes_json    TEXT NOT NULL DEFAULT '{}',
@@ -140,13 +141,22 @@ CREATE TABLE IF NOT EXISTS history (
 );
 ```
 
-### `postgres` (stub)
+### `postgres`
 
-- API defined; refuses to load.
-- The eventual driver goes over `core.request_http_api()` to a local
-  `pgwire` proxy; direct TCP from the Lua sandbox is not available.
-- The schema above is the source for both SQLite and Postgres, so adding the
-  driver is a translation exercise, not a redesign.
+- Driver lives in `backends/postgres.lua`; it talks HTTP/JSON to
+  `pg_proxy.py` (same directory), which owns the PostgreSQL connection and
+  schema. Direct TCP from the Lua sandbox is not available, so the proxy is
+  required.
+- Setup:
+  1. `apt install postgresql python3-psycopg2`
+  2. Create a database + role and run the proxy:
+     `FRIEDCAKE_PG_DSN="dbname=friedcake user=friedcake host=127.0.0.1" python3 pg_proxy.py`
+  3. In `minetest.conf`:
+     `store.backend = postgres`
+     `secure.http_mods = smp_store`
+     `store.postgres_proxy_url = http://127.0.0.1:8457`
+- Schema is the canonical one above (with `shards_for_playtime`); money and
+  ids are BIGINT to hold 10^15 cents.
 
 ## Selection
 
@@ -154,7 +164,7 @@ CREATE TABLE IF NOT EXISTS history (
 store.backend = auto       -- try sqlite -> mod_storage (default)
             | mod_storage
             | sqlite
-            | postgres     -- fails until a real driver is wired in
+            | postgres     -- HTTP proxy to local PostgreSQL (see above)
 ```
 
 `auto` is what operators should use. The chosen backend is logged once at

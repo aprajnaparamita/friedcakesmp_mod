@@ -104,11 +104,17 @@ max_objects_per_block = 256
 # world.bedrock_breakable = false
 
 ----------------------------------------------------------------------
--- Mod set security (friedcake/README.md "Installation")
+-- Mod set security + storage backend (friedcake/README.md "Installation")
 ----------------------------------------------------------------------
 
-# smp_store uses core.request_insecure_environment() for the SQLite/Postgres
-# backends; the mod must be trusted explicitly.
+# smp_store uses core.request_insecure_environment() for the SQLite backend;
+# the mod must be trusted explicitly.
 secure.trusted_mods = smp_store
-# Needed once the Postgres backend (HTTP pgwire proxy) is wired in:
+# The Postgres backend talks HTTP to a local pg_proxy.py, so smp_store also
+# needs the HTTP API. Uncomment when running `store.backend = postgres`:
 # secure.http_mods = smp_store
+
+# Storage backend: auto | mod_storage | sqlite | postgres (default: auto).
+# store.backend = postgres
+# Endpoint of pg_proxy.py (only used by the postgres backend):
+# store.postgres_proxy_url = http://127.0.0.1:8457
