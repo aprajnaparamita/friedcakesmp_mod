@@ -194,12 +194,12 @@ end)
 --
 -- Privacy: IPs are never stored in the clear — only sha1(ip) buckets.
 local ip_index -- [sha1(ip)] = { [player_name] = true }, loaded lazily
-local storage
+-- Captured at load time: core.get_mod_storage() resolves the calling mod's
+-- name via core.get_current_modname(), which is only valid while the mod's
+-- file is being loaded — not inside callbacks.
+local storage = core.get_mod_storage()
 
 local function get_storage()
-	if not storage then
-		storage = core.get_mod_storage()
-	end
 	return storage
 end
 

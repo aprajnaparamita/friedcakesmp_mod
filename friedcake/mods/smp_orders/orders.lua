@@ -22,14 +22,11 @@ local db = {
 	by_buyer = {},  -- [buyer_name] = { id, ... }
 	by_key = {},    -- [m1_key]     = { id, ... }
 	dirty = {},     -- [id] = true
-	_storage = nil,
+	_storage = core.get_mod_storage(), -- captured at load time (mod name only valid then)
 }
 smp_orders.db = db
 
 local function storage()
-	if not db._storage then
-		db._storage = core.get_mod_storage()
-	end
 	return db._storage
 end
 

@@ -25,14 +25,11 @@
 local db = {
 	bounties = {}, -- [lower(target)] = record
 	claims = {},   -- [lower(killer).."|"..lower(victim)] = os.time()
-	_storage = nil,
+	_storage = core.get_mod_storage(), -- captured at load time (mod name only valid then)
 }
 smp_bounty.db = db
 
 local function storage()
-	if not db._storage then
-		db._storage = core.get_mod_storage()
-	end
 	return db._storage
 end
 
