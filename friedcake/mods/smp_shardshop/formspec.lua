@@ -38,12 +38,13 @@ local G = {
 	x0 = 0.375,
 	pitch = 1.25,
 	cols = 9,
+	rows = 2,
 	grid_y = 0.75,
-	inv_label_y = 3.55,
-	inv_y = 3.95,
-	hot_y = 7.9,
+	inv_label_y = 3.7,
+	inv_y = 4.1,
+	hot_y = 8.05,
 	w = 11.75,
-	h = 9.275,
+	h = 9.425,
 }
 fs.G = G
 
@@ -71,7 +72,7 @@ function fs.tooltip(name, lines)
 	for i, line in ipairs(lines) do
 		out[i] = F(tostring(line))
 	end
-	return "tooltip[" .. F(name) .. ";" .. table.concat(out, "\\n") .. "]"
+	return "tooltip[" .. F(name) .. ";" .. table.concat(out, "\n") .. "]"
 end
 
 local function price_line(shards)
@@ -87,9 +88,10 @@ function fs.shop_form(balance)
 	local out = {
 		"formspec_version[6]",
 		"size[" .. c(G.w) .. "," .. c(G.h) .. "]",
-		"label[0,0," .. F(S("Shard Shop")) .. "]",
-		string.format("label[8.35,0.05,%s]",
-			F(S("Shards: @1", smp_core.fmt_qty(balance or 0)))),
+		"label[" .. c(G.x0) .. ",0.375;" .. F(S("Shard Shop")) .. "]",
+		"label[" .. c(sx(7)) .. ",0.375;" ..
+			F(S("Shards: @1", smp_core.fmt_qty(balance or 0))) .. "]",
+		slot_bg(G.x0, G.grid_y, G.cols, G.rows),
 	}
 	for i, offer in ipairs(cat.offers) do
 		local col = (i - 1) % G.cols + 1
@@ -98,7 +100,6 @@ function fs.shop_form(balance)
 		local y = G.grid_y + (row - 1) * G.pitch
 		local btn = "offer_" .. offer.id
 		local item = cat.resolve_item(offer)
-		out[#out + 1] = slot_bg(x, y, G.pitch, G.pitch)
 		if item and core.registered_items[item] then
 			out[#out + 1] = "item_image_button[" .. c(x) .. "," .. c(y) ..
 				";" .. c(G.pitch) .. "," .. c(G.pitch) .. ";" ..
@@ -113,8 +114,7 @@ function fs.shop_form(balance)
 			-- Unavailable in this engine (e.g. mcl_armor absent): a plain
 			-- button that explains why, so the grid keeps its shape.
 			out[#out + 1] = "button[" .. c(x) .. "," .. c(y) .. ";" ..
-				c(G.pitch) .. "," .. c(G.pitch) .. ";" .. F(btn) .. ";" ..
-				F(S(offer.name)) .. ";]"
+				c(G.pitch) .. "," .. c(G.pitch) .. ";" .. F(btn) .. ";?]"
 			out[#out + 1] = fs.tooltip(btn, {
 				S(offer.name),
 				price_line(offer.shards),
@@ -122,12 +122,14 @@ function fs.shop_form(balance)
 			})
 		end
 	end
-	out[#out + 1] = "label[0," .. c(G.inv_label_y) .. "," ..
+	out[#out + 1] = "label[" .. c(G.x0) .. "," .. c(G.inv_label_y) .. ";" ..
 		F(S("Inventory")) .. "]"
-	out[#out + 1] = "list[current_player;main;0," .. c(G.inv_y) ..
-		";9,3;]"
-	out[#out + 1] = "list[current_player;main;0," .. c(G.hot_y) ..
-		";9,1;8]"
+	out[#out + 1] = slot_bg(G.x0, G.inv_y, G.cols, 3)
+	out[#out + 1] = "list[current_player;main;" .. c(G.x0) .. "," ..
+		c(G.inv_y) .. ";9,3;9]"
+	out[#out + 1] = slot_bg(G.x0, G.hot_y, G.cols, 1)
+	out[#out + 1] = "list[current_player;main;" .. c(G.x0) .. "," ..
+		c(G.hot_y) .. ";9,1;]"
 	return table.concat(out, "")
 end
 
@@ -144,15 +146,16 @@ end
 function fs.confirm_form(offer, balance)
 	local out = {
 		"formspec_version[6]",
-		"size[8,3.8]",
+		"size[8,4.4]",
 		"bgcolor[#000000C0]",
-		"label[0,0," .. F(S("Confirm Purchase")) .. "]",
-		"label[0,1," .. F(S("Offer: @1", offer.name)) .. "]",
-		"label[0,1.8," .. F(S("Cost: @1", price_line(offer.shards))) .. "]",
-		"label[0,2.6," .. F(S("Balance: @1",
+		"label[0.5,0.5;" .. F(S("Confirm Purchase")) .. "]",
+		"label[0.5,1.3;" .. F(S("Offer: @1", S(offer.name))) .. "]",
+		"label[0.5,1.9;" .. F(S("Cost: @1", price_line(offer.shards))) .. "]",
+		"label[0.5,2.5;" .. F(S("Balance: @1",
 			price_line(balance or 0))) .. "]",
-		"button[0.6,3.15;3,0.8;cancel," .. F(S("Cancel!")) .. "]",
-		"button[4.4,3.15;3,0.8;buy," .. F(S("Buy")) .. "]",
+		"style[cancel;bgcolor=red]",
+		"button[0.5,3.2;3,0.8;cancel;" .. F(S("Cancel!")) .. "]",
+		"button[4.5,3.2;3,0.8;buy;" .. F(S("Buy")) .. "]",
 	}
 	return table.concat(out, "")
 end

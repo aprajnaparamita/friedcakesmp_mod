@@ -319,6 +319,8 @@ core = {
 	register_node = function(name, def) core.registered_nodes[name] = def end,
 	registered_items = {},
 	register_item = function(name, def) core.registered_items[name] = def end,
+	register_craftitem = function(name, def) core.registered_items[name] = def end,
+	register_tool = function(name, def) core.registered_items[name] = def end,
 	-- builtin/game/register.lua:456 — merges into the registered item
 	-- and errors when it does not exist (hence the existence guard in
 	-- node.lua).
@@ -402,7 +404,7 @@ mcl_experience = {
 -- mcl_formspec.get_itemslot_bg_v4 (mods/HUD/mcl_formspec/init.lua:26).
 mcl_formspec = {
 	get_itemslot_bg_v4 = function(x, y, w, h)
-		return string.format("image[%s,%s,%s,%s;mcl_formspec_itemslot.png]",
+		return string.format("image[%s,%s;%s,%s;mcl_formspec_itemslot.png]",
 			tostring(x), tostring(y), tostring(w), tostring(h))
 	end,
 }
@@ -1172,14 +1174,20 @@ do
 	ok(type(spec) == "string", "F07-3 menu renders")
 	ok(spec:find("Inventory", 1, true) ~= nil,
 		"F07-3 Inventory label present (shared/04:22)")
-	ok(spec:find("list[current_player;main;0.375,9.25;9,3;9]", 1, true) ~= nil,
+	ok(spec:find("list[current_player;main;0.375,9.875;9,3;9]", 1, true) ~= nil,
 		"F07-3 player inventory rows present")
-	ok(spec:find("list[current_player;main;0.375,13.2;9,1;]", 1, true) ~= nil,
+	ok(spec:find("list[current_player;main;0.375,13.825;9,1;]", 1, true) ~= nil,
 		"F07-3 player hotbar row present")
 	ok(spec:find("mcl_formspec_itemslot.png", 1, true) ~= nil,
 		"F07-3 slot backgrounds drawn (mcl_formspec v4)")
-	ok(spec:find("size[12,14.575]", 1, true) ~= nil,
+	ok(spec:find("size[11.75,15.2]", 1, true) ~= nil,
 		"F07-3 form grown for the inventory section")
+	-- Every element uses ';' between arguments (a ',' there makes the
+	-- engine reject the element and the control silently vanishes).
+	ok(spec:find("label%[[%d.]+,[%d.]+,") == nil,
+		"F07-3 labels use ';' separators")
+	ok(spec:find("button%[[%d.]+,[%d.]+,") == nil,
+		"F07-3 buttons use ';' separators")
 	-- The storage grid is NOT a real inventory: clicks stay take
 	-- requests against the count table (f07 §8).
 	ok(spec:find("list[nodemeta", 1, true) == nil,

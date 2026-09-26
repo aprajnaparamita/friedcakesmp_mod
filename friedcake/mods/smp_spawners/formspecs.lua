@@ -54,6 +54,29 @@ local function item_desc(name)
 	return (name:gsub("^[a-z_]+:", ""))
 end
 
+-- Container geometry (mcl_chests proportions, as in smp_ah).
+local G = {
+	x0 = 0.375, pitch = 1.25, w = 11.75, h = 15.2,
+	grid_y = 1.75, footer_y = 8.25,
+	inv_label_y = 9.5, inv_y = 9.875, hot_y = 13.825,
+}
+smp_spawners.formspecs.G = G
+
+local function slot_bg(x, y, w, h)
+	if mcl_formspec and type(mcl_formspec.get_itemslot_bg_v4) == "function" then
+		return mcl_formspec.get_itemslot_bg_v4(x, y, w, h)
+	end
+	local out = {}
+	for j = 0, h - 1 do
+		for i = 0, w - 1 do
+			out[#out + 1] = string.format(
+				"image[%s,%s;1.1,1.1;mcl_formspec_itemslot.png]",
+				x + i * G.pitch - 0.05, y + j * G.pitch - 0.05)
+		end
+	end
+	return table.concat(out)
+end
+
 -- Chat helper for messages that are either a single string or a list of
 -- lines. f02's Sell-all receipt/refusal lines arrive as a list
 -- (routing.lua relays them; f02 itself never shows them), our own
@@ -98,90 +121,91 @@ function smp_spawners.formspecs.render(pos, session)
 	local stored = smp_spawners.store_total(state.store)
 	local rate = smp_spawners.kills_per_min(state.type_id, state.stack)
 
+	-- Geometry follows Mineclonia's chest menu (mcl_chests): 11.75 wide,
+	-- slots on a 1.25 pitch, 0.375 margins. Labels in formspec_version 6
+	-- are positioned by their vertical centre.
+	local X0, P = G.x0, G.pitch
+	local function c(v) return string.format("%.6g", v) end
+	local function sx(col) return X0 + col * P end
+
 	local parts = {
 		"formspec_version[6]",
-		-- 14.575 = footer + the player inventory section below
-		-- (shared/04: container menus show the player inventory).
-		"size[12,14.575]",
+		"size[" .. c(G.w) .. "," .. c(G.h) .. "]",
 		-- Header: <Type> Spawner x<n> (f07 §4.6.3)
-		"label[0,0," .. esc(S("@1 Spawner x@2", state.def.display,
-			state.stack)) .. "]",
+		"label[" .. c(X0) .. ",0.375;" .. esc(S("@1 Spawner x@2",
+			state.def.display, state.stack)) .. "]",
 		-- Stored versus capacity and stored XP (f07 §4.6.3)
-		"label[0,0.5," .. esc(S("Stored @1 / @2    XP @3 / @4",
+		"label[" .. c(X0) .. ",0.85;" .. esc(S("Stored @1 / @2    XP @3 / @4",
 			smp_spawners.fmt_int(stored), smp_spawners.fmt_int(cap),
 			smp_spawners.fmt_int(state.xp),
 			smp_spawners.fmt_int(smp_spawners.xp_cap(state.stack)))) .. "]",
 		-- Rate per minute
-		"label[0,1," .. esc(S("Rate: @1 kills/min", string.format("%.1f",
-			rate))) .. "]",
+		"label[" .. c(X0) .. ",1.3;" .. esc(S("Rate: @1 kills/min",
+			string.format("%.1f", rate))) .. "]",
 	}
 
 	if stored >= cap and stored > 0 then
-		parts[#parts + 1] =
-			"label[6,0.5," .. esc(S("Storage full")) .. "]"
+		parts[#parts + 1] = "label[" .. c(sx(6)) .. ",0.85;" ..
+			esc(S("Storage full")) .. "]"
 	end
 
-	-- 5 x 9 virtual storage grid.
-	local grid_y = 1.7
+	-- 5 x 9 virtual storage grid over slot backgrounds.
+	parts[#parts + 1] = slot_bg(X0, G.grid_y, 9, 5)
 	for row = 0, 4 do
 		for col = 0, 8 do
 			local slot = row * 9 + col
 			local idx = (page - 1) * PAGE_SIZE + slot + 1
-			local x = col * 1.0
-			local y = grid_y + row * 0.9
+			local x, y = sx(col), G.grid_y + row * P
 			local name = names[idx]
 			if name then
-				local count = state.store[name]
-				-- Clickable item image: field name slot<idx>, the
-				-- label carries the whole count (integer boundary).
+				local count = math.floor(state.store[name] + 0.5 - 1e-9)
+				local field = "slot" .. idx
+				-- Clickable item image: field name slot<idx>; the count
+				-- sits in the corner like a stack count (integer
+				-- boundary).
 				parts[#parts + 1] = string.format(
-					"item_image_button[%s,%s,1,1,%s,slot%d,%s]",
-					tostring(x), tostring(y), esc(name), idx,
-					esc(smp_spawners.fmt_int(math.floor(count + 0.5 - 1e-9))))
-				parts[#parts + 1] = string.format(
-					"tooltip[%s,%s,%s]",
-					tostring(x), tostring(y),
-					esc(item_desc(name) .. " — Click to take one stack"))
+					"item_image_button[%s,%s;%s,%s;%s;%s;]",
+					c(x), c(y), c(P), c(P), esc(name), field)
+				parts[#parts + 1] = string.format("label[%s,%s;%s]",
+					c(x + 0.1), c(y + 1.0),
+					esc(smp_spawners.fmt_int(count)))
+				parts[#parts + 1] = "tooltip[" .. field .. ";" ..
+					esc(item_desc(name)) .. "\n" ..
+					esc(S("Stored: @1", smp_spawners.fmt_int(count))) .. "\n" ..
+					esc(S("Click to take one stack")) .. "]"
 			end
 		end
 	end
 
-	-- Footer: paging, actions.
-	local fy = grid_y + 5 * 0.9 + 0.1
-	parts[#parts + 1] =
-		string.format("button[0,%s,1.5,1,prev,%s]",
-			tostring(fy), esc(S("< Prev")))
-	parts[#parts + 1] =
-		string.format("label[4,%s,%s]",
-			tostring(fy), esc(S("Page @1 of @2", page, max_pages)))
-	parts[#parts + 1] =
-		string.format("button[6.5,%s,1.5,1,next,%s]",
-			tostring(fy), esc(S("Next >")))
-	parts[#parts + 1] =
-		string.format("button[8.5,%s,2,1,sell_all,%s]",
-			tostring(fy), esc(S("Sell all")))
-	parts[#parts + 1] =
-		string.format("button[8.5,%s,2,1,xp,%s]",
-			tostring(fy + 1.1), esc(S("Collect XP")))
-	parts[#parts + 1] =
-		string.format("button[0,%s,2,1,take_all,%s]",
-			tostring(fy + 1.1), esc(S("Take all")))
-	parts[#parts + 1] =
-		string.format("button[4,%s,2,1,quit,%s]",
-			tostring(fy + 1.1), esc(S("Close")))
+	-- Footer: paging and actions, one row under the grid. Esc sends
+	-- `quit`, so no separate Close button is drawn.
+	local fy = G.footer_y
+	parts[#parts + 1] = string.format("button[%s,%s;0.8,0.8;prev;<]",
+		c(X0), c(fy))
+	parts[#parts + 1] = string.format("label[%s,%s;%s]",
+		c(X0 + 0.95), c(fy + 0.4), esc(S("Page @1 of @2", page, max_pages)))
+	parts[#parts + 1] = string.format("button[%s,%s;0.8,0.8;next;>]",
+		c(3.0), c(fy))
+	parts[#parts + 1] = string.format("button[%s,%s;2.2,0.8;take_all;%s]",
+		c(4.35), c(fy), esc(S("Take all")))
+	parts[#parts + 1] = string.format("button[%s,%s;2.2,0.8;sell_all;%s]",
+		c(6.7), c(fy), esc(S("Sell all")))
+	parts[#parts + 1] = string.format("button[%s,%s;2.325,0.8;xp;%s]",
+		c(9.05), c(fy), esc(S("Collect XP")))
 
 	-- Player inventory under the storage grid, per the shared container
 	-- grammar (shared/04:22 — the menu shows the player inventory under
 	-- an `Inventory` label). These are real, functional list[]s; the
 	-- storage grid above stays a set of take-request buttons (f07 §8).
-	-- Geometry follows the chest menu (mcl_chests init.lua:588,770).
-	parts[#parts + 1] = "label[0.375,8.85;" .. esc(S("Inventory")) .. "]"
-	parts[#parts + 1] = "list[current_player;main;0.375,9.25;9,3;9]"
-	parts[#parts + 1] = "list[current_player;main;0.375,13.2;9,1;]"
-	if mcl_formspec and mcl_formspec.get_itemslot_bg_v4 then
-		parts[#parts + 1] = mcl_formspec.get_itemslot_bg_v4(0.375, 9.25, 9, 3)
-		parts[#parts + 1] = mcl_formspec.get_itemslot_bg_v4(0.375, 13.2, 9, 1)
-	end
+	-- Slot backgrounds are drawn first so the items render on top.
+	parts[#parts + 1] = "label[" .. c(X0) .. "," .. c(G.inv_label_y) .. ";" ..
+		esc(S("Inventory")) .. "]"
+	parts[#parts + 1] = slot_bg(X0, G.inv_y, 9, 3)
+	parts[#parts + 1] = "list[current_player;main;" .. c(X0) .. "," ..
+		c(G.inv_y) .. ";9,3;9]"
+	parts[#parts + 1] = slot_bg(X0, G.hot_y, 9, 1)
+	parts[#parts + 1] = "list[current_player;main;" .. c(X0) .. "," ..
+		c(G.hot_y) .. ";9,1;]"
 
 	return table.concat(parts, "\n"), page
 end
