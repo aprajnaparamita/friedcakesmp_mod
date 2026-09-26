@@ -24,7 +24,10 @@
 
 local db = {
 	bounties = {}, -- [lower(target)] = record
-	claims = {},   -- [lower(killer).."|"..lower(victim)] = os.time()
+	claims = {},   -- [lower(victim)] = os.time()  (S07/CB-2.4: the window
+	               -- belongs to the VICTIM; legacy `killer|victim` pair
+	               -- keys migrate in load() so an already-paid victim
+	               -- still gates)
 	_storage = core.get_mod_storage(), -- captured at load time (mod name only valid then)
 }
 smp_bounty.db = db
@@ -59,6 +62,25 @@ function smp_bounty.load()
 		b.created = tonumber(b.created) or now
 		b.updated = tonumber(b.updated) or b.created
 		if b.total <= 0 then db.bounties[key] = nil end
+	end
+	-- S07/CB-2.4 migration: claims used to be keyed per
+	-- killer|victim pair. Fold each legacy key into its victim half,
+	-- keeping the newest timestamp, so a payout recorded before the
+	-- upgrade still gates the per-victim window. Two phases: never
+	-- insert into db.claims while iterating it.
+	local legacy = {}
+	for key, t in pairs(db.claims) do
+		local v = type(key) == "string" and key:match("^[^|]+|(.+)$") or nil
+		if v then
+			legacy[#legacy + 1] = { key = v, t = tonumber(t) or 0 }
+			db.claims[key] = nil
+		end
+	end
+	for i = 1, #legacy do
+		local cur = tonumber(db.claims[legacy[i].key])
+		if not cur or legacy[i].t > cur then
+			db.claims[legacy[i].key] = legacy[i].t
+		end
 	end
 	-- Prune claim cooldowns that have elapsed (§4.4.4).
 	for key, t in pairs(db.claims) do

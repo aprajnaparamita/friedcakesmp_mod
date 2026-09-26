@@ -39,6 +39,9 @@ local C, C2, POOR, T = "__f10_c", "__f10_c2", "__f10_poor", "__f10_t"
 local function seed(name, cents)
 	smp_store.api.ensure_player(name)
 	smp_store.api.set_money(name, cents, "admin", "f10 test setup")
+	-- CB-2.2: an established account — a scratch player with 0 recorded
+	-- playtime would be refused as a fresh alt (anti-alt threshold).
+	smp_store.api.update_player_field(name, "playtime", 999999)
 end
 local function money(name)
 	local r = smp_store.api.get_player(name)
@@ -102,10 +105,25 @@ yes(smp_bounty.is_abuse(C, T, { x = 0, y = 8, z = 0 }),
 yes(not smp_bounty.is_abuse(C2, T, { x = 1000, y = 8, z = 1000 }),
 	"T9 payout allowed outside the safe zone")
 
+-- CB-2.1: a last-attacker fallback credit (reason-less death) never
+-- pays, whatever the killer's standing; a direct kill passes.
+eq(smp_bounty.abuse.check(C2, T, nil, "fallback"), "source",
+	"CB-2.1 fallback attribution refused")
+eq(smp_bounty.abuse.check(C2, T, { x = 1000, y = 8, z = 1000 }, "death"),
+	nil, "CB-2.1 a direct kill passes")
+
+-- CB-2.4: the claim window is keyed by the VICTIM — record one payout
+-- on __f10_v and any other killer is refused while the window lasts.
+smp_store.api.ensure_player("__f10_k")
+smp_store.api.update_player_field("__f10_k", "playtime", 999999)
+smp_store.api.ensure_player("__f10_other")
+smp_store.api.update_player_field("__f10_other", "playtime", 999999)
 smp_bounty.abuse.record_claim("__f10_k", "__f10_v")
 yes(smp_bounty.is_abuse("__f10_k", "__f10_v", { x = 1000, y = 8, z = 1000 }),
-	"T9 pair cooldown refuses a repeat claim")
-smp_bounty.db.claims["__f10_k|__f10_v"] = nil
+	"T9 victim window refuses the recorded killer")
+yes(smp_bounty.is_abuse("__f10_other", "__f10_v", { x = 1000, y = 8, z = 1000 }),
+	"CB-2.4 the window refuses a DIFFERENT killer on the same victim")
+smp_bounty.db.claims["__f10_v"] = nil
 smp_bounty.save()
 yes(not smp_bounty.is_abuse("__f10_k", "__f10_v", { x = 1000, y = 8, z = 1000 }),
 	"T9 cooldown record clears")

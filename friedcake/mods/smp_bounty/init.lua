@@ -9,8 +9,11 @@
 --   /bountyadmin clear <player>  remove a bounty, pro-rata refund (admin)
 --
 -- The claim path runs through smp_combat's kill listeners, so it fires
--- for normal deaths, /kill credit (f11) and combat-log kills alike
--- (§4.4.3, T5, T7).
+-- for normal kills, combat-log kills (§4.4.3, T5) and statistics-only
+-- credits alike — but smp_combat passes the attribution `source` along,
+-- and S07/CB-2.1 refuses to PAY a bounty credited through the
+-- last-attacker FALLBACK (a reason-less death: fall, lava, void,
+-- set_hp(0) / /kill). A bounty needs a direct kill or a combat log.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -34,7 +37,11 @@ do
 	local cents = smp_core.parse_amount(tostring(setting("bounty.min_amount", "1000")))
 	smp_bounty.cfg.min_amount = cents or 100000
 end
--- bounty.pair_cooldown 3,600 s per killer–target pair (§4.4.4).
+-- bounty.pair_cooldown 3,600 s (§4.4.4). S07/CB-2.4: the window now
+-- gates per VICTIM — one payout per victim per window, whoever the
+-- killer is. The settings key keeps its old name so existing
+-- configurations keep working (renaming it to bounty.victim_cooldown
+-- needs a spec/shared/06 mirror edit first — proposed in f10 §10).
 smp_bounty.cfg.pair_cooldown =
 	tonumber(setting("bounty.pair_cooldown", "3600")) or 3600
 
@@ -47,18 +54,20 @@ dofile(MP .. "/abuse.lua")
 ----------------------------------------------------------------------
 
 -- Returns true when a payout would be refused (any abuse rule).
--- `pos` is optional so the two-argument pseudo-code still works.
-function smp_bounty.is_abuse(killer, victim, pos)
-	return smp_bounty.abuse.check(killer, victim, pos) ~= nil
+-- `pos` is optional so the two-argument pseudo-code still works;
+-- `source` is smp_combat's attribution ladder (S07/CB-2.1).
+function smp_bounty.is_abuse(killer, victim, pos, source)
+	return smp_bounty.abuse.check(killer, victim, pos, source) ~= nil
 end
 
 ----------------------------------------------------------------------
 -- Claim path (§4.4.3): the killer receives the whole bounty from
 -- escrow; a broadcast announces it. Validate everything before the
 -- first mutation; the payout and the cooldown record are synchronous.
+-- `source` (S07/CB-2) comes from smp_combat's kill listeners.
 ----------------------------------------------------------------------
 
-function smp_bounty.try_claim(killer, victim, pos)
+function smp_bounty.try_claim(killer, victim, pos, source)
 	local kname = smp_combat.name_of(killer)
 	local vname = smp_combat.name_of(victim)
 	if not kname or not vname or kname == vname then return false end
@@ -66,7 +75,7 @@ function smp_bounty.try_claim(killer, victim, pos)
 	local b = smp_bounty.get(vname)
 	if not b or (b.total or 0) <= 0 then return false end
 
-	local refusal = smp_bounty.abuse.check(kname, vname, pos)
+	local refusal = smp_bounty.abuse.check(kname, vname, pos, source)
 	if refusal then
 		core.log("action", "[smp_bounty] payout to " .. kname .. " on "
 			.. vname .. " refused: " .. refusal)
@@ -233,4 +242,5 @@ smp_bounty.load()
 
 core.log("action", "smp_bounty loaded: min "
 	.. smp_core.fmt_money(smp_bounty.cfg.min_amount, "inline")
-	.. ", pair cooldown " .. tostring(smp_bounty.cfg.pair_cooldown) .. "s")
+	.. ", claim cooldown " .. tostring(smp_bounty.cfg.pair_cooldown)
+	.. "s per victim")

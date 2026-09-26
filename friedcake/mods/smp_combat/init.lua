@@ -12,7 +12,11 @@
 --   smp_combat.resolve_attacker(obj) -> string | nil
 --   smp_combat.pvp_allowed(victim, attacker) -> boolean
 --   smp_combat.killer_from(reason) -> string | nil
---   smp_combat.register_on_kill(fn(killer, victim, pos))  -- smp_bounty
+--   smp_combat.credit_kill(killer, victim, pos, source)  -- stats + listeners
+--   smp_combat.register_on_kill(fn(killer, victim, pos, source))
+--       source: "death" (direct kill) | "fallback" (last attacker on a
+--       reason-less death) | "combatlog" | nil (direct call) — CB-2.1
+--       keeps smp_bounty able to refuse a payout from "fallback"
 --
 -- Commands:
 --   /combat untag <player>       clear a combat tag (smp_admin)
@@ -95,9 +99,17 @@ function smp_combat.on_hpchange(player, hp_change, reason)
 end
 
 -- Death (§4.2.7, §4.2.8): credit the killer from the reason, else the
--- last attacker — /kill (f11) or any suicide must not deny a kill or a
--- bounty. Untag both sides: the victim, their opponent, and anyone
--- whose opponent was the victim.
+-- last attacker — /kill (f11) or any suicide must not deny a kill
+-- (statistics). Untag both sides: the victim, their opponent, and
+-- anyone whose opponent was the victim.
+--
+-- CB-2.1 (S07): HOW the attribution was reached is passed on to the
+-- kill listeners as `source`:
+--   "death"     killer_from(reason) named the killer (punch, projectile)
+--   "fallback"  last_attacker on a reason-less death (fall, lava, void,
+--               set_hp(0) / /kill) — statistics keep crediting it, but
+--               smp_bounty refuses to PAY a bounty from it
+-- Statistics and kill counts are unaffected either way.
 function smp_combat.on_die(victim, reason)
 	if not victim or not victim.is_player or not victim:is_player() then
 		return
@@ -105,14 +117,16 @@ function smp_combat.on_die(victim, reason)
 	local vname = victim:get_player_name()
 	local pos = victim:get_pos()
 	local was_tagged = smp_combat.is_tagged(vname)
-	local opponent = smp_combat.killer_from(reason)
+	local direct = smp_combat.killer_from(reason)
+	local opponent = direct
 	if not opponent and was_tagged then
 		opponent = smp_combat.last_attacker(vname)
 	end
 
 	-- Credit BEFORE untagging: the last attacker is read from the tag.
 	if opponent and opponent ~= vname then
-		smp_combat.credit_kill(opponent, vname, pos)
+		smp_combat.credit_kill(opponent, vname, pos,
+			direct and "death" or "fallback")
 	end
 
 	-- Untag on the death of the player or of the opponent (§4.2.7).
@@ -132,7 +146,38 @@ end
 core.register_on_punchplayer(smp_combat.on_punch)
 core.register_on_player_hpchange(smp_combat.on_hpchange)
 core.register_on_chatcommand(smp_combat.on_chatcommand)
-core.register_on_leaveplayer(smp_combat.on_leave)
+
+-- CB-1 (S07): the combat-log drop MUST be the LAST leave handler.
+-- Leave callbacks run in registration order (builtin/game/register.lua
+-- `make_registration` appends with t[#t+1], and core.run_callbacks
+-- iterates 1..#list — verified in ~/dev/luanti). `smp_sell` has
+-- optional_depends = smp_combat and `smp_orders` has no edge, so both
+-- load AFTER this mod and their leave handlers put the sell / delivery
+-- grid contents back into `main`. Registered at load time, they ran
+-- AFTER our drop and parked valuables survived the combat log
+-- (S02 SE-4 repro).
+--
+-- Registering from on_mods_loaded appends after every load-time
+-- registration: the engine runs every mod's main chunk first and only
+-- then fires on_mods_loaded (~/dev/luanti src/server/mods.cpp,
+-- ServerModManager::loadMods -> script.on_mods_loaded()), and
+-- registration there is plain table insertion with no restriction.
+--
+-- THIS ORDERING IS LOAD-BEARING (AGENTS.md lesson 7: leave-handler
+-- order is load order). Do not "tidy" it back to a direct
+-- core.register_on_leaveplayer call. Defence in depth on the container
+-- side (allow_put refusals while tagged) belongs to S02/S03/S04.
+if core.register_on_mods_loaded then
+	core.register_on_mods_loaded(function()
+		core.register_on_leaveplayer(smp_combat.on_leave)
+	end)
+else
+	-- Dev harness without core.register_on_mods_loaded: register
+	-- directly; the harness drives the ordering itself (H.mods_loaded
+	-- in dev-tests/harness_f10.lua fires the deferred registration).
+	core.register_on_leaveplayer(smp_combat.on_leave)
+end
+
 core.register_on_joinplayer(smp_combat.on_join)
 core.register_on_dieplayer(smp_combat.on_die)
 core.register_on_placenode(smp_combat.attribution.on_placenode)
@@ -145,9 +190,10 @@ end)
 
 -- The elytra entity def is registered by Mineclonia's `playerphysics`
 -- mod, whose load order relative to smp_combat is unspecified, so the
--- hook installs once every mod has loaded. The dev harness has no
--- core.register_on_mods_loaded — it installs eagerly there (and the
--- wrapper itself re-checks on every step, so a late def is picked up).
+-- hook installs once every mod has loaded (H.mods_loaded in the dev
+-- harness fires it, like src/server/mods.cpp). Without the callback —
+-- an older harness — it installs eagerly, and the wrapper re-checks on
+-- every step, so a late def is picked up anyway.
 if core.register_on_mods_loaded then
 	core.register_on_mods_loaded(smp_combat.elytra.install)
 else

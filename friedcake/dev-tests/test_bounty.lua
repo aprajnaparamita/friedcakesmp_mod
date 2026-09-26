@@ -6,8 +6,12 @@
 --       one total; ledger codes are bounty_escrow; min/self/funds/unknown
 --       refusals
 --   T9  no payout when killer and target share an IP, inside the safe
---       zone, or within the 3,600 s pair cooldown — and the cooldown is
---       per-pair and expires
+--       zone, or within the 3,600 s claim window — and the window is
+--       keyed per VICTIM, not per pair (S07/CB-2.4)
+--   CB-2.1 a last-attacker fallback credit pays no bounty: only a
+--       direct kill or a combat log pays (S07/CB-2.1)
+--   CB-2.2 no payout to a friend (mutual smp_social follow) or to a
+--       killer below the playtime threshold (fresh alts, S07/CB-2.2)
 --   T10 /bountyadmin clear refunds every contributor in full and
 --       removes the bounty
 -- plus: view/list command output, the claim broadcast, and escrow
@@ -33,14 +37,47 @@ end
 assert(DEV, "run this test as friedcake/dev-tests/test_bounty.lua from the repo root (or inside it)")
 
 local H = dofile(DEV .. "harness_f10.lua")
+
+-- MS-3 (strict engine stub, S07): Luanti's bindings take
+-- `const std::string &name`, so a call with a non-string RAISES through
+-- luaL_checkstring instead of quietly returning nil. Defined here in the
+-- test file on purpose — S09 owns the pack-wide shared-harness variant.
+local function strict(fn, api)
+	return function(name, ...)
+		if type(name) ~= "string" then
+			error(string.format(
+				"bad argument #1 to '%s' (string expected, got %s)",
+				api, type(name)), 2)
+		end
+		return fn(name, ...)
+	end
+end
+core.get_player_by_name = strict(core.get_player_by_name, "get_player_by_name")
+core.get_player_ip = strict(core.get_player_ip, "get_player_ip")
+core.player_exists = strict(core.player_exists, "player_exists")
+core.chat_send_player = strict(core.chat_send_player, "chat_send_player")
+core.show_formspec = strict(core.show_formspec, "show_formspec")
+core.close_formspec = strict(core.close_formspec, "close_formspec")
+core.check_player_privs = strict(core.check_player_privs, "check_player_privs")
+
 H.load_stack()
+H.mods_loaded() -- the engine fires on_mods_loaded after every main chunk
 
 local OUT = { x = 600, y = 10, z = 600 }
 local SPAWN = { x = 0, y = 8, z = 0 }
 
-local function join_player(name, ip, seed)
+-- `playtime` is the CB-2.2 anti-alt threshold input (smp_store
+-- rec.playtime). Everyone is an established account by default; pass 0
+-- for a fresh one. get_player returns a copy, so the field goes through
+-- update_player_field (which needs an existing record).
+local function join_player(name, ip, seed, playtime)
 	local p = H.player(name, OUT, ip)
 	H.join(p)
+	smp_store.api.ensure_player(name)
+	if playtime == nil then playtime = 999999 end
+	if playtime > 0 then
+		smp_store.api.update_player_field(name, "playtime", playtime)
+	end
 	if seed and seed > 0 then
 		smp_store.api.set_money(name, seed, "admin", "f10 test seed")
 	end
@@ -127,7 +164,7 @@ H.eq(msg, "Insufficient funds.", "T8 funds message")
 H.no(smp_bounty.get("mark"), "T8 still no bounty on mark")
 
 ----------------------------------------------------------------------
--- T9: anti-abuse — same IP, pair cooldown, safe zone
+-- T9: anti-abuse — same IP, victim claim window, safe zone
 ----------------------------------------------------------------------
 
 -- Same IP: farma's bounty cannot be claimed by alt.
@@ -139,8 +176,21 @@ H.no(smp_bounty.try_claim("alt", "farma", OUT), "T9 same IP payout refused")
 H.yes(smp_bounty.get("farma"), "T9 bounty survives the IP refusal")
 H.eq(H.money("alt"), alt0, "T9 no money paid on same IP")
 
--- Pair cooldown: first claim works, a second killer is a different
--- pair, the first killer is refused within 3,600 s, then allowed.
+-- CB-2.2: a fresh account (playtime below MIN_KILLER_PLAYTIME) cannot
+-- collect either, with no IP or friendship edge involved. farma's
+-- bounty is left for the view test below.
+join_player("newbie", "11.11.11.11", 0, 0)
+H.eq(smp_bounty.abuse.check("newbie", "farma", OUT), "playtime",
+	"CB-2.2 sub-threshold playtime refused")
+local newbie0 = H.money("newbie")
+H.no(smp_bounty.try_claim("newbie", "farma", OUT),
+	"CB-2.2 fresh-alt payout refused")
+H.eq(H.money("newbie"), newbie0, "CB-2.2 no money paid to the alt")
+H.yes(smp_bounty.get("farma"), "CB-2.2 the bounty survives for a real killer")
+
+-- CB-2.4: the 3,600 s window is keyed by VICTIM — one payout per victim
+-- per window, whoever the killer is. A second, unrelated killer is
+-- refused inside the window and allowed after it.
 ok = bounty.func("carol", "add eve 5000")
 H.yes(ok, "T9 bounty on eve placed")
 local mark0 = H.money("mark")
@@ -155,18 +205,15 @@ H.yes(has_ledger("mark", "bounty_payout", 500000),
 ok = bounty.func("carol", "add eve 5000")
 H.yes(ok, "T9 bounty on eve re-placed")
 local dave0 = H.money("dave")
-H.yes(smp_bounty.try_claim("dave", "eve", OUT),
-	"T9 cooldown is per pair: dave's first claim succeeds")
-H.eq(H.money("dave"), dave0 + 500000, "T9 dave paid")
+H.no(smp_bounty.try_claim("dave", "eve", OUT),
+	"CB-2.4 victim window refuses a second killer inside 3600 s")
+H.eq(H.money("dave"), dave0, "CB-2.4 refused payout moves no money")
+H.yes(smp_bounty.get("eve"), "CB-2.4 the bounty survives the refusal")
 
-ok = bounty.func("carol", "add eve 5000")
-H.yes(ok, "T9 bounty on eve re-placed again")
-H.no(smp_bounty.try_claim("mark", "eve", OUT),
-	"T9 pair cooldown refuses mark within 3600 s")
-H.yes(smp_bounty.get("eve"), "T9 bounty survives the cooldown refusal")
 H.advance(3600)
-H.yes(smp_bounty.try_claim("mark", "eve", OUT),
-	"T9 pair cooldown expires after 3600 s")
+H.yes(smp_bounty.try_claim("dave", "eve", OUT),
+	"CB-2.4 victim window expires after 3600 s")
+H.eq(H.money("dave"), dave0 + 500000, "CB-2.4 paid once the window has passed")
 
 -- Safe zone: no payout inside the spawn radius (X10).
 ok = bounty.func("carol", "add bob 7000")
@@ -178,6 +225,54 @@ H.yes(smp_bounty.get("bob"), "T9 bounty survives the zone refusal")
 H.yes(smp_bounty.try_claim("mark", "bob", OUT),
 	"T9 the same pair claims outside the zone")
 H.no(smp_bounty.get("bob"), "T9 bounty paid and removed")
+
+----------------------------------------------------------------------
+-- CB-2.1 + CB-2.2 (friends): attribution source and collusion
+----------------------------------------------------------------------
+
+-- CB-2.1 at the rule level: the last-attacker fallback (a reason-less
+-- death: fall, lava, void, set_hp(0) / /kill) never pays, whatever the
+-- killer's standing; a direct kill passes every rule here.
+H.eq(smp_bounty.abuse.check("dave", "eve", nil, "fallback"), "source",
+	"CB-2.1 fallback attribution refused")
+H.eq(smp_bounty.abuse.check("mark", "alice", OUT, "death"), nil,
+	"CB-2.1 a direct kill passes")
+
+-- CB-2.2 (friend): a mutual follow is collusion — the friend's payout
+-- is refused, a stranger's is not. smp_social is not part of this
+-- stack, so the graph is faked for this section and removed after it.
+local friendships = { { "dave", "erin" } }
+_G.smp_social = {
+	is_friend = function(a, b)
+		for _, e in ipairs(friendships) do
+			if (e[1] == a and e[2] == b) or (e[1] == b and e[2] == a) then
+				return true
+			end
+		end
+		return false
+	end,
+}
+ok = bounty.func("carol", "add erin 2000")
+H.yes(ok, "CB-2.2 bounty on erin placed")
+H.eq(smp_bounty.abuse.check("dave", "erin", OUT), "friend",
+	"CB-2.2 friend collusion refused")
+local dave1 = H.money("dave")
+H.no(smp_bounty.try_claim("dave", "erin", OUT),
+	"CB-2.2 friend payout refused")
+H.eq(H.money("dave"), dave1, "CB-2.2 the friend got nothing")
+
+-- CB-2.1 end to end: the same refused killer retrying through the
+-- fallback moves no money either (the refusal precedes the payout).
+H.no(smp_bounty.try_claim("dave", "erin", OUT, "fallback"),
+	"CB-2.1 fallback retry refused")
+H.eq(H.money("dave"), dave1, "CB-2.1 fallback retry paid nothing")
+H.yes(smp_bounty.get("erin"), "CB-2.2 the bounty survives both refusals")
+
+_G.smp_social = nil -- stand down: the rest of the suite has no graph
+local mark1 = H.money("mark")
+H.yes(smp_bounty.try_claim("mark", "erin", OUT),
+	"CB-2.2 a stranger claims the same bounty")
+H.eq(H.money("mark"), mark1 + 200000, "CB-2.2 the stranger is paid")
 
 ----------------------------------------------------------------------
 -- T10: /bountyadmin clear refunds every contributor in full
@@ -238,4 +333,4 @@ H.eq(H.last(H.chat.mark), "There are no bounties.", "empty list message")
 H.eq(money_supply(), baseline,
 	"escrow conservation: supply equals the seed after every operation")
 
-H.done("test_bounty (T8-T10, views, X3)")
+H.done("test_bounty (T8-T10, CB-2.1/CB-2.2/CB-2.4, views, X3)")

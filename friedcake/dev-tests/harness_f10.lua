@@ -204,7 +204,7 @@ H.stats = captures.stats
 local callbacks = {
 	punch = {}, hpchange = {}, chatcmd = {}, leave = {}, join = {},
 	die = {}, place = {}, punchnode = {}, globalstep = {},
-	receive_fields = {},
+	receive_fields = {}, mods_loaded = {},
 }
 H.callbacks = callbacks
 
@@ -308,6 +308,15 @@ core.register_globalstep = function(fn)
 	callbacks.globalstep[#callbacks.globalstep + 1] = fn
 end
 core.register_on_shutdown = function() end
+-- Engine-real: builtin/game/register.lua make_registration() appends,
+-- and the engine fires the list after EVERY mod's main chunk has run
+-- (src/server/mods.cpp: ServerModManager::loadMods -> on_mods_loaded).
+-- smp_combat registers its leave handler here on purpose — the
+-- combat-log drop must append after every load-time registration
+-- (S07/CB-1), so the harness must reproduce that ordering exactly.
+core.register_on_mods_loaded = function(fn)
+	callbacks.mods_loaded[#callbacks.mods_loaded + 1] = fn
+end
 core.register_on_player_receive_fields = function(a, b)
 	if type(a) == "function" then
 		-- 5.17 single-callback API: fn(player, formname, fields)
@@ -491,6 +500,27 @@ function H.join(p)
 	for _, fn in ipairs(callbacks.join) do fn(p) end
 end
 
+-- Fire the on_mods_loaded callbacks in registration order, like the
+-- engine does once every mod's main chunk has run (src/server/mods.cpp).
+-- Call this AFTER loading the stack (and after registering any fake
+-- mod's callbacks that must sit before smp_combat's deferred leave
+-- registration — S07/CB-1).
+function H.mods_loaded()
+	for _, fn in ipairs(callbacks.mods_loaded) do fn() end
+end
+
+-- Fire every registered leave handler in registration order — exactly
+-- what core.run_callbacks(registered_on_leaveplayers, ...) does
+-- (builtin/common/register.lua iterates 1..#list, forward).
+-- Returns true when any handler returned truthy.
+function H.fire_leave(p)
+	local any = false
+	for _, fn in ipairs(callbacks.leave) do
+		if fn(p) then any = true end
+	end
+	return any
+end
+
 -- Fire every registered globalstep with dtime (store flush + countdown).
 function H.step(dtime)
 	for _, fn in ipairs(callbacks.globalstep) do fn(dtime) end
@@ -555,7 +585,11 @@ function H.load(mod)
 	if not ok then error("run " .. mod .. ": " .. tostring(err2), 2) end
 end
 
--- The full f10 stack, in dependency order.
+-- The full f10 stack, in dependency order. NOTE: this only runs each
+-- mod's main chunk. Call H.mods_loaded() afterwards to fire the
+-- on_mods_loaded callbacks — the engine always does (mods.cpp), and
+-- smp_combat registers its combat-log leave handler from there
+-- (S07/CB-1), so a test that needs leave handlers must fire it.
 function H.load_stack()
 	H.load("smp_core")
 	H.load("smp_store")

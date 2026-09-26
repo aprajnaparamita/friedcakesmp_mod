@@ -35,9 +35,18 @@ cfg.combat.log_broadcast = setting("combat.log_broadcast", "true") == "true"
 -- (f08 §2, f09 §2) closed so the block cannot be sidestepped (PROPOSED).
 -- /sell is deliberately absent — it is allowed in combat (June 2026) [S3].
 -- /msg, /ah and /bounty are also allowed (§4.2.4).
+--
+-- `kill` (S07/CB-2): smp_social/kill.lua registers `/kill` with NO
+-- aliases (verified: register_cmd("kill", def) — no third argument; the
+-- f11 §2 alias column is empty), so one entry closes it. While tagged a
+-- player must not be able to self-kill and hand kill credit — and the
+-- bounty — to a friend: CB-2.1 additionally refuses to PAY a bounty
+-- from a reason-less death, so the block and the payout rule cover each
+-- other (the /kill dialog opened before the tag still cannot pay).
 local DEFAULT_BLOCKED = {
 	"rtp", "rtpqueue", "tpa", "tp", "tpahere", "tpaccept",
 	"homes", "home", "spawn", "warp", "world", "shop",
+	"kill",
 }
 
 local function parse_blocked()

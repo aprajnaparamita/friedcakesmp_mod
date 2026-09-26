@@ -12,6 +12,12 @@
 --   /ah     — browsing is allowed (§4.2.4)
 --   /bounty — no escape and no teleport; also used to fund fights
 --
+-- /kill is BLOCKED while tagged (S07/CB-2): a tagged player must not
+-- be able to self-kill to hand kill credit — and a bounty — to a
+-- friend. f10 §4.2.8 said /kill should credit the last attacker
+-- instead; the credit survives for statistics, the payout does not
+-- (see f10 §10, S07 record).
+--
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
