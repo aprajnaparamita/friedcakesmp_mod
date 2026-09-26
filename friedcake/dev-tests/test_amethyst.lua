@@ -124,7 +124,7 @@ local function fake_stack()
 	}
 end
 
-local function fake_inv(slots)   -- 0-indexed, like engine inventories
+local function fake_inv(slots)   -- 1-indexed, exactly like engine lists
 	local n = 0
 	for _ in pairs(slots) do n = n + 1 end
 	return {
@@ -164,7 +164,7 @@ do
 	expiry.set_expiry(good, now + 1000)
 	expiry.set_expiry(dead, now - 5)
 	local notified = {}
-	local inv = fake_inv({ [0] = good, [1] = dead })
+	local inv = fake_inv({ [1] = good, [2] = dead })
 	local removed = expiry.sweep_list(inv, "main", function(stack)
 		notified[#notified + 1] = stack
 	end, now)
@@ -248,8 +248,26 @@ do
 		register_globalstep = function() end,
 		register_on_item_pickup = function(fn) core._on_item_pickup = fn end,
 		get_connected_players = function() return {} end,
+		-- STRICT engine stubs (S05/QB-1 harness requirement): the engine
+		-- runs luaL_checkstring on both and RAISES on a non-string first
+		-- argument (l_env.cpp:648, l_server.cpp:92). Every suite in
+		-- dev-tests carries these so an ObjectRef-where-a-name-was-expected
+		-- bug cannot pass silently here while crashing in-game.
 		chat_send_player = function(name, msg)
+			if type(name) ~= "string" then
+				error(string.format(
+					"engine parity: core.chat_send_player expects a string name, got %s",
+					type(name)), 2)
+			end
 			chats[#chats + 1] = { name = name, msg = msg }
+		end,
+		get_player_by_name = function(name)
+			if type(name) ~= "string" then
+				error(string.format(
+					"engine parity: core.get_player_by_name expects a string name, got %s",
+					type(name)), 2)
+			end
+			return nil
 		end,
 		is_protected = function() return false end,
 		get_node_or_nil = function(pos) return world[key(pos)] end,
@@ -347,22 +365,22 @@ do
 		main_inv = {}
 		offhand_inv = {}
 		local now = os.time()
-		-- Fresh pickaxe in main
+		-- Fresh pickaxe in main (lists are 1-based: slot 1, engine index 1)
 		local pick_main = ItemStack("smp_amethyst:pickaxe")
 		smp_amethyst.expiry.set_expiry(pick_main, now + 86400)
-		main_inv[0] = pick_main
+		main_inv[1] = pick_main
 		-- Fresh shovel in offhand
 		local shovel_off = ItemStack("smp_amethyst:shovel")
 		smp_amethyst.expiry.set_expiry(shovel_off, now + 86400)
-		offhand_inv[0] = shovel_off
+		offhand_inv[1] = shovel_off
 
 		local player = fake_player("diana", ItemStack(""))
 		-- Fire the join hooks registered by smp_amethyst
 		for _, fn in ipairs(core._join_hooks or {}) do fn(player) end
 
 		-- Both items should have their descriptions refreshed
-		local pick_desc = main_inv[0]:get_meta():get_string("description")
-		local shovel_desc = offhand_inv[0]:get_meta():get_string("description")
+		local pick_desc = main_inv[1]:get_meta():get_string("description")
+		local shovel_desc = offhand_inv[1]:get_meta():get_string("description")
 		assert(pick_desc and pick_desc:find("Expires in"), "main item description refreshed: " .. tostring(pick_desc))
 		assert(shovel_desc and shovel_desc:find("Expires in"), "offhand item description refreshed: " .. tostring(shovel_desc))
 		print("F06-1 join test ok: both main and offhand descriptions refreshed")
@@ -520,7 +538,7 @@ do
 			get_meta = function()
 				return {
 					get_inventory = function()
-						local inv = { [0] = ItemStack("smp_amethyst:pickaxe") }
+						local inv = { [1] = ItemStack("smp_amethyst:pickaxe") }
 						return {
 							get_size = function() return 1 end,
 							get_stack = function(_, listname, i) return inv[i] end,
@@ -550,6 +568,136 @@ do
 		assert(not smp_amethyst.blacklist[smp_amethyst.blacklist[1] .. "_fake"],
 			"blacklist is exact itemstrings only")
 		print("T7 ok: amethyst items accepted by sell/auction paths")
+	end
+
+	----------------------------------------------------------------------
+	-- S05/AX-1 / AX-2: the sell axe must never destroy unpaid stacks,
+	-- and inventory lists are 1-based.
+	----------------------------------------------------------------------
+	do
+		-- A chest whose main list is a plain Lua table keyed by the
+		-- engine's 1-based slot numbers.
+		local function make_chest(slots, size)
+			return {
+				name = "mcl_chests:chest",
+				get_meta = function()
+					return {
+						get_inventory = function()
+							return {
+								get_size = function() return size end,
+								get_stack = function(_, _, i)
+									return slots[i] or ItemStack("")
+								end,
+								set_stack = function(_, _, i, v)
+									if type(v) == "string" then
+										slots[i] = ItemStack("")
+									else
+										slots[i] = v
+									end
+								end,
+							}
+						end,
+					}
+				end,
+			}
+		end
+
+		local order_refusals, sell_calls = 0, 0
+		local order_accepts, order_raises = false, false
+		_G.smp_orders = {
+			best_open_order = function(key) return { id = "o1", key = key } end,
+			fill_from_stack = function(_order, _player, stack)
+				order_refusals = order_refusals + 1
+				if order_raises then error("fill_from_stack exploded") end
+				if order_accepts then
+					return { accepted = stack:get_count(), payout = 1, remaining = 0 }
+				end
+				-- The refusal contract (smp_orders/routing.lua:243): the
+				-- order wants 1, the stack is 64 -> whole stack or nothing.
+				return nil, "full"
+			end,
+		}
+		_G.smp_sell = { sell = function() sell_calls = sell_calls + 1 return false end }
+
+		local function use_sell_axe(at)
+			local tool = ItemStack("smp_amethyst:sell_axe")
+			local player = fake_player("frank", tool)
+			core.registered_items["smp_amethyst:sell_axe"].on_use_primary(
+				tool, player, {
+					type = "node",
+					under = at,
+					above = { x = at.x, y = at.y + 1, z = at.z },
+				})
+		end
+
+		local at = { x = 20, y = 0, z = 0 }
+		local slots = {}
+		slots[1] = ItemStack("mcl_core:diamond")
+		slots[1]:set_count(64)
+		world[key(at)] = make_chest(slots, 1)
+
+		-- (a) order REFUSES, sell REFUSES: the 64 diamonds must survive.
+		--     The old `accepted ~= false` deleted them here, unpaid.
+		use_sell_axe(at)
+		assert(order_refusals >= 1, "AX-1 the refusing fill was attempted")
+		assert(slots[1] and slots[1]:get_name() == "mcl_core:diamond"
+			and slots[1]:get_count() == 64,
+			"AX-1 refused order + refused sell: the stack is untouched (got "
+			.. tostring(slots[1] and slots[1]:get_name()) .. " x"
+			.. tostring(slots[1] and slots[1]:get_count()) .. ")")
+
+		-- (b) order REFUSES, sell PAYS: the axe falls through to
+		--     route_to_sell and clears the slot only then.
+		sell_calls = 0
+		_G.smp_sell = { sell = function() sell_calls = sell_calls + 1 return true end }
+		use_sell_axe(at)
+		assert(sell_calls == 1, "AX-1 a refused order falls through to route_to_sell")
+		assert(slots[1]:is_empty(), "AX-1 the paid stack was cleared")
+
+		-- (c) order ACCEPTS: routed, cleared, and NOT sold a second time.
+		order_accepts = true
+		slots[1] = ItemStack("mcl_core:diamond")
+		slots[1]:set_count(64)
+		sell_calls = 0
+		_G.smp_sell = { sell = function() sell_calls = sell_calls + 1 return true end }
+		use_sell_axe(at)
+		assert(sell_calls == 0, "AX-1 an accepted fill does not double-sell")
+		assert(slots[1]:is_empty(), "AX-1 an accepted fill clears the slot")
+
+		-- (d) fill_from_stack RAISES: pcall success is not the call's
+		--     success — the stack must survive that too (nothing paid).
+		order_accepts, order_raises = false, true
+		slots[1] = ItemStack("mcl_core:diamond")
+		slots[1]:set_count(64)
+		sell_calls = 0
+		_G.smp_sell = { sell = function() sell_calls = sell_calls + 1 return false end }
+		use_sell_axe(at)
+		assert(slots[1]:get_name() == "mcl_core:diamond"
+			and slots[1]:get_count() == 64,
+			"AX-1 a raising fill leaves the stack in place")
+		order_raises = false
+
+		-- AX-2: a 27-slot chest with the only item in slot 27 (the last
+		-- one). The old `for i = 0, size - 1` never reached it. Slot 0
+		-- holds a trap the engine rejects (l_inventory.cpp: index - 1).
+		local chest27 = {}
+		for i = 1, 27 do chest27[i] = ItemStack("") end
+		chest27[27] = ItemStack("mcl_core:diamond")
+		chest27[27]:set_count(3)
+		chest27[0] = ItemStack("mcl_core:dirt")
+		local at27 = { x = 30, y = 0, z = 0 }
+		world[key(at27)] = make_chest(chest27, 27)
+		sell_calls = 0
+		_G.smp_sell = { sell = function() sell_calls = sell_calls + 1 return true end }
+		use_sell_axe(at27)
+		assert(chest27[27]:is_empty(),
+			"AX-2 the last slot (27) is processed: got "
+			.. tostring(chest27[27]:get_name()))
+		assert(sell_calls == 1, "AX-2 exactly one stack routed: got " .. sell_calls)
+		assert(chest27[0] and chest27[0]:get_name() == "mcl_core:dirt",
+			"AX-2 slot 0 is never read (the engine rejects index 0)")
+
+		print("S05/AX-1 + AX-2 ok: refused fills never delete, 1-based lists")
 	end
 
 	----------------------------------------------------------------------

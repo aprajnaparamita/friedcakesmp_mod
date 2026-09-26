@@ -145,9 +145,35 @@ local json_decode = function(s)
 	return v
 end
 
+-- Repo root from the script path, so this harness runs from a git
+-- worktree checkout too (pattern: dev-tests/test_economy.lua).
+local function find_root()
+	local script = (arg and arg[0]) or ""
+	local prefix = script:match("^(.-)friedcake/dev%-tests/[^/]*$")
+	if prefix and prefix ~= "" then
+		return (prefix:gsub("/+$", ""))
+	end
+	return "."
+end
+
+local MODS = find_root() .. "/friedcake/mods"
+
 local chat = {}          -- name -> { messages }
 local commands = {}
 local connected = {}     -- list of fake player objects
+
+-- Engine callbacks the mods under test register. Captured so the tests
+-- can fire them exactly as the engine does — with an ObjectRef.
+local hooks = {}
+local function cap(hook)
+	return function(fn)
+		hooks[hook] = hooks[hook] or {}
+		table.insert(hooks[hook], fn)
+	end
+end
+local function fire(hook, ...)
+	for _, fn in ipairs(hooks[hook] or {}) do fn(...) end
+end
 
 core = {
 	get_mod_storage = function() return store end,
@@ -158,28 +184,50 @@ core = {
 	log = function(level, ...)
 		if level == "error" then print("[log-error]", ...) end
 	end,
+	-- STRICT engine stubs (S05/QB-1 harness requirement): the engine runs
+	-- luaL_checkstring on both and RAISES on a non-string first argument
+	-- (l_env.cpp:648, l_server.cpp:92).
 	chat_send_player = function(name, msg)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.chat_send_player expects a string name, got %s",
+				type(name)), 2)
+		end
 		chat[name] = chat[name] or {}
 		chat[name][#chat[name] + 1] = msg
 	end,
 	request_insecure_environment = function() return nil end,
 	settings = {
-		get = function() return "" end,
-		get_bool = function() return false end,
+		-- Engine parity: an unset setting yields the DEFAULT, not "".
+		-- This matters for S05/SH-2: shards.require_activity now defaults
+		-- to TRUE, and a stub that returned false for every key would
+		-- silently disable the AFK gate under test.
+		get = function(_, _, default) return default or "" end,
+		get_bool = function(_, _, default) return default or false end,
 	},
 	get_worldpath = function() return "/tmp" end,
-	get_modpath = function(m)
-		return "/Volumes/Dara/dev/coconut/friedcake/mods/" .. m
-	end,
+	get_modpath = function(m) return MODS .. "/" .. m end,
 	DIR_DELIM = "/",
 	register_chatcommand = function(name, def) commands[name] = def end,
 	registered_chatcommands = commands,
 	register_privilege = function() end,
 	register_on_shutdown = function() end,
-	register_globalstep = function() end,
-	register_on_leaveplayer = function() end,
-	register_on_joinplayer = function() end,
+	register_globalstep = cap("globalstep"),
+	register_on_leaveplayer = cap("leave"),
+	register_on_joinplayer = cap("join"),
+	register_on_dignode = cap("dig"),
+	register_on_placenode = cap("place"),
+	register_on_punchplayer = cap("punch"),
+	register_on_item_pickup = cap("pickup"),
+	register_on_chat_message = cap("chat"),
+	register_on_chatcommand = cap("chatcommand"),
+	register_on_player_receive_fields = cap("fields"),
 	get_player_by_name = function(name)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.get_player_by_name expects a string name, got %s",
+				type(name)), 2)
+		end
 		for _, p in ipairs(connected) do
 			if p:get_player_name() == name then return p end
 		end
@@ -188,7 +236,7 @@ core = {
 	get_connected_players = function() return connected end,
 }
 
-local ROOT = "/Volumes/Dara/dev/coconut/friedcake/mods"
+local ROOT = MODS
 local function load(mod)
 	_G.__current_modname = mod
 	local f, err = loadfile(ROOT .. "/" .. mod .. "/init.lua")
@@ -205,13 +253,22 @@ local function fake_player(name)
 	return { get_player_name = function() return name end }
 end
 
+-- Put players online the way the engine does: hand them to the connected
+-- list AND fire the join callbacks (S05/SH-2 seeds activity at join, so a
+-- restart or a fresh module load must re-seed it too).
+local function bring_online(list)
+	connected = list
+	for _, p in ipairs(list) do fire("join", p) end
+	return list
+end
+
 local AWARD = "You earned 1 Shard for playing the server"
 
 ----------------------------------------------------------------------
 -- T1: 10 minutes of playtime -> exactly 1 shard, exactly 1 message.
 ----------------------------------------------------------------------
 
-connected = { fake_player("alice") }
+bring_online({ fake_player("alice") })
 
 for _ = 1, 600 do
 	smp_shards.on_step(1)
@@ -246,7 +303,7 @@ assert(not msgs[1]:match("%.+$"), "T1 no terminal full stop")
 ----------------------------------------------------------------------
 
 -- First, advance to 1199 s (still only 1 shard owed)
-connected = { fake_player("alice") }
+bring_online({ fake_player("alice") })
 for _ = 1, 599 do
 	smp_shards.on_step(1)
 end
@@ -263,7 +320,7 @@ _G.smp_shards = nil
 load("smp_shards")
 
 -- After restart, player is back online. Continue from 1199 s.
-connected = { fake_player("alice") }
+bring_online({ fake_player("alice") })
 for _ = 1, 599 do  -- advance to 1798 s; floor(1798/600)=2, owed=1
 	smp_shards.on_step(1)
 end
@@ -290,7 +347,7 @@ print("T2 ok: no double count across a module reload (restart)")
 -- Burst: 25 minutes at once pays out 2 shards and 2 messages.
 ----------------------------------------------------------------------
 
-connected = { fake_player("bob") }
+bring_online({ fake_player("bob") })
 smp_shards.on_step(1500)
 rec = smp_store.api.get_player("bob")
 assert(rec.shards == 2, "burst: 1500 s -> 2 shards: got " .. tostring(rec.shards))
@@ -370,5 +427,125 @@ assert(ok2 == nil and err2 == "negative", "parse negative refused")
 ok2, err2 = p("")
 assert(ok2 == nil, "parse empty refused")
 print("parse ok")
+
+----------------------------------------------------------------------
+-- S05/SH-2: an award now requires movement or interaction in the window
+-- (integrator ruling 2026-09-27). An idle interval is FORFEITED, never
+-- banked — otherwise AFK time would be cashed in after the player
+-- returns.
+----------------------------------------------------------------------
+
+assert(smp_shards.cfg.require_activity == true,
+	"SH-2 shards.require_activity defaults to true")
+
+bring_online({ fake_player("carol") })
+-- Join seeded the activity stamp; simulate a long AFK by backdating it
+-- past the award interval.
+smp_shards._last_activity["carol"] = os.time() - smp_shards.cfg.interval - 5
+for _ = 1, 600 do
+	smp_shards.on_step(1)
+end
+smp_shards.flush_player("carol")
+local rec = smp_store.api.get_player("carol")
+assert(rec, "SH-2 carol has a record")
+assert(rec.playtime == 600,
+	"SH-2 playtime still accrues while idle: " .. tostring(rec.playtime))
+assert((rec.shards or 0) == 0,
+	"SH-2 no shard for an idle interval: " .. tostring(rec.shards))
+assert(rec.shards_for_playtime == 1,
+	"SH-2 the idle interval is forfeited, not skipped: counter = "
+	.. tostring(rec.shards_for_playtime))
+for _, m in ipairs(chat["carol"] or {}) do
+	assert(m ~= AWARD, "SH-2 no award message while idle")
+end
+
+-- Coming back does NOT cash in the forfeited interval: the next active
+-- interval pays exactly one shard, not two.
+smp_shards.mark_active("carol")
+for _ = 1, 600 do
+	smp_shards.on_step(1)
+end
+smp_shards.flush_player("carol")
+rec = smp_store.api.get_player("carol")
+assert(rec.shards == 1,
+	"SH-2 forfeited time is never banked: got " .. tostring(rec.shards)
+	.. " shards (2 would mean the idle interval was paid out later)")
+assert(rec.shards_for_playtime == 2, "SH-2 counter at 1200 s")
+local carol_awards = 0
+for _, m in ipairs(chat["carol"] or {}) do
+	if m == AWARD then carol_awards = carol_awards + 1 end
+end
+assert(carol_awards == 1, "SH-2 exactly one award message: " .. carol_awards)
+print("SH-2 ok: idle interval forfeited, active interval paid once")
+
+----------------------------------------------------------------------
+-- S05/SH-2 activity inputs: interaction, movement, stillness.
+----------------------------------------------------------------------
+do
+	-- An interaction marks the player active.
+	fire("chat", "frank")
+	assert(smp_shards.active_in_window("frank", os.time()),
+		"SH-2 a chat message marks the player active")
+
+	-- An activity older than the window does not.
+	smp_shards._last_activity["idle"] = os.time() - smp_shards.cfg.interval
+	assert(not smp_shards.active_in_window("idle", os.time()),
+		"SH-2 activity older than the interval is inactive")
+	-- Neither does never having been active.
+	assert(not smp_shards.active_in_window("never_seen", os.time()),
+		"SH-2 a player never seen active is inactive")
+
+	-- Movement: the first sample only seeds the position; a second
+	-- sample that moved far enough marks the player active.
+	local mover = fake_player("mover")
+	mover.get_pos = function() return { x = 0, y = 0, z = 0 } end
+	smp_shards._sample_position(mover, "mover")
+	assert(not smp_shards.active_in_window("mover", os.time()),
+		"SH-2 the first position sample only seeds")
+	mover.get_pos = function() return { x = 5, y = 0, z = 0 } end
+	smp_shards._sample_position(mover, "mover")
+	assert(smp_shards.active_in_window("mover", os.time()),
+		"SH-2 moving marks the player active")
+
+	-- Standing still (a sub-epsilon wobble) does not.
+	local stander = fake_player("stander")
+	stander.get_pos = function() return { x = 1, y = 0, z = 0 } end
+	smp_shards._sample_position(stander, "stander")
+	stander.get_pos = function() return { x = 1.05, y = 0, z = 0 } end
+	smp_shards._sample_position(stander, "stander")
+	assert(not smp_shards.active_in_window("stander", os.time()),
+		"SH-2 standing still does not mark the player active")
+
+	-- Every interaction callback the mod registers is captured.
+	for _, hook in ipairs({ "dig", "place", "punch", "pickup", "chat",
+			"chatcommand", "fields", "join", "leave" }) do
+		assert(hooks[hook] and #hooks[hook] > 0,
+			"SH-2 core.register_on_" .. hook .. " callback registered")
+	end
+	print("SH-2 activity ok: interaction, movement, stillness, callbacks")
+end
+
+----------------------------------------------------------------------
+-- S05/SH-1b: the leave callback is handed an ObjectRef, not a name.
+----------------------------------------------------------------------
+do
+	local erin = fake_player("erin")
+	bring_online({ erin })
+	for _ = 1, 10 do
+		smp_shards.on_step(1)      -- under the 30 s flush interval
+	end
+	local before = smp_store.api.get_player("erin")
+	assert((before and before.playtime or 0) == 0,
+		"SH-1b playtime not flushed yet")
+
+	fire("leave", erin)           -- ObjectRef, exactly like the engine
+	local after = smp_store.api.get_player("erin")
+	assert(after and after.playtime == 10,
+		"SH-1b leaving with an ObjectRef flushes the playtime: got "
+		.. tostring(after and after.playtime))
+	assert(smp_shards._last_activity["erin"] == nil,
+		"SH-1b the activity stamp is cleared on leave")
+	print("SH-1b ok: leave flushes with an ObjectRef")
+end
 
 print("ALL OK")

@@ -1,8 +1,10 @@
 -- dev-tests/test_quickbuy.lua
 --
 -- Standalone smoke tests for smp_quickbuy: entry CRUD, live price lookup,
--- the 3x price guard, and the buy path — with the f03/f10/f14 bridges stubbed
--- to deterministic values. Covers f05 §9 T1–T7 logic without an engine.
+-- the 3x price guard, and the buy path — with the f03/f10/f14 mods faked
+-- BEHIND the real bridge layer (smp_ah / smp_combat / smp_stats), so
+-- bridges.lua itself is under test. Covers f05 §9 T1–T7 plus the S05/QB-1
+-- regression without an engine.
 --
 -- Run: luajit friedcake/dev-tests/test_quickbuy.lua
 --
@@ -16,15 +18,64 @@ local function S_factory(_mod)
 	end
 end
 
+-- Repo root from the script path, so this harness runs from a git
+-- worktree checkout too (pattern: dev-tests/test_economy.lua). The old
+-- hardcoded /Volumes/Dara/dev/coconut path silently tested a DIFFERENT
+-- checkout than the one the agent edited.
+local function find_root()
+	local script = (arg and arg[0]) or ""
+	local prefix = script:match("^(.-)friedcake/dev%-tests/[^/]*$")
+	if prefix and prefix ~= "" then
+		return (prefix:gsub("/+$", ""))
+	end
+	return "."
+end
+
+local ROOT = find_root()
+
+-- In-memory player records (enough of smp_store for the modules under
+-- test). Declared before the core stub: the strict get_player_by_name
+-- below reads it.
+local records = {}
+
+local logs = {}     -- { level, msg } captured from core.log
+local chats = {}    -- { name, msg } captured from core.chat_send_player
+
+-- STRICT engine stubs (S05/QB-1). The real engine runs luaL_checkstring
+-- on both of these calls (l_env.cpp:648 for get_player_by_name,
+-- l_server.cpp:92 for chat_send_player) and RAISES when the first
+-- argument is not a string. Quick Buy used to forward an ObjectRef, so
+-- the raise escaped on_player_receive_fields and the server stopped.
+-- These stubs must raise the same way, otherwise the regression test
+-- below proves nothing.
 core = {
 	get_translator = S_factory,
 	get_current_modname = function() return "smp_quickbuy" end,
-	log = function() end,
-	chat_send_player = function() end,
+	log = function(level, msg)
+		logs[#logs + 1] = { level = level, msg = msg }
+	end,
+	chat_send_player = function(name, msg)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.chat_send_player expects a string name, got %s",
+				type(name)), 2)
+		end
+		chats[#chats + 1] = { name = name, msg = msg }
+	end,
+	get_player_by_name = function(name)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.get_player_by_name expects a string name, got %s",
+				type(name)), 2)
+		end
+		if not records[name] then return nil end
+		return { get_player_name = function() return name end }
+	end,
 }
 
--- In-memory player records (enough of smp_store for the modules under test).
-local records = {}
+-- In-memory player records live above (strict get_player_by_name reads
+-- them); smp_store is the tiny slice of the store the modules under test
+-- need.
 smp_store = { api = {} }
 function smp_store.api.ensure_player(name)
 	if not records[name] then records[name] = { name = name, money = 0, quickbuy = {} } end
@@ -35,7 +86,7 @@ function smp_store.api.upsert_player(rec) records[rec.name] = rec end
 
 smp_quickbuy = { cfg = { price_guard = 3.0, max_entries = 45, page_size = 45 } }
 
-local modpath = "/Volumes/Dara/dev/coconut/friedcake/mods/smp_quickbuy"
+local modpath = ROOT .. "/friedcake/mods/smp_quickbuy"
 dofile(modpath .. "/bridges.lua")
 dofile(modpath .. "/entries.lua")
 dofile(modpath .. "/price.lua")
@@ -52,7 +103,7 @@ local function ench_key(ench)
 	return table.concat(parts, ",")
 end
 
-local auction = { listings = {}, force_fail = nil }
+local auction = { listings = {}, force_fail = nil, raise_on = nil }
 
 function auction.reset(listings)
 	auction.listings = {}
@@ -63,6 +114,7 @@ function auction.reset(listings)
 		}
 	end
 	auction.force_fail = nil
+	auction.raise_on = nil
 end
 
 function auction.cheapest_for(key, ench, qty)
@@ -88,13 +140,17 @@ function auction.cheapest_for(key, ench, qty)
 	return { listings = picked, cost_cents = cost }
 end
 
-function auction.buy(player, id, version)
-	local name = player:get_player_name()
+-- The AH fake takes a NAME, exactly like smp_ah.buy does.
+function auction.buy(pname, id, version)
+	if auction.raise_on == id then
+		-- A pathological listing that blows up inside smp_ah.buy.
+		error("smp_ah.buy exploded for listing " .. tostring(id))
+	end
 	if auction.force_fail == id then return nil end
 	local l
 	for _, x in ipairs(auction.listings) do if x.id == id then l = x end end
 	if not l or l.state ~= "active" or l.version ~= version then return nil end
-	local rec = smp_store.api.get_player(name)
+	local rec = smp_store.api.get_player(pname)
 	if not rec or rec.money < l.price then return nil end
 	rec.money = rec.money - l.price
 	l.state = "sold"
@@ -102,12 +158,53 @@ function auction.buy(player, id, version)
 	return { stack = {} }
 end
 
--- Wire the bridges to the fake.
-smp_quickbuy.au.cheapest_for = function(key, ench, qty) return auction.cheapest_for(key, ench, qty) end
-smp_quickbuy.au.buy = function(player, id, version) return auction.buy(player, id, version) end
-smp_quickbuy.combat.is_tagged = function(player) return player.tagged and true or false end
-smp_quickbuy.stats.add = function(player, key, value)
-	local rec = smp_store.api.ensure_player(player:get_player_name())
+----------------------------------------------------------------------
+-- The REAL cross-mod globals the bridges delegate to.
+--
+-- S05/QB-1: this test used to overwrite smp_quickbuy.au.* directly,
+-- which bypassed bridges.lua entirely — that is why the dev-tests passed
+-- while the game shut the server down. The fakes now live behind
+-- smp_ah / smp_combat / smp_stats, so the code under test includes
+-- smp_quickbuy's own ObjectRef -> name normalisation, and smp_ah.buy is
+-- written the way the shipped one is: strict about the player name and
+-- calling the two engine APIs that raise on a non-string.
+----------------------------------------------------------------------
+
+local ah_names = {}   -- every pname smp_ah.buy was called with
+
+smp_ah = {}
+function smp_ah.cheapest_for(key, ench, qty)
+	return auction.cheapest_for(key, ench, qty)
+end
+function smp_ah.buy(pname, id, version)
+	-- Engine parity: the shipped smp_ah.buy(pname, …) takes a NAME.
+	if type(pname) ~= "string" then
+		error(string.format(
+			"QB-1: smp_ah.buy expects a player name string, got %s",
+			type(pname)), 2)
+	end
+	-- Both engine calls run luaL_checkstring (l_env.cpp:648,
+	-- l_server.cpp:92) and raise on a non-string; the stub is strict too.
+	core.get_player_by_name(pname)
+	ah_names[#ah_names + 1] = { pname = pname, t = type(pname) }
+	return auction.buy(pname, id, version)
+end
+
+smp_combat = {}
+function smp_combat.is_tagged(player) return player.tagged and true or false end
+
+local stats_names = {}   -- every name the QB-1b stats bridge forwarded
+smp_stats = {}
+function smp_stats.add(name, key, value)
+	-- f14's smp_stats.name_of only accepts a string (or a plain table
+	-- player); an ObjectRef here would silently drop the stat (QB-1b).
+	if type(name) ~= "string" then
+		error(string.format(
+			"QB-1b: smp_stats.add expects a name string, got %s",
+			type(name)), 2)
+	end
+	stats_names[#stats_names + 1] = name
+	local rec = smp_store.api.ensure_player(name)
 	rec.stats = rec.stats or {}
 	rec.stats[key] = (rec.stats[key] or 0) + value
 end
@@ -325,5 +422,87 @@ auction.force_fail = 100
 local t7all = smp_quickbuy.buy.entry(alice, 1, 100, false)
 no(t7all, "T7 all-raced purchase refused")
 eq(smp_store.api.get_player(alice_name).money, 10000, "T7 nothing charged when every listing raced")
+
+----------------------------------------------------------------------
+-- S05/QB-1: the strict engine stub, and the ObjectRef -> name fix.
+--
+-- The shipped smp_ah.buy runs luaL_checkstring on its first argument
+-- (core.get_player_by_name at smp_ah/init.lua:211, chat_send_player at
+-- :203), so an ObjectRef RAISES. The stubs above are strict in the same
+-- way; these cases prove the raise is what the old code hit, and that
+-- the bridge no longer feeds it one.
+----------------------------------------------------------------------
+
+-- 1. Engine parity: both stubs raise on a non-string, like the engine.
+no(pcall(core.get_player_by_name, alice),
+	"QB-1 stub: core.get_player_by_name raises on an ObjectRef")
+no(pcall(core.chat_send_player, alice, "hi"),
+	"QB-1 stub: core.chat_send_player raises on an ObjectRef")
+
+-- 2. A purchase driven with the ObjectRef (what on_player_receive_fields
+--    hands the mod) succeeds end to end: the bridge forwards a string,
+--    the AH takes the listing, cost_cents is charged, the item is bought.
+auction.reset({
+	{ key = "mcl_core:diamond", ench = {}, id = 77, count = 1, price = 150 },
+})
+smp_quickbuy.entries.set(alice_name, 1,
+	{ key = "mcl_core:diamond", ench = {}, qty = 1 })
+seed_money(alice_name, 1000)
+smp_store.api.ensure_player(alice_name).stats = {}
+local n_before = #ah_names
+local q1r, q1spent = smp_quickbuy.buy.entry(alice, 1, 150, false)
+eq(q1r, true, "QB-1 purchase with an ObjectRef succeeds")
+eq(q1spent, 150, "QB-1 charged cost_cents (150)")
+eq(smp_store.api.get_player(alice_name).money, 850, "QB-1 buyer debited 150")
+eq(#ah_names, n_before + 1, "QB-1 exactly one smp_ah.buy call")
+eq(ah_names[#ah_names].t, "string", "QB-1 smp_ah.buy received a string name")
+eq(ah_names[#ah_names].pname, alice_name, "QB-1 the buyer's name was forwarded")
+eq(auction.listings[1].state, "sold", "QB-1 the listing was bought")
+eq(stats_names[#stats_names], alice_name, "QB-1b stats.add received a name string")
+
+-- 3. Refusals still talk to the player through the strict chat stub
+--    (they pass a resolved name, never the ObjectRef).
+smp_quickbuy.entries.remove(alice_name, 1)
+no(smp_quickbuy.buy.entry(alice, 1, 100, false),
+	"QB-1 a missing entry is refused without raising")
+
+-- 4. The bridge accepts a plain name string too (the other form).
+auction.reset({
+	{ key = "mcl_core:diamond", ench = {}, id = 900, count = 1, price = 50 },
+})
+seed_money(alice_name, 100)
+yes(smp_quickbuy.au.buy(alice_name, 900, 1), "bridge accepts a name string")
+eq(smp_quickbuy.au.buy({ no_getter = true }, 900, 1), nil,
+	"bridge returns nil for a player it cannot resolve (no raise)")
+
+-- 5. pcall isolation (buy.lua): one listing that RAISES inside the AH
+--    is logged and skipped; the rest of the purchase still completes,
+--    and only the successful listings are charged.
+auction.reset({
+	{ key = "mcl_core:diamond", ench = {}, id = 501, count = 1, price = 100 },
+	{ key = "mcl_core:diamond", ench = {}, id = 502, count = 1, price = 200 },
+})
+smp_quickbuy.entries.set(alice_name, 1, { key = "mcl_core:diamond", ench = {}, qty = 2 })
+seed_money(alice_name, 10000)
+smp_store.api.ensure_player(alice_name).stats = {}
+auction.raise_on = 501   -- the cheapest listing blows up first
+local logs_before = #logs
+local p1r, p1spent, p1bought = smp_quickbuy.buy.entry(alice, 1, 300, true)
+eq(p1r, true, "QB-1 a raising listing does not abort the loop")
+eq(p1bought, 1, "QB-1 the other listing was still bought")
+eq(p1spent, 200, "QB-1 only the successful listing was charged (200)")
+eq(smp_store.api.get_player(alice_name).money, 9800,
+	"QB-1 nothing charged for the raising listing")
+eq(stats_of(alice_name, "money_spent_on_shop"), 200,
+	"QB-1 stat counts only what was paid")
+local saw_error = false
+for i = logs_before + 1, #logs do
+	if logs[i].level == "error" and logs[i].msg:find("501", 1, true) then
+		saw_error = true
+	end
+end
+yes(saw_error, "QB-1 the raise is logged as an error, not fatal")
+
+print("S05/QB-1 ok: strict stub, ObjectRef normalisation, pcall isolation")
 
 print("ALL OK")

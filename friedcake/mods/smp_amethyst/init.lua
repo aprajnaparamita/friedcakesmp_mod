@@ -184,7 +184,8 @@ core.register_on_joinplayer(function(player)
 	if inv then
 		for _, list in ipairs({ "main", "offhand" }) do
 			local size = inv:get_size(list)
-			for i = 0, size - 1 do
+			-- S05/AX-2: 1-based lists (slot 0 invalid, last slot is `size`).
+			for i = 1, size do
 				local st = inv:get_stack(list, i)
 				if not st:is_empty() and expiry.is_amethyst(st:get_name()) then
 					smp_amethyst.refresh_description(st)

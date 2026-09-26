@@ -45,6 +45,12 @@ end
 
 local fake = { get_player_name = function() return NAME end }
 
+-- S05/SH-2: an award now requires movement or interaction inside the
+-- award interval (shards.require_activity, default true since the 2026-09-27
+-- integrator ruling). The engine seeds that stamp at join; seed it here so
+-- the loop below is a *playing* player rather than an AFK one.
+smp_shards.mark_active(NAME)
+
 -- T1: 600 s -> 1 shard, counter advanced, playtime persisted.
 for _ = 1, 600 do
 	smp_shards.on_step(1, { fake })
@@ -69,6 +75,7 @@ eq(total_owed, 1, "T1 exactly one shard awarded on the ledger")
 ok(awards >= 1, "T1 ledger entry exists")
 
 -- T2: continue for 599 more s — floor(1199/600) == 1, so nothing new.
+smp_shards.mark_active(NAME)
 for _ = 1, 599 do
 	smp_shards.on_step(1, { fake })
 end

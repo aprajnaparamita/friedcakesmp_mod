@@ -73,11 +73,20 @@ function smp_quickbuy.buy.entry(player, entry_index, shown_price, confirmed)
 	-- Mutate. Each listing re-validates its own version inside smp_ah.buy;
 	-- a nil return means the listing was bought out from under us (T7) and
 	-- we simply skip it — the buyer is not charged for it.
+	--
+	-- S05/QB-1: every call is wrapped in pcall so one pathological listing
+	-- cannot abort the loop halfway through (a raise here would otherwise
+	-- escape on_player_receive_fields). NOTE (cross-cutting lesson 5):
+	-- pcall's own success is not the call's success — read BOTH values.
+	-- `ok` says the bridge returned; `r` says the listing was bought.
 	local spent = 0
 	local bought = 0
 	for _, l in ipairs(result.listings) do
-		local r = smp_quickbuy.au.buy(player, l.id, l.version)
-		if r then
+		local ok, r = pcall(smp_quickbuy.au.buy, player, l.id, l.version)
+		if not ok then
+			core.log("error", "[smp_quickbuy] smp_ah.buy raised for listing "
+				.. tostring(l.id) .. ": " .. tostring(r))
+		elseif r then
 			spent = spent + (l.price or 0)
 			bought = bought + 1
 		end

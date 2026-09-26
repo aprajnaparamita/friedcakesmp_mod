@@ -22,6 +22,12 @@
 -- * No yields between validate and mutate (shared/02-architecture.md §2.3):
 --   the record is upserted (persisting the counter) before the shards are
 --   granted via smp_store.api.add_shards, which appends the ledger entry.
+-- * S05/SH-2 (integrator ruling 2026-09-27): when `shards.require_activity`
+--   is true (the new default) an award also requires the player to have
+--   moved or interacted within the award interval; an idle interval is
+--   forfeited rather than banked. Activity is tracked in this mod (see the
+--   "activity tracking" block below) because the engine has no
+--   `register_on_player_movement` callback.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -37,11 +43,15 @@ smp_shards = {}
 local cfg = {
 	-- LIVE [S8]: 1 shard per 600 s of playtime.
 	interval = tonumber(core.settings:get("shards.interval")) or 600,
-	-- PROPOSED: false — Donut pays for presence, not activity. When true
-	-- the award would require f16's AFK tracking, which does not exist;
-	-- f16 is descoped permanently (D8, 2026-09-24); V-61 closed.
-	-- This key is still read so operators can set it, but it has no effect.
-	require_activity = core.settings:get_bool("shards.require_activity", false),
+	-- S05/SH-2 (integrator ruling 2026-09-27): an award now REQUIRES the
+	-- player to have moved or interacted within the award interval. The
+	-- default flips false -> true, which overturns D8's "inert" reading
+	-- (the reason it was inert — "AFK tracking does not exist", f16 — no
+	-- longer holds: the tracking lives here, in smp_shards, not in f16).
+	-- Default change + spec/shared/06 mirror row are ESCALATEd in
+	-- spec/features/f06-shards.md §10. Operators can still set false to
+	-- restore presence-only awards.
+	require_activity = core.settings:get_bool("shards.require_activity", true),
 	-- PROPOSED: false — shards cannot be transferred between players.
 	transferable = core.settings:get_bool("shards.transferable", false),
 	-- PROPOSED: persist accumulated playtime at most this often (seconds).
@@ -53,24 +63,107 @@ if cfg.interval < 1 then
 	cfg.interval = 600
 end
 
--- F06-4: loud warning when require_activity is enabled (V-61/D8:
--- f16 descoped permanently; AFK tracking does not exist).
-if cfg.require_activity then
-	core.log("warning", "[smp_shards] shards.require_activity = true but AFK tracking is unimplemented (V-61/D8: f16 descoped permanently). The key is read but has no effect.")
+-- F06-4 superseded by S05/SH-2: the key used to be read and ignored (V-61
+-- closed by D8 while f16's AFK zone was the only tracker). It is now
+-- implemented below, so say so loudly either way.
+local function log_activity_mode()
+	if cfg.require_activity then
+		core.log("action", "[smp_shards] shards.require_activity = true: "
+			.. "a playtime award needs movement or interaction within the "
+			.. "last interval; idle intervals are forfeited")
+	else
+		core.log("warning", "[smp_shards] shards.require_activity = false: "
+			.. "shards are awarded for presence alone (SH-2 AFK pipe open)")
+	end
 end
+log_activity_mode()
 
 function smp_shards.reload_cfg()
 	cfg.interval = tonumber(core.settings:get("shards.interval")) or cfg.interval
-	cfg.require_activity = core.settings:get_bool("shards.require_activity", false)
+	cfg.require_activity = core.settings:get_bool("shards.require_activity", true)
 	cfg.transferable = core.settings:get_bool("shards.transferable", false)
 	cfg.flush_interval = tonumber(core.settings:get("shards.flush_interval")) or cfg.flush_interval
-	-- F06-4: warn on reload too
-	if cfg.require_activity then
-		core.log("warning", "[smp_shards] shards.require_activity = true but AFK tracking is unimplemented (V-61/D8: f16 descoped permanently). The key is read but has no effect.")
-	end
+	-- F06-4 / S05-SH-2: report the mode on reload too
+	log_activity_mode()
 end
 
 smp_shards.cfg = cfg
+
+----------------------------------------------------------------------
+-- S05/SH-2 — activity tracking (AFK gate)
+--
+-- No award unless the player moved or interacted during the award
+-- interval. Tracked here, in smp_shards, because f16's AFK zone is
+-- descoped permanently (D8) and `core.register_on_player_movement` DOES
+-- NOT EXIST in this engine (verified against ~/dev/luanti: absent from
+-- builtin/game/register.lua and from dev-tests/engine_api_surface.txt),
+-- so a movement callback cannot be the heartbeat.
+--
+-- Cheapest approach that still works on a full server:
+--   * an O(1) timestamp write per event for interactions (dig, place,
+--     punch, pickup, chat, formspec fields, chat command);
+--   * one position sample per player per second, piggybacked on the
+--     globalstep loop smp_shards already runs (1 `get_pos` per player
+--     per second — negligible next to the existing per-step bookkeeping).
+--
+-- `last_activity[name]` is the Unix second of the last observed
+-- movement/interaction; it is seeded at join.
+----------------------------------------------------------------------
+
+local last_activity = {}   -- name -> Unix second
+local last_pos = {}        -- name -> { x, y, z } at the last sample
+smp_shards._last_activity = last_activity   -- exposed for dev-tests
+
+-- Mark `who` (ObjectRef or player name) active now. Writes are skipped
+-- within the same second: movement and formspec callbacks fire often and
+-- one write per second is all the 600 s window can distinguish.
+function smp_shards.mark_active(who, now)
+	local name = who
+	if type(name) ~= "string" then
+		if type(name) ~= "table" and type(name) ~= "userdata" then
+			return nil
+		end
+		local getter = name.get_player_name
+		if type(getter) ~= "function" then return nil end
+		name = getter(name)
+	end
+	if type(name) ~= "string" or name == "" then return nil end
+	now = now or os.time()
+	local prev = last_activity[name]
+	if not prev or now - prev >= 1 then
+		last_activity[name] = now
+	end
+	return name
+end
+
+local MOVE_EPS2 = 0.25 * 0.25   -- blocks^2 between samples; a standing
+                                -- player never covers this, a walking one
+                                -- always does
+
+-- Position sample for one player (S05/SH-2 "moved").
+local function sample_position(player, name)
+	if type(player.get_pos) ~= "function" then return end
+	local ok, pos = pcall(player.get_pos, player)
+	if not ok or type(pos) ~= "table" then return end
+	local prev = last_pos[name]
+	last_pos[name] = pos
+	if not prev then return end
+	local dx = (pos.x or 0) - (prev.x or 0)
+	local dy = (pos.y or 0) - (prev.y or 0)
+	local dz = (pos.z or 0) - (prev.z or 0)
+	if dx * dx + dy * dy + dz * dz >= MOVE_EPS2 then
+		last_activity[name] = os.time()
+	end
+end
+smp_shards._sample_position = sample_position
+
+-- Has this player moved or interacted within the last `cfg.interval`
+-- seconds? nil last_activity means "never seen active" -> inactive.
+local function active_in_window(name, now)
+	local last = last_activity[name]
+	return last ~= nil and (now - last) < cfg.interval
+end
+smp_shards.active_in_window = active_in_window
 
 ----------------------------------------------------------------------
 -- The award
@@ -107,6 +200,10 @@ end
 local pending = {}   -- name -> seconds
 local flush_tick = 0
 
+-- S05/SH-2: position-sampling cadence for the AFK gate (seconds).
+local SAMPLE_INTERVAL = 1
+local sample_tick = 0
+
 -- Add `dt` seconds to `rec.playtime` and recompute the award owed
 -- (f06 §6). Returns the number of shards owed (>= 0). Sets
 -- `rec.shards_for_playtime` when owed > 0. Does NOT upsert or grant —
@@ -129,6 +226,16 @@ local function flush(name, dt)
 	local rec = smp_store.api.get_player(name)
 	if not rec then rec = smp_store.api.ensure_player(name) end
 	local owed = accrue(rec, dt)
+	if owed > 0 and cfg.require_activity
+			and not active_in_window(name, os.time()) then
+		-- S05/SH-2: no movement or interaction in the award interval, so
+		-- no award. `accrue` has already advanced shards_for_playtime, so
+		-- the idle interval is FORFEITED, not banked: AFK time can never
+		-- be cashed in after the player comes back (an un-gated "skip"
+		-- would leave owed > 0 and pay the whole idle stretch at once).
+		smp_store.api.upsert_player(rec)
+		return 0
+	end
 	if owed > 0 then
 		grant(name, rec, owed)
 	else
@@ -140,10 +247,16 @@ end
 function smp_shards.on_step(dtime, players)
 	if type(dtime) ~= "number" or dtime <= 0 then return end
 	players = players or core.get_connected_players()
+	-- S05/SH-2: one position sample per second, inside the loop the step
+	-- already runs (no second pass over the player list).
+	sample_tick = sample_tick + dtime
+	local sampling = sample_tick >= SAMPLE_INTERVAL
+	if sampling then sample_tick = sample_tick % SAMPLE_INTERVAL end
 	for _, player in ipairs(players) do
 		local name = player:get_player_name()
 		if name then
 			pending[name] = (pending[name] or 0) + dtime
+			if sampling then sample_position(player, name) end
 		end
 	end
 	-- Flush on the interval. Awards are granted within one interval of
@@ -277,8 +390,57 @@ core.register_globalstep(function(dtime)
 	smp_shards.on_step(dtime)
 end)
 
-core.register_on_leaveplayer(function(player_name)
-	smp_shards.flush_player(player_name)
+-- S05/SH-2: seed activity at join (a joining player is, by definition,
+-- not AFK yet) and clear it on leave so the table cannot grow.
+core.register_on_joinplayer(function(player)
+	smp_shards.mark_active(player)
+end)
+
+core.register_on_leaveplayer(function(player)
+	-- S05/SH-1b: the engine passes an ObjectRef, not a name. The old
+	-- `flush_player(player_name)` was a silent no-op (pending[ObjectRef]
+	-- is always nil), so the leave-time flush never ran. Resolve the name.
+	local name = player
+	if type(name) ~= "string" then
+		if type(name) ~= "table" and type(name) ~= "userdata" then return end
+		local getter = name.get_player_name
+		if type(getter) ~= "function" then return end
+		name = getter(name)
+	end
+	if type(name) ~= "string" or name == "" then return end
+	smp_shards.flush_player(name)
+	last_activity[name] = nil
+	last_pos[name] = nil
+end)
+
+-- S05/SH-2: "moved or interacted" — every one of these is a player doing
+-- something. Each callback is an O(1) timestamp write.
+core.register_on_dignode(function(_pos, _oldnode, digger)
+	if digger then smp_shards.mark_active(digger) end
+end)
+
+core.register_on_placenode(function(_pos, _newnode, placer)
+	if placer then smp_shards.mark_active(placer) end
+end)
+
+core.register_on_punchplayer(function(_punched, hitter)
+	if hitter then smp_shards.mark_active(hitter) end
+end)
+
+core.register_on_item_pickup(function(_stack, player)
+	if player then smp_shards.mark_active(player) end
+end)
+
+core.register_on_chat_message(function(name)
+	smp_shards.mark_active(name)
+end)
+
+core.register_on_chatcommand(function(name)
+	smp_shards.mark_active(name)
+end)
+
+core.register_on_player_receive_fields(function(player)
+	smp_shards.mark_active(player)
 end)
 
 core.log("action", string.format(

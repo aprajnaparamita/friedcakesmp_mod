@@ -49,6 +49,9 @@ end
 --   valid, debits the buyer, credits the seller, delivers the stack and
 --   bumps the version.
 --
+--   `player` may be an ObjectRef or a player name string; smp_ah.buy
+--   takes a NAME (a string) and the engine is strict about it.
+--
 --   returns nil on failure (already bought / version mismatch / insufficient
 --   funds / no inventory space). The buyer is NEVER charged on failure.
 --   returns { stack = ItemStack } on success.
@@ -58,9 +61,28 @@ end
 --   rest of the purchase still completes.
 ----------------------------------------------------------------------
 function smp_quickbuy.au.buy(player, id, version)
-	-- Delegates to smp_ah.buy(player, id, version) (f03 §6.2; shipped).
+	-- Delegates to smp_ah.buy(pname, id, version) (f03 §6.2; shipped).
+	--
+	-- S05/QB-1 (CRITICAL): smp_ah.buy's first engine calls are
+	-- core.get_player_by_name(pname) and core.chat_send_player(pname, …),
+	-- both of which run luaL_checkstring. Passing the ObjectRef straight
+	-- through made the raise escape on_player_receive_fields and the
+	-- engine treated it as fatal — any player could stop the server.
+	-- Normalise to a name here; smp_ah's own type guard is S03's defence
+	-- in depth.
+	local pname
+	if type(player) == "string" then
+		pname = player
+	elseif type(player) == "table" or type(player) == "userdata" then
+		local getter = player.get_player_name
+		if type(getter) == "function" then
+			pname = getter(player)
+		end
+	end
+	if type(pname) ~= "string" or pname == "" then return nil end
+
 	if smp_ah and smp_ah.buy then
-		return smp_ah.buy(player, id, version)
+		return smp_ah.buy(pname, id, version)
 	end
 	return nil
 end
@@ -81,8 +103,22 @@ end
 ----------------------------------------------------------------------
 function smp_quickbuy.stats.add(player, key, value)
 	-- Delegates to smp_stats.add(player, key, value) (f14; shipped).
+	--
+	-- S05/QB-1b: smp_stats.name_of only accepts a string or a plain
+	-- *table* with is_player(), but the engine's ObjectRef is userdata
+	-- (l_object.cpp:2992), so passing it through silently dropped the
+	-- money_spent_on_shop increment (f05 T6). Forward the name.
+	local who = player
+	if type(who) ~= "string"
+			and (type(who) == "table" or type(who) == "userdata") then
+		local getter = who.get_player_name
+		if type(getter) == "function" then
+			local name = getter(who)
+			if type(name) == "string" and name ~= "" then who = name end
+		end
+	end
 	if smp_stats and smp_stats.add then
-		return smp_stats.add(player, key, value)
+		return smp_stats.add(who, key, value)
 	end
 	return nil
 end

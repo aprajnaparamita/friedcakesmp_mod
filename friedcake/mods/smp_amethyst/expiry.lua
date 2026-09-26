@@ -161,8 +161,10 @@ function M.sweep_list(inv, listname, notify, now)
 	local size = inv:get_size(listname)
 	if not size then return 0 end
 	-- Collect first, then remove: no mutation while iterating.
+	-- S05/AX-2: lists are 1-based from Lua (l_inventory.cpp: index - 1,
+	-- index 0 is rejected); `0, size - 1` never swept the last slot.
 	local victims = {}
-	for i = 0, size - 1 do
+	for i = 1, size do
 		local stack = inv:get_stack(listname, i)
 		if not stack:is_empty() and M.is_amethyst(stack:get_name())
 				and M.is_expired(stack, now) then
