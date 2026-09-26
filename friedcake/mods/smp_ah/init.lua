@@ -380,6 +380,7 @@ end
 ----------------------------------------------------------------------
 
 local SESSION = "smp_ah:view"
+local AH_FORM = "smp_ah:view"   -- single engine formname for every screen (see §Field handling)
 
 local FORM = {
 	board           = "smp_ah:board",
@@ -403,10 +404,13 @@ local function view(pname)
 	})
 end
 
-local function show(pname, formname, form)
+local function show(pname, logical, form)
 	local v = view(pname)
-	v.formname = formname
-	core.show_formspec(pname, formname, form)
+	-- `logical` is the per-screen name (board/your_items/insert/…) and stays
+	-- in the session for tests and diagnostics; the ENGINE always gets the
+	-- single AH_FORM name so it never rejects a click as a formname mismatch.
+	v.formname = logical
+	core.show_formspec(pname, AH_FORM, form)
 end
 
 local function insert_inv_name(pname) return "smp_ah_insert_" .. pname end
@@ -493,9 +497,7 @@ end
 
 function smp_ah.close(pname)
 	smp_core.close_session(pname, SESSION)
-	for _, formname in pairs(FORM) do
-		core.close_formspec(pname, formname)
-	end
+	core.close_formspec(pname, AH_FORM)
 end
 
 ----------------------------------------------------------------------
@@ -1211,11 +1213,12 @@ end
 function smp_ah.handle_fields(pname, formname, fields)
 	fields = fields or {}
 	local v = smp_core.get_session(pname, SESSION)
-	if not v or v.formname ~= formname then
-		-- A form we did not last show: ignore it entirely (R4). Cleanup for a
-		-- flow that is still open happens in abort_flow / on_leaveplayer.
-		return
-	end
+	if not v then return end
+	-- formname is always AH_FORM now: the engine drops any submission whose
+	-- formname differs from the last one sent, so the Lua-side formname check
+	-- is redundant. Route purely by the server-side view state; a stray field
+	-- for a screen we already left is ignored because that screen's handler
+	-- does not recognise it.
 
 	if fields.quit then
 		if v.view == "price" then
@@ -1237,19 +1240,19 @@ function smp_ah.handle_fields(pname, formname, fields)
 		return
 	end
 
-	if v.view == "board" and formname == FORM.board then
+	if v.view == "board" then
 		return board_fields(pname, v, fields)
-	elseif v.view == "your_items" and formname == FORM.your_items then
+	elseif v.view == "your_items" then
 		return your_items_fields(pname, v, fields)
-	elseif v.view == "search" and formname == FORM.search then
+	elseif v.view == "search" then
 		return search_fields(pname, v, fields)
-	elseif v.view == "insert" and formname == FORM.insert then
+	elseif v.view == "insert" then
 		return insert_fields(pname, v, fields)
-	elseif v.view == "price" and formname == FORM.price then
+	elseif v.view == "price" then
 		return price_fields(pname, v, fields)
-	elseif v.view == "confirm_listing" and formname == FORM.confirm_listing then
+	elseif v.view == "confirm_listing" then
 		return confirm_listing_fields(pname, v, fields)
-	elseif v.view == "confirm_buy" and formname == FORM.confirm_buy then
+	elseif v.view == "confirm_buy" then
 		return confirm_buy_fields(pname, v, fields)
 	end
 	-- Unknown view/formname pair: close the session, mutate nothing.
@@ -1257,7 +1260,7 @@ function smp_ah.handle_fields(pname, formname, fields)
 end
 
 core.register_on_player_receive_fields(function(player, formname, fields)
-	if type(formname) ~= "string" or formname:sub(1, 7) ~= "smp_ah:" then return end
+	if formname ~= AH_FORM then return end
 	if not player or type(player.get_player_name) ~= "function" then return end
 	smp_ah.handle_fields(player:get_player_name(), formname, fields or {})
 end)

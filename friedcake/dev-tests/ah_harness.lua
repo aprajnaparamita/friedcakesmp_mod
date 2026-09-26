@@ -870,7 +870,14 @@ function H.cmd(name_cmd, pname, param)
 end
 
 --- Deliver a formspec field event, like the client does.
+--
+-- smp_ah shows every screen under one engine formname (smp_ah:view); the
+-- per-screen names tests pass here are the logical screen names. Normalise
+-- them so the test reads like the real client/server exchange.
 function H.receive(pname, formname, fields)
+	if formname and formname:match("^smp_ah:") then
+		formname = "smp_ah:view"
+	end
 	for _, cb in ipairs(H.on_receive) do
 		cb(H.players[pname], formname, fields or {})
 	end
@@ -890,7 +897,8 @@ function H.form(pname)
 end
 
 function H.formname(pname)
-	return H.last_form[pname] and H.last_form[pname].formname or ""
+	local v = smp_core.get_session(pname, "smp_ah:view")
+	return (v and v.formname) or ""
 end
 
 --- Unescape a formspec string enough to grep observed UI text: drops
