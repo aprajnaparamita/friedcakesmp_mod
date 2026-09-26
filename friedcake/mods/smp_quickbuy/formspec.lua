@@ -98,8 +98,38 @@ end
 -- the player inventory below an "Inventory" label.
 ----------------------------------------------------------------------
 
-local GRID_COLS = 9
-local GRID_ROWS = 5
+-- Geometry follows Mineclonia's chest formspecs (mcl_chests) and matches
+-- smp_ah's six-row board: 11.75 wide, slots on a 1.25 pitch, margins at
+-- 0.375. Under formspec_version 6 a 9-wide list[] is 11 units across, so
+-- anything narrower clips the player inventory.
+local G = {
+	x0 = 0.375, pitch = 1.25, cols = 9, rows = 5,
+	w = 11.75, h = 14.15, grid_y = 0.75,
+	inv_label_y = 8.45, inv_y = 8.825, hot_y = 12.775,
+}
+
+local function c(v) return string.format("%.6g", v) end
+local function sx(col) return G.x0 + (col - 1) * G.pitch end
+local function sy(row) return G.grid_y + (row - 1) * G.pitch end
+
+local function slot_bg(x, y, w, h)
+	if mcl_formspec and type(mcl_formspec.get_itemslot_bg_v4) == "function" then
+		return mcl_formspec.get_itemslot_bg_v4(x, y, w, h)
+	end
+	local out = {}
+	for j = 0, h - 1 do
+		for i = 0, w - 1 do
+			out[#out + 1] = "image[" .. c(x + i * G.pitch - 0.05) .. "," ..
+				c(y + j * G.pitch - 0.05) .. ";1.1,1.1;mcl_formspec_itemslot.png]"
+		end
+	end
+	return table.concat(out)
+end
+
+local function btn(kind, col, row, a, b)
+	return string.format("%s[%s,%s;%s,%s;%s;%s;]", kind, c(sx(col)), c(sy(row)),
+		c(G.pitch), c(G.pitch), a, b)
+end
 
 function smp_quickbuy.formspec.main(player, session)
 	session = session or {}
@@ -108,57 +138,68 @@ function smp_quickbuy.formspec.main(player, session)
 	session.page = session.page or 1
 	session.prices = session.prices or {}
 
+	local slots = G.cols * G.rows
+	local page_size = math.min(cfg.page_size, slots)
 	local total = #list
 	local page = session.page
-	local total_pages = math.max(1, math.ceil(total / cfg.page_size))
+	local total_pages = math.max(1, math.ceil(total / page_size))
 	if page > total_pages then page = total_pages end
 	session.page = page
 
-	local first = (page - 1) * cfg.page_size
-	local slots = GRID_COLS * GRID_ROWS
+	local first = (page - 1) * page_size
 
-	local out = { preamble("9,11.2") }
-	out[#out + 1] = "label[0.5,0.15;" .. esc(S("Quick Buy (Page @1)", page)) .. "]"
+	local out = { preamble(c(G.w) .. "," .. c(G.h)) }
+	out[#out + 1] = "label[" .. c(G.x0) .. ",0.375;"
+		.. esc(S("Quick Buy (Page @1)", page)) .. "]"
 
-	-- Entry grid: PROPOSED 5 rows x 9 columns, one item button per entry.
-	-- Columns align with the inventory list below (x = 0-based).
-	for slot = 1, slots do
+	-- Entry grid: 5 rows x 9 columns, one item button per entry, aligned
+	-- with the inventory columns below.
+	out[#out + 1] = slot_bg(G.x0, G.grid_y, G.cols, G.rows)
+	for slot = 1, page_size do
 		local absidx = first + slot
 		local entry = list[absidx]
 		if entry then
-			local col = (slot - 1) % GRID_COLS
-			local row = math.floor((slot - 1) / GRID_COLS)
-			local x = col
-			local y = 0.6 + row
+			local col = (slot - 1) % G.cols + 1
+			local row = math.floor((slot - 1) / G.cols) + 1
 			-- Recompute the live price on every redraw (never cache across
 			-- a redraw — f05 §8). Store it so the buy click has a baseline.
 			local price = smp_quickbuy.price.lookup(entry.key, entry.ench, entry.qty)
 			session.prices[absidx] = price
-			out[#out + 1] = string.format("item_image_button[%s,%s;1,1;%s;entry_%d;]",
-				x, y, esc(entry.key), absidx)
+			out[#out + 1] = btn("item_image_button", col, row, esc(entry.key),
+				"entry_" .. absidx)
 			out[#out + 1] = "tooltip[entry_" .. absidx .. ";"
 				.. esc(entry_tooltip(entry, price)) .. "]"
 		end
 	end
 
-	-- Control row (PROPOSED): Add entry sign on the left, Your entries chest
-	-- on the right, matching the §3 sketch.
-	out[#out + 1] = "item_image_button[0.5,5.7;1,1;mcl_signs:wall_sign;add;]"
+	-- Control row (sixth row): Add entry sign at the far left, Your entries
+	-- chest at the far right, pager in the middle.
+	local ctrl = G.rows + 1
+	out[#out + 1] = btn("item_image_button", 1, ctrl, "mcl_signs:wall_sign", "add")
 	out[#out + 1] = "tooltip[add;" .. esc(S("Add entry")) .. "\n"
 		.. esc(S("Click to add the held item")) .. "]"
-	out[#out + 1] = "item_image_button[7.5,5.7;1,1;mcl_chests:chest;your_entries;]"
+	out[#out + 1] = btn("item_image_button", G.cols, ctrl, "mcl_chests:chest",
+		"your_entries")
 	out[#out + 1] = "tooltip[your_entries;" .. esc(S("Your entries")) .. "\n"
 		.. esc(S("Click to view")) .. "]"
 
 	-- Pagination (PROPOSED): only shown when the entry list overflows.
 	if total_pages > 1 then
-		out[#out + 1] = "button[3.0,5.75;1.5,0.9;prev;<]"
-		out[#out + 1] = "button[4.5,5.75;1.5,0.9;next;>]"
+		out[#out + 1] = string.format("button[%s,%s;%s,%s;prev;<]",
+			c(sx(4)), c(sy(ctrl)), c(G.pitch), c(G.pitch))
+		out[#out + 1] = string.format("button[%s,%s;%s,%s;next;>]",
+			c(sx(6)), c(sy(ctrl)), c(G.pitch), c(G.pitch))
 	end
 
-	-- Player inventory.
-	out[#out + 1] = "label[0.5,6.8;" .. esc(S("Inventory")) .. "]"
-	out[#out + 1] = "list[current_player;main;0,7.1;9,4;]"
+	-- Player inventory: 3 main rows, then the hotbar (shared §4.1).
+	out[#out + 1] = "label[" .. c(G.x0) .. "," .. c(G.inv_label_y) .. ";"
+		.. esc(S("Inventory")) .. "]"
+	out[#out + 1] = slot_bg(G.x0, G.inv_y, G.cols, 3)
+	out[#out + 1] = "list[current_player;main;" .. c(G.x0) .. "," .. c(G.inv_y)
+		.. ";9,3;9]"
+	out[#out + 1] = slot_bg(G.x0, G.hot_y, G.cols, 1)
+	out[#out + 1] = "list[current_player;main;" .. c(G.x0) .. "," .. c(G.hot_y)
+		.. ";9,1;]"
 
 	return table.concat(out)
 end
