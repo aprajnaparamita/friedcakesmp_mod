@@ -99,7 +99,8 @@ function delivery.action_bar(player, text)
 end
 
 ----------------------------------------------------------------------
--- Detached inventory (owner-only, R5)
+-- Delivery grid callbacks: the grid is owner-only (R5) and refuses puts
+-- while the owner is combat-tagged (S02 SE-4 / S07 CB-1).
 ----------------------------------------------------------------------
 
 function delivery.create_detached(pname)
@@ -107,6 +108,19 @@ function delivery.create_detached(pname)
 	local callbacks = {
 		allow_put = function(inv, listname, index, stack, player)
 			if not player or player:get_player_name() ~= owner then return 0 end
+			-- S02 SE-4 / S07 CB-1: a combat-logged player must not park
+			-- valuables here — the delivery grid would hand them back
+			-- AFTER the death drop, so they would escape it. Soft edge:
+			-- orders still works when smp_combat is absent (mod.conf
+			-- optional_depends = smp_combat, no cycle: smp_combat does
+			-- not depend on smp_orders).
+			-- allow_put covers drag AND shift-click moves into the grid
+			-- (Luanti IMoveAction::apply calls allowPut on the
+			-- destination inventory for cross-inventory moves).
+			if smp_combat and smp_combat.is_tagged and
+			   smp_combat.is_tagged(player:get_player_name()) then
+				return 0
+			end
 			-- Any item may be placed; matching is resolved at Confirm and
 			-- everything else is returned (f04 §4.6, [F0218]).
 			return stack:get_count()
@@ -263,6 +277,8 @@ function delivery.open(player, order_id)
 	delivery.create_detached(pname)
 	local session = smp_core.open_session(pname, smp_orders.fs.FORMNAME.deliver, {
 		order_id = o.id,
+		-- S04/OR-4: the seen version is captured HERE and nowhere else;
+		-- delivery.show checks it instead of re-syncing it.
 		version = o.version,
 		mode = "deliver",
 	})
@@ -277,14 +293,23 @@ function delivery.show(pname, session, player)
 		core.chat_send_player(pname, S("This order has changed"))
 		return
 	end
-	-- Re-sync the seen version on every render; the confirm click
-	-- re-validates it, which is the race guard (X2).
 	if o.state ~= "open" then
 		delivery.close(pname, true, player)
 		core.chat_send_player(pname, S("This order has changed"))
 		return
 	end
-	session.version = o.version
+	-- S04/OR-4: session.version is captured ONCE in delivery.open, so the
+	-- X2 guard at confirm time means "the order has not changed since
+	-- this screen opened" (it used to be re-synced here, which made the
+	-- guard a no-op). A stale screen is closed and its items returned
+	-- instead of silently refreshed — PROPOSED (f04 §10); without that,
+	-- a version bump mid-session would refuse every Confirm click with
+	-- nothing to recover but quitting the menu.
+	if session.version ~= o.version then
+		delivery.close(pname, true, player)
+		core.chat_send_player(pname, S("This order has changed"))
+		return
+	end
 
 	local payout, matched = delivery.preview(pname, o)
 	local fs = smp_orders.fs
