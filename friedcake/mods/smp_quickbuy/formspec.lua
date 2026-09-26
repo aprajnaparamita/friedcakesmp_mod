@@ -13,11 +13,11 @@ local cfg = smp_quickbuy.cfg
 
 smp_quickbuy.formspec = {}
 
--- Formnames (must match the field dispatcher in init.lua).
-smp_quickbuy.formspec.MAIN      = "smp_quickbuy:main"
-smp_quickbuy.formspec.ENTRIES   = "smp_quickbuy:entries"
-smp_quickbuy.formspec.ADD_QTY   = "smp_quickbuy:add_qty"
-smp_quickbuy.formspec.WARN      = "smp_quickbuy:warn"
+-- One formname for the whole menu. The main / entries / add / warn screens
+-- are all shown under this single name so the engine's formname check never
+-- drops a click as a "possible exploitation attempt" (see init.lua §Menu
+-- state). The active screen is tracked in the session, not in the formname.
+smp_quickbuy.formspec.MENU = "smp_quickbuy:menu"
 
 ----------------------------------------------------------------------
 -- Small shared helpers (all PROPOSED)
@@ -175,7 +175,7 @@ function smp_quickbuy.formspec.main(player, session)
 	-- Control row (sixth row): Add entry sign at the far left, Your entries
 	-- chest at the far right, pager in the middle.
 	local ctrl = G.rows + 1
-	out[#out + 1] = btn("item_image_button", 1, ctrl, "mcl_signs:wall_sign", "add")
+	out[#out + 1] = btn("item_image_button", 1, ctrl, "mcl_signs:wall_sign_oak", "add")
 	out[#out + 1] = "tooltip[add;" .. esc(S("Add entry")) .. "\n"
 		.. esc(S("Click to add the held item")) .. "]"
 	out[#out + 1] = btn("item_image_button", G.cols, ctrl, "mcl_chests:chest",
@@ -254,7 +254,7 @@ end
 ----------------------------------------------------------------------
 
 function smp_quickbuy.formspec.add_qty(session)
-	local default = session.held_count or 1
+	local default = session.qty_default or 1
 	local out = { preamble("7,4.5") }
 	out[#out +1 ] = "label[1,0.3;" .. esc(S("How many?")) .. "]"
 	out[#out + 1] = "label[1,1.0;" .. esc(S("Amount")) .. "]"
@@ -298,4 +298,23 @@ function smp_quickbuy.formspec.warn(player, session)
 	out[#out + 1] = "button[0.5,5.4;2,0.9;cancel_warn;" .. esc(S("Cancel!")) .. "]"
 	out[#out + 1] = "button[5.5,5.4;2,0.9;confirm;" .. esc(S("Confirm")) .. "]"
 	return table.concat(out)
+end
+
+----------------------------------------------------------------------
+-- Screen dispatch
+--
+-- Renders whichever screen the session is on. All screens share the one
+-- MENU formname; init.lua routes incoming fields by the same `screen` key.
+----------------------------------------------------------------------
+
+function smp_quickbuy.formspec.render(player, session)
+	local screen = session and session.screen or "main"
+	if screen == "entries" then
+		return smp_quickbuy.formspec.entries(player)
+	elseif screen == "add" then
+		return smp_quickbuy.formspec.add_qty(session)
+	elseif screen == "warn" then
+		return smp_quickbuy.formspec.warn(player, session)
+	end
+	return smp_quickbuy.formspec.main(player, session)
 end
