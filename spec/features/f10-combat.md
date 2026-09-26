@@ -241,6 +241,7 @@ end)
 | V-71 | Does `/bounty` have a menu, or is it chat-only? |
 | V-72 | Should `/sethome`, `/delhome`, `/back`, `/tpacancel` and `/tpadeny` also be blocked? They are not escape paths in the current list; `/tpacancel` is arguably one |
 | V-73 | Should right-click-only TNT ignition (flint and steel, fire, redstone) and respawn-anchor charging be attributed? The ring currently records only node placement and punches (best effort, §4.2.1) |
+| V-100 | Should a **one-way** follow (a non-mutual `smp_social` edge) block a bounty payout? S07/CB-2.2 blocks only the mutual `is_friend` edge, so a one-sided "friend" can still collect |
 
 ### Fix-wave record (fix brief, 2026-09-25)
 
@@ -250,6 +251,96 @@ end)
 | C2  | CLOSED  | `spec/features/f10-combat.md:191` (§7 row updated to `pending:f08 §4.6`); `spec/features/f10-combat.md:333-337` (note 16 documenting re-scope) |
 | C3  | VERIFIED | `friedcake/mods/smp_combat/mod.conf:4` (`optional_depends = ..., smp_stats` kept); `friedcake/mods/smp_stats/combat.lua:11-14` (load-order comment); `friedcake/mods/smp_combat/*.lua` + `smp_bounty/*.lua` (no `core.register_on_globalstep` / `core.modpath` / `get_player_names` B1-era refs found) |
 | C4  | VERIFIED | `friedcake/mods/smp_bounty/init.lua:144` (string `Player @1 does not exist` — no terminal full stop); `friedcake/dev-tests/test_bounty.lua:122` (assertion `"Player ghost does not exist"` — matches) |
+
+### Security fix-wave S07 (fix brief, 2026-09-27)
+
+Brief `fixes/security/S07-combat-bounty.md`, branch `agent/sec-s07-combat`.
+Touches `smp_combat`, `smp_bounty`, their dev-tests and this section only.
+
+| Row | Outcome | Evidence (file:line) |
+|-----|---------|----------------------|
+| CB-1 (High) | **FIXED** | `friedcake/mods/smp_combat/init.lua` (§"Registration": the combat-log `register_on_leaveplayer` is deferred into `core.register_on_mods_loaded`, with the load-order comment; direct registration kept only for a harness without that callback). Verified against `~/dev/luanti`: `builtin/common/register.lua` `make_registration` appends (`t[#t+1]`), `core.run_callbacks` walks `1..#list` forward, and `src/server/mods.cpp` `ServerModManager::loadMods` runs every mod main chunk before `script.on_mods_loaded()` — so a deferred registration is strictly last. Tests: `dev-tests/test_combat.lua` (fake container mod registered between load and `H.mods_loaded()`; asserts the drop handler is the last leave handler, `#leave >= 3`, and that a parked diamond falls into the drop rather than out of it) and `mods/smp_combat/test.lua` (live `core.registered_on_leaveplayers[#] == smp_combat.on_leave`). Harness: `core.register_on_mods_loaded` stub, `H.mods_loaded()`, `H.fire_leave()`. |
+| CB-2.1 (Med) | **FIXED** | `smp_combat/init.lua` `on_die` passes an attribution `source` to `credit_kill` (`"death"` when `killer_from(reason)` named the killer, `"fallback"` for a reason-less death), `combatlog.lua` passes `source` through and credits logout deaths as `"combatlog"`; `smp_bounty/init.lua` `try_claim`/`is_abuse` and `abuse.lua` `check` refuse `source == "fallback"` **before any money moves** (statistics keep the fallback credit). Tests: `test_combat.lua` T7 (both reason shapes pay no bounty, stats still credited, escrow intact), `test_bounty.lua` (`check(...,"fallback") == "source"` + an end-to-end refused retry). |
+| CB-2.2 (Med) | **FIXED** | `smp_bounty/abuse.lua`: friend collusion (`smp_social.is_friend`, mutual, `smp_social/graph.lua:85`; stands down when `smp_social` is absent) and a playtime floor for the killer (`MIN_KILLER_PLAYTIME`, see rule choices). Tests: `test_bounty.lua` (fake friend graph: the friend's claim refused with nothing moved, a stranger then collects the same bounty; a `playtime = 0` account refused while the bounty survives), `mods/smp_bounty/test.lua`. |
+| CB-2.3 (Med) | **FIXED** | `smp_combat/config.lua` `DEFAULT_BLOCKED` gains `kill` (own file, no mirror row of its own); `blocks.lua` header notes `/kill` is refused while tagged. Tests: `test_combat.lua` T3 iterates the list including `kill`, `mods/smp_combat/test.lua` `is_blocked("kill")`. `/kill` has no aliases (f11 §2), so one entry closes it. |
+| CB-2.4 (Med) | **FIXED** | `smp_bounty/abuse.lua` keys the claim window by **victim** (`victim_key(victim)`, `killer` kept in the signature for callers/logs); `escrow.lua` `load()` migrates legacy `killer\|victim` keys to their victim half before pruning; `init.lua` boot log says "per victim". Tests: `test_bounty.lua` (a second, unrelated killer refused inside the window, money unmoved, allowed after 3,600 s), `mods/smp_bounty/test.lua` (a different killer refused on a recorded victim). |
+| CB-3 (Low) | **RECORDED** | No code. Ignition-only explosion attribution (flint and steel / fire / redstone, and anchor charging) and "prefer the damager inside the window" need hooks in Mineclonia's `mcl_tnt` / `mcl_beds` plus a damage-history ring — see the PROPOSED entry below. The existing punch-recording best effort (§4.2.1) stays as is and is asserted by `test_combat.lua`. |
+
+**Rule choices made (CB-2, all `PROPOSED` unless a spec line already says otherwise):**
+
+1. **Playtime floor: 3,600 s (1 h) of recorded playtime** for the killer.
+   Metric is `smp_store` `rec.playtime` (accrued by `smp_stats`' f14
+   accumulator); the engine has no `core.get_player_playtime`. A missing
+   record counts as **0 s → fail closed** (fresh alt). The check stands
+   down entirely when `smp_stats` is not in the pack (no accrual source,
+   refusing every payout would be worse than the risk). It is a local
+   constant `MIN_KILLER_PLAYTIME` in `abuse.lua` (exposed as
+   `smp_bounty.abuse.MIN_KILLER_PLAYTIME` for tests, `0` disables) and
+   deliberately **not** a settings key: a new `bounty.*` read would need a
+   `spec/shared/06-config-reference.md` row first (integrator-owned,
+   `dev-tests/test_config_mirror.lua` D7 guard).
+2. **Friend edge = mutual `smp_social.is_friend`** (both directions).
+   One-way follows do not block — open question **V-100**. The rule
+   stands down when `smp_social` is absent.
+3. **`source` ladder** (CB-2.1): `"death"` (direct kill) and
+   `"combatlog"` (logout while tagged) pay; `"fallback"` (last attacker on
+   a reason-less death: fall, lava, void, `set_hp(0)`, `/kill`) pays
+   nothing but still credits statistics; a **nil** `source` (a legacy
+   2-/3-argument direct call, e.g. f11 calling `credit_kill` for a real
+   kill) passes. Combat-log payouts keep paying on purpose — §4.4.3
+   ("including kills credited through combat logging") and T5 require it;
+   CB-2.1 targets reason-less *deaths*, not disconnects.
+4. **Claim window: 3,600 s per VICTIM**, whatever the killer (CB-2.4).
+   The settings key stays `bounty.pair_cooldown` so existing
+   configurations keep working; renaming it to `bounty.victim_cooldown`
+   needs the mirror row first — **PROPOSED**, not done (see ESCALATE 5).
+5. **Check order** in `smp_bounty.abuse.check`: `source` → `ip` →
+   `friend` → `playtime` → `cooldown` → `zone`. Every refusal happens
+   before the payout, so escrow and balances never move (X3).
+
+**ESCALATE — spec/mirror rows that now diverge from the code (§7, §9 and
+`spec/shared/` are not mine to edit):**
+
+1. `combat.blocked_commands` — `spec/shared/06-config-reference.md:104`
+   points at "list in f10 §7", and f10 **§7** (`line 189`) lists 11
+   entries **without `kill`**, while §4.2 item 4 does not mention `/kill`
+   in the blocked set either. Code now blocks it (S07/CB-2.3). Needs: add
+   `kill` to the f10 §7 row and the §4.2.4 prose (the shared mirror row
+   itself only defers to f10, so it needs no edit unless the integrator
+   wants the entry spelled out).
+2. f10 **§9 T7** says "`/kill` while tagged credits the last attacker and
+   pays the bounty" — statistics credit stays, **the bounty no longer
+   pays** (CB-2.1). T7 in `dev-tests/test_combat.lua` asserts the new
+   behaviour.
+3. f10 **§9 T9** says "within the pair cooldown" — the window is per
+   victim now (CB-2.4), asserted in `dev-tests/test_bounty.lua`.
+4. f10 **§4.4.4** (`line 109`) "per killer–target pair" and **§4.2.8**
+   (`lines 76-77`) "so suicide cannot deny a kill **or a bounty**" — both
+   diverge: the pair key is now the victim, and a suicide/fallback death
+   keeps crediting statistics but pays no bounty.
+5. **Optional rename** `bounty.pair_cooldown` → `bounty.victim_cooldown`:
+   needs `spec/shared/06-config-reference.md:111` and the f10 §7 row
+   updated together with the settings migration. Not done (shared is
+   integrator-owned).
+6. f10 **§10.1 contract table** rows for `credit_kill` /
+   `register_on_kill` / `is_abuse` / `try_claim` needed the `source`
+   parameter — corrected **in this §10 table below** (allowed), no other
+   section touched.
+
+**PROPOSED — recorded, not implemented (CB-3 and follow-ups):**
+
+- **Ignition attribution (CB-3).** Attribute explosion damage to the
+  *damager* when the ignition happened within `combat.explosion_window`
+  (10 s): hooks are needed in Mineclonia's `mcl_tnt` (flint and steel,
+  fire, redstone — right-click ignitions the node ring never sees, V-73)
+  and `mcl_beds:respawn_anchor` charging, plus a small damage-history
+  ring in `smp_combat` (who last damaged what, inside the window) to
+  prefer the damager over the nearest placer. Clean, but it reaches
+  beyond this brief's file set and is not fully testable here, so it stays
+  a proposal.
+- Combat-log payouts still subject to the IP cache caveat (fails **open**
+  when an IP is unknowable) and to the playtime floor above; revisit if
+  V-19 is ever verified.
 
 ### 10.1 Implementation notes — agent f10 (September 2026)
 
@@ -263,9 +354,9 @@ end)
 | `smp_combat.resolve_attacker(obj) -> string \| nil` | The §8 three cases: player ObjectRef, entity with `_shooter`, `nil`. |
 | `smp_combat.pvp_allowed(victim, attacker) -> boolean`, `smp_combat.in_safe_zone(pos) -> boolean` | Safe-zone policy (X10). |
 | `smp_combat.killer_from(reason) -> string \| nil` | Reads `reason._mcl_reason.source` (Mineclonia death path), `reason.source`, and `reason.type == "punch"` → `reason.object`; string/unknown reasons give `nil`. |
-| `smp_combat.credit_kill(killer, victim, pos) -> boolean` | Statistics credit (`smp_stats.add(killer, "kills", 1)`, `TODO(f14)`) then the kill listeners. f11 may call it directly for `/kill`. |
-| `smp_combat.register_on_kill(fn(killer, victim, pos))` | Listener registry; `smp_bounty.try_claim` registers here so `smp_bounty → smp_combat` stays a one-way dependency. |
-| `smp_bounty.get(target)`, `smp_bounty.is_abuse(killer, victim, pos?)`, `smp_bounty.try_claim(...)`, `smp_bounty.clear(target)` | The §6 pseudo-code surface; `clear` removes without refund (post-payout), `/bountyadmin clear` refunds via `escrow_refund`. |
+| `smp_combat.credit_kill(killer, victim, pos, source?) -> boolean` | Statistics credit (`smp_stats.add(killer, "kills", 1)`, `TODO(f14)`) then the kill listeners. `source` (S07/CB-2.1, added 2026-09-27) is `"death"` \| `"fallback"` \| `"combatlog"` \| `nil` — `nil`/`"death"`/`"combatlog"` may pay a bounty, `"fallback"` may not. f11 may call it directly for `/kill` with no `source` (its caller-side attribution is a direct kill decision). |
+| `smp_combat.register_on_kill(fn(killer, victim, pos, source?))` | Listener registry; `smp_bounty.try_claim` registers here so `smp_bounty → smp_combat` stays a one-way dependency. Listeners must tolerate a missing `source`. |
+| `smp_bounty.get(target)`, `smp_bounty.is_abuse(killer, victim, pos?, source?)`, `smp_bounty.try_claim(killer, victim, pos?, source?)`, `smp_bounty.clear(target)` | The §6 pseudo-code surface (`pos` and `source` optional, the two-argument call still works); `clear` removes without refund (post-payout), `/bountyadmin clear` refunds via `escrow_refund`. |
 
 **PROPOSED decisions taken while implementing (V-12, V-19, V-68…V-71):**
 
@@ -274,7 +365,9 @@ end)
    mod and asserting no storage key contains `combat`/`tag`).
 2. The blocked list is exactly the §4.2.4 ten plus the alias closure
    `tp` (alias of `/tpa`, f08 §2) and `home` (alias of `/homes`,
-   f09 §2) — 12 entries, `PROPOSED`. `combat.blocked_commands` as a
+   f09 §2) — 12 entries, `PROPOSED` *(amended 2026-09-27: S07/CB-2.3
+   adds `kill`, making 13 — §7 and §4.2.4 divergences escalated above)*.
+   `combat.blocked_commands` as a
    comma-separated setting replaces the whole set. `/sell` is absent
    (allowed in combat, June 2026 [S3]); `/msg`, `/ah` and `/bounty` are
    allowed. V-72 stays open for the borderline non-escape commands.
@@ -314,7 +407,12 @@ end)
     join-time cache (engine IPs are unknowable after logout — the cache
     covers the combat-log window; **unknown IPs fail open**, flagged
     here); the 3,600 s cooldown is per `killer|victim` pair, persisted
-    with the bounty document and pruned on load; the safe-zone check
+    with the bounty document and pruned on load *(amended 2026-09-27:
+    S07/CB-2.4 keys it per **victim** instead — one payout per victim per
+    window; the `bounty.pair_cooldown` settings key name is kept, legacy
+    pair keys migrate to their victim half on load; see the S07 record
+    above for the friend and playtime rules added alongside)*; the
+    safe-zone check
     prefers `smp_core.is_spawn_protected` when f15 lands and otherwise
     reimplements the f15 rule (overworld only, `world.spawn_protect_radius`
     = 128). A refused payout leaves escrow and bounty untouched.
@@ -324,7 +422,11 @@ end)
     (orphaned contributors, logged) — never minted, never lost (X3).
 12. `/kill` credit (T7) needs no f11 code: the dieplayer hook credits
     `last_attacker` whenever the death reason carries no attacker, so
-    suicide cannot deny a kill or a bounty. `TODO(f14)` — the stats key
+    suicide cannot deny a kill. *(Amended 2026-09-27, S07/CB-2.1: the
+    **statistics** credit stands exactly as written, but the bounty is
+    refused for that fallback attribution — §9 T7 and §4.2.8 now diverge
+    from the code, escalated above. `/kill` is itself blocked while
+    tagged, CB-2.3.)* `TODO(f14)` — the stats key
     `kills` is an assumption pending `smp_stats`.
 13. Bounty persistence: `smp_store` exposes no table API yet
     (its `STORAGE.md` lists bounties as "later"), so records live in
