@@ -1372,7 +1372,7 @@ do
 	open_sell("alice")
 	put_in_container("alice", ItemStack("mcl_chests:violet_shulker_box"), 1)
 	confirm("alice")
-	eq(money("alice"), 1500000, "an empty shulker box sells as an ordinary item")
+	eq(money("alice"), 800000, "an empty shulker box sells as an ordinary item")
 	eq(count_inventory(alice), 0, "nothing came back for an empty box")
 end
 

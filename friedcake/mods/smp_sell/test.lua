@@ -242,7 +242,10 @@ local function container_count()
 	return n
 end
 
+-- Each confirm is a separate sale: clear the SE-5 rate limit first, or
+-- back-to-back confirms (and a frozen test clock) trip it.
 local function confirm()
+	if smp_sell._reset_sell_cooldown then smp_sell._reset_sell_cooldown(pname) end
 	menu.confirm(player)
 end
 
@@ -542,10 +545,16 @@ local function run_all()
 	reset()
 	local saved_combat = smp_combat
 	smp_combat = { is_tagged = function() return true end }
+	-- SE-4: the container refuses puts while tagged (items parked there
+	-- would dodge the combat-log drop), but selling itself still works.
 	menu.open(player)
-	put(ItemStack(cheap .. " 1"), 1)
-	confirm()
-	ok(money() > 0, "T10 selling while combat-tagged succeeds")
+	ok(not put(ItemStack(cheap .. " 1"), 1),
+		"T10 SE-4 the sell container refuses items while combat-tagged")
+	menu.return_contents(player, pname)
+	inv:set_stack("main", player:get_wield_index(), ItemStack(cheap .. " 1"))
+	if smp_sell._reset_sell_cooldown then smp_sell._reset_sell_cooldown(pname) end
+	core.registered_chatcommands.sell.func(pname, "hand")
+	ok(money() > 0, "T10 selling while combat-tagged succeeds (/sell hand)")
 	ok(smp_sell.ALLOWED_IN_COMBAT.sell == true,
 		"T10 smp_sell publishes its combat whitelist for f10")
 	smp_combat = saved_combat
@@ -579,6 +588,22 @@ local function run_all()
 	eq(inventory_count(items.resolve_name(pricey)), 64,
 		"a refused sale returns every item")
 	smp_store.api.set_money(pname, 0, "test", "cap fixture cleanup")
+
+	----------------------------------------------------------------------
+	-- S02 recipe arbitrage: no craft or stonecutter recipe may sell for
+	-- more than its inputs. Needs the live registry, so it only runs
+	-- in-engine; the luajit harness has no recipes and skips it.
+	----------------------------------------------------------------------
+	if type(core.get_all_craft_recipes) == "function" and smp_sell.arbitrage
+			and (core.get_all_craft_recipes("mcl_core:stonebrick") or {})[1] then
+		local violations, scanned = smp_sell.arbitrage.scan()
+		ok(scanned > 0, "S02 the arbitrage scan found recipes")
+		for i = 1, math.min(#violations, 10) do
+			results.lines[#results.lines + 1] =
+				"  arbitrage: " .. smp_sell.arbitrage.describe(violations[i])
+		end
+		eq(#violations, 0, "S02 no recipe sells for more than its inputs")
+	end
 end
 
 local run_ok, run_err = pcall(run_all)

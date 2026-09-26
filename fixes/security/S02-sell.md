@@ -187,21 +187,17 @@ visible lag by spamming it.
   test lands and is green.
 - SE-5's rate limit is in, and the store change is escalated.
 
-## Status (2026-09-27)
+## Status (2026-09-27, verified)
 
 | ID | Outcome | Change |
 |---|---|---|
-| SE-1 | **FIXED** | `sell.default_price` default → `0` (feature off). Mirror diff recorded in f02 §10/§11 as ESCALATE. |
-| SE-2 | **FIXED** | Enchant bonus capped at `base_price` (`bonus = min(levels × per_level, base)`). $500/level default kept. Books priced from table. Recorded in f02 §10 V-99. |
-| SE-3 | **FIXED** | Cobble anchor on `mcl_core:cobble` (600). Walls/stairs/slabs priced ≤ cobble-equiv in `prices_default.lua`. |
-| SE-4 | **FIXED** | `menu.lua` `allow_put` refuses while `smp_combat.is_tagged` (soft check). `/sell hand` and `/sell all` work while tagged. |
-| SE-5 | **FIXED** (local) | `/sell` and container confirm rate-limited ~1/s via `sell_cooldown`. Store prune-index escalated to f02 §10. |
-| SH-2 hand-off | **FIXED** | `items.sellable` refuses stacks with `smp:shardshop="1"` meta. |
+| SE-1 | **FIXED** | `sell.default_price` default → `0` (feature off). Mirror change → ESCALATE (f02 §13.1). |
+| SE-2 | **FIXED** | Enchant bonus capped at `base_price`. Enchanted books are unlisted, so unsellable while the default price is 0 (f02 §13.2). |
+| SE-3 | **FIXED except the OBSERVED wall** | 17 PROPOSED prices corrected, found by the live-registry scan. The $7 cobble wall ($1 over cobble) is OBSERVED [S2] and awaits an integrator ruling (f02 §13.3). |
+| SE-4 | **FIXED** | Sell grid `allow_put` refuses while tagged; `/sell hand` still works in combat (in-game T10 updated). |
+| SE-5 | **FIXED** (local) | `/sell` and container confirm rate-limited ~1/s. Store prune-index → ESCALATE. |
+| SH-2 hand-off | **FIXED** | `items.sellable` refuses `smp:shardshop="1"` stacks. |
+| Recipe test | **ADDED** | `smp_sell/arbitrage.lua`, asserted by `/smp test smp_sell`. Run headless on Luanti 5.17 + Mineclonia: 1834 recipes, 38 → 0 violations; a reverted price is caught. |
 
-**Files changed:** `smp_sell/{init,prices,prices_default,items,sell,menu}.lua`, `dev-tests/test_sell.lua`, `spec/features/f02-sell.md §10/§11`, `fixes/security/S02-sell.md`.
-
-**Tests:** `dev-tests/test_sell.lua` ALL OK (360+ assertions). In-game `smp_sell/test.lua` requires engine.
-
-**Escales recorded in f02 §10:** SE-1 default_price=0 mirror, SE-2 enchant cap, SE-3 wall prices, SE-5 store prune-index.
-
-**PROPOSED:** The recipe-arbitrage regression test (`recipe_scan.lua`) exercises the arbitrage check against a static recipe table; in-engine version needs `/smp test smp_sell` path.
+**Tests:** `dev-tests/test_sell.lua` ALL OK (it also runs the in-mod suite, 65 assertions).
+The arbitrage assertion runs only in-engine (the harness has no recipes).

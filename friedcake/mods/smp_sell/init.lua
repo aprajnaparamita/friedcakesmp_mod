@@ -42,7 +42,7 @@ smp_sell = {
 
 -- Forward declarations: reload_cfg() closes over these, and the modules are
 -- assigned below in dependency order.
-local items, prices, history, receipt, orders, engine, menu
+local items, prices, history, receipt, orders, engine, menu, arbitrage
 
 local function get_str(key, default)
 	local v = core.settings and core.settings:get(key)
@@ -172,6 +172,7 @@ menu    = load_module("menu.lua", {
 	sell_cooldown_active = sell_cooldown_active,
 	set_sell_cooldown = set_sell_cooldown,
 })
+arbitrage = load_module("arbitrage.lua")
 
 reload_cfg()
 
@@ -183,6 +184,7 @@ smp_sell.receipt = receipt
 smp_sell.orders  = orders
 smp_sell.engine  = engine
 smp_sell.menu    = menu
+smp_sell.arbitrage = arbitrage
 
 ----------------------------------------------------------------------
 -- Public API
