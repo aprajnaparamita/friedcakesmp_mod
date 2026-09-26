@@ -54,6 +54,10 @@ local function item_desc(name)
 	return (name:gsub("^[a-z_]+:", ""))
 end
 
+-- Buttons sit exactly on the slot backgrounds get_itemslot_bg_v4 draws
+-- (x-0.05, 1.1 square); a 1.25 (pitch-sized) button overhangs the slot.
+local BTN, OFF = 1.1, -0.05
+
 -- Container geometry (mcl_chests proportions, as in smp_ah).
 local G = {
 	x0 = 0.375, pitch = 1.25, w = 11.75, h = 15.2,
@@ -165,9 +169,9 @@ function smp_spawners.formspecs.render(pos, session)
 				-- boundary).
 				parts[#parts + 1] = string.format(
 					"item_image_button[%s,%s;%s,%s;%s;%s;]",
-					c(x), c(y), c(P), c(P), esc(name), field)
+					c(x + OFF), c(y + OFF), c(BTN), c(BTN), esc(name), field)
 				parts[#parts + 1] = string.format("label[%s,%s;%s]",
-					c(x + 0.1), c(y + 1.0),
+					c(x + 0.05), c(y + 0.8),
 					esc(smp_spawners.fmt_int(count)))
 				parts[#parts + 1] = "tooltip[" .. field .. ";" ..
 					esc(item_desc(name)) .. "\n" ..

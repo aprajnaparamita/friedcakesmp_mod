@@ -48,6 +48,10 @@ local G = {
 }
 fs.G = G
 
+-- Buttons sit exactly on the slot backgrounds get_itemslot_bg_v4 draws
+-- (x-0.05, 1.1 square); a 1.25 (pitch-sized) button overhangs the slot.
+local BTN, OFF = 1.1, -0.05
+
 local function sx(col) return G.x0 + (col - 1) * G.pitch end
 
 local function slot_bg(x, y, w, h)
@@ -101,8 +105,8 @@ function fs.shop_form(balance)
 		local btn = "offer_" .. offer.id
 		local item = cat.resolve_item(offer)
 		if item and core.registered_items[item] then
-			out[#out + 1] = "item_image_button[" .. c(x) .. "," .. c(y) ..
-				";" .. c(G.pitch) .. "," .. c(G.pitch) .. ";" ..
+			out[#out + 1] = "item_image_button[" .. c(x + OFF) .. "," .. c(y + OFF) ..
+				";" .. c(BTN) .. "," .. c(BTN) .. ";" ..
 				F(item) .. ";" .. F(btn) .. ";]"
 			out[#out + 1] = fs.tooltip(btn, {
 				S(offer.name),
@@ -113,8 +117,8 @@ function fs.shop_form(balance)
 		else
 			-- Unavailable in this engine (e.g. mcl_armor absent): a plain
 			-- button that explains why, so the grid keeps its shape.
-			out[#out + 1] = "button[" .. c(x) .. "," .. c(y) .. ";" ..
-				c(G.pitch) .. "," .. c(G.pitch) .. ";" .. F(btn) .. ";?]"
+			out[#out + 1] = "button[" .. c(x + OFF) .. "," .. c(y + OFF) .. ";" ..
+				c(BTN) .. "," .. c(BTN) .. ";" .. F(btn) .. ";?]"
 			out[#out + 1] = fs.tooltip(btn, {
 				S(offer.name),
 				price_line(offer.shards),

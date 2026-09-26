@@ -70,6 +70,10 @@ fs.G = G
 
 local function c(v) return string.format("%.6g", v) end
 
+-- Buttons sit exactly on the slot backgrounds get_itemslot_bg_v4 draws
+-- (x-0.05, 1.1 square); a 1.25 (pitch-sized) button overhangs the slot.
+local BTN, OFF = 1.1, -0.05
+
 -- 1-based column/row -> formspec coordinate.
 local function sx(col) return G.x0 + (col - 1) * G.pitch end
 local function sy(row, y0) return (y0 or G.board.grid_y) + (row - 1) * G.pitch end
@@ -324,7 +328,8 @@ end
 --- `fallback_label` is used only when this game registers no matching item.
 local function control_element(name, x, y, kind, fallback_label)
 	local item, colorize = fs.item_info(kind)
-	local size = c(G.pitch) .. "," .. c(G.pitch)
+	local size = c(BTN) .. "," .. c(BTN)
+	x, y = x + OFF, y + OFF
 	if item then
 		if colorize then
 			-- No coloured pane in this game: colourize a texture instead.
@@ -431,8 +436,8 @@ end
 -- @param name element name (carries no trust: the handler re-validates)
 function fs.listing_cell(rec, x, y, name, extra_lines)
 	local out = {
-		"item_image_button[" .. c(x) .. "," .. c(y) .. ";" .. c(G.pitch) .. "," ..
-			c(G.pitch) .. ";" .. F(rec.name or "") .. ";" .. F(name) .. ";]",
+		"item_image_button[" .. c(x + OFF) .. "," .. c(y + OFF) .. ";" .. c(BTN) .. "," ..
+			c(BTN) .. ";" .. F(rec.name or "") .. ";" .. F(name) .. ";]",
 		fs.tooltip(name, fs.listing_tooltip_lines(rec, extra_lines)),
 	}
 	local count = math.floor(tonumber(rec.count) or 1)
@@ -472,12 +477,12 @@ function fs.pager(x, y, page, pages, prefix)
 	prefix = prefix or "ah"
 	local out = {}
 	local disabled = pages <= 1
-	out[#out + 1] = "button[" .. c(x) .. "," .. c(y) .. ";" .. c(G.pitch) .. "," ..
-		c(G.pitch) .. ";" .. F(prefix .. "_prev") .. ";<]"
+	out[#out + 1] = "button[" .. c(x + OFF) .. "," .. c(y + OFF) .. ";" .. c(BTN) .. "," ..
+		c(BTN) .. ";" .. F(prefix .. "_prev") .. ";<]"
 	out[#out + 1] = fs.tooltip(prefix .. "_prev", {
 		S("Previous page"), S("Click to view the previous page") })
-	out[#out + 1] = "button[" .. c(x + G.pitch) .. "," .. c(y) .. ";" .. c(G.pitch) ..
-		"," .. c(G.pitch) .. ";" .. F(prefix .. "_next") .. ";>]"
+	out[#out + 1] = "button[" .. c(x + G.pitch + OFF) .. "," .. c(y + OFF) .. ";" .. c(BTN) ..
+		"," .. c(BTN) .. ";" .. F(prefix .. "_next") .. ";>]"
 	out[#out + 1] = fs.tooltip(prefix .. "_next", {
 		S("Next page"), S("Click to view the next page") })
 	if disabled then
@@ -701,8 +706,8 @@ local function confirm_grid(stack_name, tooltip_lines, confirm_name, confirm_lin
 		slot_bg(G.x0, y, G.cols, 1),
 		-- Observed positions in F0142: a control in column 3 and the stack in
 		-- column 5.
-		"item_image[" .. c(sx(5)) .. "," .. c(y) .. ";" .. c(G.pitch) .. "," ..
-			c(G.pitch) .. ";" .. F(stack_name or "") .. "]",
+		"item_image[" .. c(sx(5) + OFF) .. "," .. c(y + OFF) .. ";" .. c(BTN) .. "," ..
+			c(BTN) .. ";" .. F(stack_name or "") .. "]",
 		"tooltip[" .. c(sx(5)) .. "," .. c(y) .. ";" .. c(G.pitch) .. "," ..
 			c(G.pitch) .. ";" .. (function()
 				local esc = {}

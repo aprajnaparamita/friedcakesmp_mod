@@ -126,9 +126,13 @@ local function slot_bg(x, y, w, h)
 	return table.concat(out)
 end
 
+-- Buttons sit exactly on the slot backgrounds get_itemslot_bg_v4 draws
+-- (x-0.05, 1.1 square); a 1.25 (pitch-sized) button overhangs the slot.
+local BTN, OFF = 1.1, -0.05
+
 local function btn(kind, col, row, a, b)
-	return string.format("%s[%s,%s;%s,%s;%s;%s;]", kind, c(sx(col)), c(sy(row)),
-		c(G.pitch), c(G.pitch), a, b)
+	return string.format("%s[%s,%s;%s,%s;%s;%s;]", kind, c(sx(col) + OFF),
+		c(sy(row) + OFF), c(BTN), c(BTN), a, b)
 end
 
 function smp_quickbuy.formspec.main(player, session)
@@ -186,9 +190,9 @@ function smp_quickbuy.formspec.main(player, session)
 	-- Pagination (PROPOSED): only shown when the entry list overflows.
 	if total_pages > 1 then
 		out[#out + 1] = string.format("button[%s,%s;%s,%s;prev;<]",
-			c(sx(4)), c(sy(ctrl)), c(G.pitch), c(G.pitch))
+			c(sx(4) + OFF), c(sy(ctrl) + OFF), c(BTN), c(BTN))
 		out[#out + 1] = string.format("button[%s,%s;%s,%s;next;>]",
-			c(sx(6)), c(sy(ctrl)), c(G.pitch), c(G.pitch))
+			c(sx(6) + OFF), c(sy(ctrl) + OFF), c(BTN), c(BTN))
 	end
 
 	-- Player inventory: 3 main rows, then the hotbar (shared §4.1).
