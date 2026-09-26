@@ -46,7 +46,8 @@ function smp_tp.show_request_dialog(target, sender, type)
 	smp_core.show_formspec(target, FORMNAME, fs)
 end
 
-core.register_on_player_receive_fields(FORMNAME, function(player, fields)
+core.register_on_player_receive_fields(function(player, formname, fields)
+	if formname ~= FORMNAME then return end
 	local name = player:get_player_name()
 	smp_core.handle_fields(name, FORMNAME, fields, function(s, f)
 		-- Re-validate: the request may have expired or been cancelled
@@ -105,7 +106,8 @@ function smp_tp.show_spawn_menu(name)
 	smp_core.show_formspec(name, LOBBY_FORMNAME, table.concat(fs))
 end
 
-core.register_on_player_receive_fields(LOBBY_FORMNAME, function(player, fields)
+core.register_on_player_receive_fields(function(player, formname, fields)
+	if formname ~= LOBBY_FORMNAME then return end
 	local name = player:get_player_name()
 	smp_core.handle_fields(name, LOBBY_FORMNAME, fields, function(_, f)
 		for field in pairs(f) do

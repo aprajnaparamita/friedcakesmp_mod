@@ -759,7 +759,8 @@ function H.handle_fields(player, fields)
 	end)
 end
 
-core.register_on_player_receive_fields(H.FORMNAME, function(player, fields)
+core.register_on_player_receive_fields(function(player, formname, fields)
+	if formname ~= H.FORMNAME then return end
 	return H.handle_fields(player, fields)
 end)
 
