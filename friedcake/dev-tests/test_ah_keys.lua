@@ -37,6 +37,28 @@ core = {
 		return nil
 	end,
 	log = function() end,
+	-- MS-3: the name-taking engine APIs are as strict as luaL_checkstring
+	-- on argument 1 (l_server.cpp / l_env.cpp), so a non-string — an
+	-- ObjectRef from register_on_player_receive_fields, or nil — raises
+	-- instead of being coerced. keys.lua must never be handed one either.
+	get_player_by_name = function(name)
+		if type(name) ~= "string" then
+			error("bad argument #1 to 'get_player_by_name' (string expected, got "
+				.. type(name) .. ")", 2)
+		end
+		return nil
+	end,
+	chat_send_player = function(name, msg)
+		if type(name) ~= "string" then
+			error("bad argument #1 to 'chat_send_player' (string expected, got "
+				.. type(name) .. ")", 2)
+		end
+		if type(msg) ~= "string" then
+			error("bad argument #2 to 'chat_send_player' (string expected, got "
+				.. type(msg) .. ")", 2)
+		end
+		return true
+	end,
 }
 
 local function make_meta(fields)
@@ -380,6 +402,21 @@ eq(K.hash("abc"), K.hash("abc"), "hash is deterministic")
 ok(K.hash("abc") ~= K.hash("abd"), "hash distinguishes")
 ok(#K.hash("abc") >= 16, "hash is wide enough")
 eq(K.EMPTY_HASH, K.hash(""), "EMPTY_HASH")
+
+----------------------------------------------------------------------
+-- 11. MS-3: the stubbed name APIs are engine-strict
+----------------------------------------------------------------------
+
+ok(not pcall(core.get_player_by_name, {}),
+	"get_player_by_name(ObjectRef) raises like luaL_checkstring")
+ok(not pcall(core.get_player_by_name, nil),
+	"get_player_by_name(nil) raises like luaL_checkstring")
+ok(not pcall(core.chat_send_player, {}, "hi"),
+	"chat_send_player(ObjectRef) raises like luaL_checkstring")
+ok(not pcall(core.chat_send_player, "alice", {}),
+	"chat_send_player(\"alice\", table) raises on argument 2")
+eq(core.get_player_by_name("nobody"), nil, "a string name still resolves (offline)")
+eq(core.chat_send_player("alice", "hi"), true, "string arguments still work")
 
 print(string.format("keys: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

@@ -143,3 +143,16 @@ entry should pin `meta_hash = "0"`.
 
 - AH-1, AH-2 and AH-4 fixed, with the tests above.
 - AH-5 recorded in f05 §10.
+
+## Status (2026-09-27, verified)
+
+| ID | Outcome | Change |
+|---|---|---|
+| AH-1 | **FIXED** | Routed only on an accepted fill; a refusal or raise lists normally. Routing also requires `smp_orders.can_take_stack` (S04): **merge S04 with or before S03**, or routing stays off. |
+| AH-2 | **FIXED** | `buy`, `withdraw`, `validate_listing`/`create_listing` refuse non-string names with `nil, "offline"`. |
+| AH-3 | **FIXED in S04** | `absorb_listing` pays `l.price`. |
+| AH-4 | **FIXED** | Insert grid accepts puts only in the insert stage; strays are returned at back-out and at commit. Also refuses puts while combat-tagged (SE-4). |
+| AH-5 | **RECORDED** | For f05 §10 (Quick Buy matching ignores meta hash). |
+| OR-1 (AH side) | **FIXED** | Listing state writes through to storage. |
+
+**Tests:** `dev-tests/test_ah.lua` 361/361, `test_ah_keys.lua` 110/110. Removing the AH-2 guard or the AH-4 stage lock makes the new sections fail.
