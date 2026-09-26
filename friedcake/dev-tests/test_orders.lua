@@ -15,7 +15,9 @@ local function find_root()
 	if prefix and prefix ~= "" then
 		return (prefix:gsub("/+$", ""))
 	end
-	local probe = io.open("friedcake/modpack.conf", "r")
+	-- modpack.conf lives under friedcake/mods/ (it declares the modpack),
+	-- not at friedcake/ itself.
+	local probe = io.open("friedcake/mods/modpack.conf", "r")
 	if probe then
 		probe:close()
 		return "."
@@ -225,6 +227,22 @@ local gametime = 1000.0
 
 local function advance(t) gametime = gametime + (t or 1) end
 
+-- MS-3 — strict engine stub (S04 brief; the shared-harness copy is
+-- S09's, and AGENTS forbids a shared harness module, so it lives here).
+-- The C++ entry points take `const std::string &name`, so
+-- luaL_checkstring RAISES on an ObjectRef or nil instead of quietly
+-- returning nil. A mod that passes a PlayerRef as a name therefore dies
+-- in the engine (QB-1 / SH-1 / EC-2 class) — the stub must fail the
+-- same way, or that bug looks fine here.
+-- Message matches luaL_argerror for a C function (luaL_where pushes ""
+-- for C frames, so there is no file:line prefix):
+--   bad argument #1 to '<fn>' (string expected, got <type>)
+local function check_name(fn, argn, v)
+	if type(v) == "string" then return v end
+	error(string.format("bad argument #%d to '%s' (string expected, got %s)",
+		argn, fn, type(v)), 0)
+end
+
 core = {
 	DIR_DELIM = "/",
 	get_mod_storage = function()
@@ -262,13 +280,16 @@ core = {
 		if level == "error" then print("[engine error] " .. tostring(msg)) end
 	end,
 	chat_send_player = function(name, msg)
+		check_name("chat_send_player", 1, name)
 		chats[name] = chats[name] or {}
 		chats[name][#chats[name] + 1] = msg
 	end,
 	show_formspec = function(name, formname, spec)
+		check_name("show_formspec", 1, name)
 		shown_forms[name] = { formname = formname, spec = spec }
 	end,
 	close_formspec = function(name, formname)
+		check_name("close_formspec", 1, name)
 		local f = shown_forms[name]
 		if f and f.formname == formname then shown_forms[name] = nil end
 	end,
@@ -521,7 +542,11 @@ local function make_player(name)
 	return p
 end
 
-core.get_player_by_name = function(n) return players[n] end
+-- MS-3: raises on a non-string name exactly like luaL_checkstring.
+core.get_player_by_name = function(n)
+	check_name("get_player_by_name", 1, n)
+	return players[n]
+end
 
 local detached = {}
 core.create_detached_inventory = function(name, callbacks, pname)
@@ -678,6 +703,25 @@ seed("carol", 200000000000)
 
 local key_totem = smp_items.key(ItemStack("mcl_totems:totem"), "M1")
 local key_diamond = smp_items.key(ItemStack("mcl_core:diamond"), "M1")
+
+print("== MS-3: the name-taking core stubs raise like luaL_checkstring ==")
+do
+	local good, err = pcall(core.get_player_by_name, players.bob)
+	eq(good, false, "MS-3 get_player_by_name raises on a PlayerRef")
+	eq(err, "bad argument #1 to 'get_player_by_name' (string expected, got table)",
+		"MS-3 exact luaL_argerror message")
+	good, err = pcall(core.chat_send_player, players.bob, "hi")
+	eq(good, false, "MS-3 chat_send_player raises on a PlayerRef")
+	eq(err, "bad argument #1 to 'chat_send_player' (string expected, got table)",
+		"MS-3 chat_send_player message")
+	good = pcall(core.show_formspec, nil, "smp_orders:board", "size[1,1]")
+	eq(good, false, "MS-3 show_formspec raises on a nil name")
+	good = pcall(core.close_formspec, players.bob, "smp_orders:board")
+	eq(good, false, "MS-3 close_formspec raises on a PlayerRef")
+	-- a real string name still works (engine returns nil for a stranger)
+	eq(core.get_player_by_name("bob"), players.bob, "MS-3 string name resolves")
+	eq(core.get_player_by_name("stranger"), nil, "MS-3 unknown string name -> nil")
+end
 
 print("== smp_items keying (shared §2.5) ==")
 eq(key_totem, "m1|mcl_totems:totem||0", "totem M1 key shape")
@@ -1085,6 +1129,87 @@ do
 		"quit destroys the detached inventory")
 end
 
+print("== OR-4: the seen version is pinned at open; a stale screen closes ==")
+do
+	local heidi = make_player("heidi")
+	seed("heidi", 1000000)
+	advance()
+	local id_v = smp_orders.create("heidi", key_diamond, 6, 1000)
+	ok(id_v ~= nil, "OR-4 order created")
+	local o_v = smp_orders.get_order(id_v)
+	bob._inv:set_list("main", {})
+	ok(smp_orders.delivery.open(bob, id_v), "OR-4 delivery screen opens")
+	local session = smp_core.get_session("bob", "smp_orders:deliver")
+	ok(session ~= nil, "OR-4 session exists")
+	eq(session.version, o_v.version, "OR-4 version captured once, in delivery.open")
+	local dinv = core.get_detached_inventory("smp_orders_deliver_bob")
+	dinv:set_stack("main", 1, ItemStack("mcl_core:diamond 2"))
+	-- A render of an unchanged order leaves the session alone.
+	smp_orders.delivery.refresh("bob")
+	ok(smp_core.get_session("bob", "smp_orders:deliver") ~= nil,
+		"OR-4 unchanged order keeps its session across renders")
+	-- Another supplier delivers: the order version advances.
+	carol._inv:set_list("main", {})
+	local acc = smp_orders.deliver(carol, id_v, { ItemStack("mcl_core:diamond 1") },
+		o_v.version)
+	eq(acc, 1, "OR-4 external delivery accepted")
+	ok(o_v.version > session.version, "OR-4 order now ahead of the session")
+	eq(session.version, o_v.version - 1,
+		"OR-4 session.version NOT re-synced by renders (the old no-op guard)")
+	-- Confirm with the stale version is refused: the X2 guard now means
+	-- "the order has not changed since this screen opened".
+	clear_chat("bob")
+	local accepted, _, err = smp_orders.delivery.confirm(bob, session)
+	eq(accepted, nil, "OR-4 stale-version confirm refused")
+	eq(err, "This order has changed", "OR-4 refusal message")
+	chat_has("bob", "This order has changed", "OR-4 refusal surfaced to the player")
+	-- The stale screen is closed and its parked items are returned, not
+	-- silently refreshed into a screen that can never confirm again.
+	ok(smp_core.get_session("bob", "smp_orders:deliver") == nil,
+		"OR-4 stale session closed instead of re-synced")
+	ok(core.get_detached_inventory("smp_orders_deliver_bob") == nil,
+		"OR-4 stale grid destroyed")
+	eq(bob._inv:count("mcl_core:diamond"), 2, "OR-4 parked items returned")
+end
+
+print("== SE-4 / CB-1: delivery grid refuses puts while combat-tagged ==")
+do
+	local karl = make_player("karl")
+	seed("karl", 1000000)
+	advance()
+	local id_cb = smp_orders.create("karl", key_diamond, 5, 3000)
+	ok(id_cb ~= nil, "SE-4 order created")
+	ok(smp_orders.delivery.open(bob, id_cb), "SE-4 delivery grid opens")
+	local rec = detached["smp_orders_deliver_bob"]
+	ok(rec ~= nil, "SE-4 detached inventory registered")
+	local put = rec.callbacks.allow_put
+	ok(put ~= nil, "SE-4 allow_put registered")
+	local stack = ItemStack("mcl_core:diamond 3")
+	-- No smp_combat at all: orders keeps working (soft edge).
+	_G.smp_combat = nil
+	eq(put(rec.inv, "main", 1, stack, players.bob), 3,
+		"SE-4 put allowed with smp_combat absent")
+	-- Tagged owner: refuse.
+	_G.smp_combat = { is_tagged = function(w) return w == "bob" end }
+	eq(put(rec.inv, "main", 1, stack, players.bob), 0,
+		"SE-4 put refused while the owner is combat-tagged")
+	-- Another player still cannot touch a grid they do not own.
+	eq(put(rec.inv, "main", 1, stack, players.carol), 0,
+		"SE-4 non-owner refused before the tag check")
+	-- Untagged owner with the mod loaded: allowed.
+	_G.smp_combat = { is_tagged = function() return false end }
+	eq(put(rec.inv, "main", 1, stack, players.bob), 3,
+		"SE-4 put allowed while untagged")
+	-- Degraded mod (no is_tagged): degrade to allowed, never error.
+	_G.smp_combat = {}
+	eq(put(rec.inv, "main", 1, stack, players.bob), 3,
+		"SE-4 degrades gracefully when is_tagged is missing")
+	_G.smp_combat = nil
+	send_fields("bob", { quit = "true" })
+	ok(core.get_detached_inventory("smp_orders_deliver_bob") == nil,
+		"SE-4 session closed cleanly")
+end
+
 print("== board: T1 title/filter, sorting, paging, controls ==")
 do
 	smp_orders.show_board("alice", 1)
@@ -1462,6 +1587,146 @@ do
 	eq(err_bad, "Nothing matched this order", "fill_from_stack refusal message")
 end
 
+print("== OR-2: refusal contract of fill_from_stack / can_take_stack ==")
+do
+	-- Every refusal returns exactly `nil, string` from fill_from_stack
+	-- and `false, string` from can_take_stack, with the SAME reason, and
+	-- the stack's count never changes.
+	local function refuse_case(label, order, player, stack, want_reason)
+		local before = stack:get_count()
+		local r, why = smp_orders.fill_from_stack(order, player, stack)
+		eq(r, nil, "OR-2 " .. label .. ": fill_from_stack returns nil (not a table)")
+		eq(type(why), "string", "OR-2 " .. label .. ": reason is a string")
+		eq(why, want_reason, "OR-2 " .. label .. ": refusal reason")
+		eq(stack:get_count(), before, "OR-2 " .. label .. ": stack count unchanged")
+		local can, cwhy = smp_orders.can_take_stack(order, player, stack)
+		eq(can, false, "OR-2 " .. label .. ": can_take_stack returns false")
+		eq(type(cwhy), "string", "OR-2 " .. label .. ": predicate reason is a string")
+		eq(cwhy, want_reason, "OR-2 " .. label .. ": predicate reason matches")
+		eq(stack:get_count(), before, "OR-2 " .. label .. ": predicate does not consume")
+	end
+
+	local mia = make_player("mia")
+	seed("mia", 1000000)
+	advance()
+	local id_o = smp_orders.create("mia", key_diamond, 4, 5000)
+	ok(id_o ~= nil, "OR-2 order created")
+	-- 1. unknown order id
+	refuse_case("unknown order id", 999999, "bob",
+		ItemStack("mcl_core:diamond 1"), "This order has changed")
+	-- 2. own order (self-delivery off)
+	refuse_case("own order", id_o, "mia",
+		ItemStack("mcl_core:diamond 1"), "You cannot deliver to your own order")
+	-- 3. wrong item
+	refuse_case("mismatch", id_o, "bob",
+		ItemStack("mcl_core:stone 1"), "Nothing matched this order")
+	-- 4. empty stack
+	refuse_case("empty stack", id_o, "bob",
+		ItemStack(""), "Nothing matched this order")
+	-- 5. larger than the order's remaining quantity (the AH-1 / AX-1 case)
+	refuse_case("oversized stack", id_o, "bob",
+		ItemStack("mcl_core:diamond 5"), "full")
+	-- 6. no usable player name
+	refuse_case("no player", id_o, nil,
+		ItemStack("mcl_core:diamond 1"), "This order has changed")
+	-- 7. closed order
+	advance()
+	local id_closed = smp_orders.create("mia", key_diamond, 2, 5000)
+	ok(id_closed ~= nil, "OR-2 second order created")
+	local cancelled, cerr = smp_orders.cancel(smp_orders.get_order(id_closed), "mia")
+	ok(cancelled ~= nil, "OR-2 second order cancelled (" .. tostring(cerr) .. ")")
+	refuse_case("closed order", id_closed, "bob",
+		ItemStack("mcl_core:diamond 1"), "This order has changed")
+
+	-- Success side: the predicate is a pure read, fill_from_stack returns
+	-- a TABLE (so `type(r) == 'table'` works for every caller).
+	local ok_stack = ItemStack("mcl_core:diamond 2")
+	local can, why = smp_orders.can_take_stack(id_o, "bob", ok_stack)
+	eq(can, true, "OR-2 predicate accepts a deliverable stack")
+	eq(why, nil, "OR-2 predicate gives no reason on success")
+	eq(ok_stack:get_count(), 2, "OR-2 predicate leaves the stack alone")
+	local res = smp_orders.fill_from_stack(id_o, "bob", ok_stack)
+	eq(type(res), "table", "OR-2 success value is a table (contract in the header)")
+	eq(res.accepted, 2, "OR-2 accepted whole stack")
+	eq(res.remaining, 0, "OR-2 remaining 0")
+	eq(res.payout, 2 * 5000, "OR-2 paid the order unit price")
+	eq(ok_stack:get_count(), 0, "OR-2 whole stack consumed on success")
+
+	-- The contract stays written down where the callers will read it.
+	local fh = io.open(ROOT .. "/friedcake/mods/smp_orders/routing.lua", "r")
+	ok(fh ~= nil, "OR-2 routing.lua readable")
+	if fh then
+		local src = fh:read("*a")
+		fh:close()
+		ok(src:find("REFUSAL is `nil, reason_string`", 1, true) ~= nil,
+			"OR-2 header states the refusal contract verbatim")
+		ok(src:find("Test `type(r) == 'table'`", 1, true) ~= nil,
+			"OR-2 header states the success test verbatim")
+		ok(src:find("smp_orders.can_take_stack(order, name, stack)", 1, true) ~= nil,
+			"OR-2 header exports can_take_stack")
+	end
+end
+
+print("== OR-3: absorb_listing pays the listing's own price ==")
+do
+	local olive = make_player("olive")
+	seed("olive", 1000000)
+	local pat = make_player("pat")
+	seed("pat", 0)
+	local old_lab = smp_orders.au.listings_at_or_below
+	local old_con = smp_orders.au.consume_listing
+	-- A listing of 3 items for 1000 cents total ($10): floor(1000/3)×3 is
+	-- 999, so the old code underpaid the seller by a cent. The order pays
+	-- 400 per item, so the listing is at-or-below on the unit price.
+	local l3 = { id = "L1000", seller = "pat", stack = "mcl_core:diamond 3",
+	             count = 3, price = 1000, unit_price = 333 }
+	local consumed = {}
+	local served = false
+	smp_orders.au.listings_at_or_below = function(key, unit)
+		if not served and key == key_diamond and unit == 400 then
+			served = true
+			return { l3 }
+		end
+		return {}
+	end
+	smp_orders.au.consume_listing = function(lid, buyer, price)
+		consumed[#consumed + 1] = { id = lid, buyer = buyer, price = price }
+		return true
+	end
+	advance()
+	local pat0 = money("pat")
+	local id_o3 = smp_orders.create("olive", key_diamond, 3, 400)
+	ok(id_o3 ~= nil, "OR-3 order created")
+	local o3 = smp_orders.get_order(id_o3)
+	eq(o3.delivered, 3, "OR-3 order filled by the sweep")
+	eq(money("pat") - pat0, 1000, "OR-3 seller receives 1000, not floor(1000/3)×3 = 999")
+	eq(consumed[1] and consumed[1].price, 1000, "OR-3 consume_listing acknowledged 1000")
+	eq(consumed[1] and consumed[1].buyer, "olive", "OR-3 buyer recorded for f03")
+	eq(o3.escrow, 3 * 400 - 1000, "OR-3 escrow debited by the listing price")
+	eq(o3.state, "filled", "OR-3 order filled")
+	-- Guard rails: the at-or-below check stays on the unit price, and
+	-- the total can never exceed the escrow (R2).
+	advance()
+	local id_g = smp_orders.create("olive", key_diamond, 3, 400)
+	ok(id_g ~= nil, "OR-3 guard-rail order created")
+	local og = smp_orders.get_order(id_g)
+	local pat1 = money("pat")
+	local l_over = { id = "LOVER", seller = "pat", stack = "mcl_core:diamond 3",
+	                 count = 3, price = 1500, unit_price = 500 }
+	eq(smp_orders.absorb_listing(og, l_over), false,
+		"OR-3 implied unit price above the order's price is refused")
+	eq(og.delivered, 0, "OR-3 refused listing delivered nothing")
+	eq(money("pat"), pat1, "OR-3 refused listing paid nothing")
+	local l_over_escrow = { id = "LESC", seller = "pat", stack = "mcl_core:diamond 3",
+	                        count = 3, price = 3 * 400 + 1, unit_price = 400 }
+	eq(smp_orders.absorb_listing(og, l_over_escrow), false,
+		"OR-3 total beyond escrow is refused")
+	eq(money("pat"), pat1, "OR-3 escrow-guard paid nothing")
+	eq(#consumed, 1, "OR-3 only the good listing was consumed")
+	smp_orders.au.listings_at_or_below = old_lab
+	smp_orders.au.consume_listing = old_con
+end
+
 print("== commands: /orders, /order [search], /orderadmin ==")
 do
 	ok(commands["orders"] ~= nil, "/orders registered")
@@ -1536,6 +1801,70 @@ do
 	local plain2 = ItemStack("mcl_armor:helmet_netherite")
 	local acc_r = smp_orders.deliver(bob, id_e, { plain2 }, ench_reload.version)
 	eq(acc_r, nil, "T8 holds after reload")
+end
+
+print("== OR-1: write-through survives a crash before save_dirty ==")
+do
+	-- A crash drops every in-memory structure and the dirty set without
+	-- save_dirty() ever running. Everything that moved money must already
+	-- be in mod storage because insert/apply_delivery/payout/refund/
+	-- cancel write through with save_one() (S04/OR-1).
+	local trent = make_player("trent")
+	seed("trent", 1000000)
+	advance()
+	local id1 = smp_orders.create("trent", key_diamond, 4, 5000)
+	ok(id1 ~= nil, "OR-1 order created")
+	local escrow1 = 4 * 5000
+	eq(money("trent"), 1000000 - escrow1, "OR-1 escrow taken at creation")
+
+	local o = smp_orders.get_order(id1)
+	local acc = smp_orders.deliver(bob, id1,
+		{ ItemStack("mcl_core:diamond 2") }, o.version)
+	eq(acc, 2, "OR-1 partial delivery accepted")
+	local ver_after = o.version
+
+	-- CRASH: no save_dirty(), in-memory state gone.
+	smp_orders.db.orders = {}
+	smp_orders.db.by_buyer = {}
+	smp_orders.db.by_key = {}
+	smp_orders.db.dirty = {}
+	smp_orders.db.next_id = 1
+	smp_orders.load_all()
+
+	local r = smp_orders.get_order(id1)
+	ok(r ~= nil, "OR-1 order survived the crash")
+	if r then
+		eq(r.state, "open", "OR-1 state survived the crash")
+		eq(r.delivered, 2, "OR-1 delivered survived the crash")
+		eq(r.version, ver_after, "OR-1 version survived the crash")
+		eq(r.escrow, escrow1 - 2 * 5000, "OR-1 escrow survived the payout")
+		eq(r.suppliers[bob:get_player_name()], 2, "OR-1 suppliers survived")
+	end
+
+	-- Cancel, then crash again before any flush.
+	local before = money("trent")
+	local refunded = smp_orders.cancel(r, "trent")
+	ok(refunded ~= nil, "OR-1 cancel refunded " .. tostring(refunded))
+	eq(money("trent") - before, escrow1 - 2 * 5000, "OR-1 refund credited")
+
+	smp_orders.db.orders = {}
+	smp_orders.db.by_buyer = {}
+	smp_orders.db.by_key = {}
+	smp_orders.db.dirty = {}
+	smp_orders.db.next_id = 1
+	smp_orders.load_all()
+
+	local r2 = smp_orders.get_order(id1)
+	ok(r2 ~= nil, "OR-1 order survived the second crash")
+	if r2 then
+		eq(r2.state, "cancelled", "OR-1 cancel survived the crash")
+		eq(r2.escrow, 0, "OR-1 escrow zeroed by the refund")
+	end
+	local before2 = money("trent")
+	local again, why = smp_orders.cancel(r2, "trent")
+	eq(again, nil, "OR-1 second cancel refuses (state not open)")
+	eq(why, "This order has changed", "OR-1 second cancel reason")
+	eq(money("trent"), before2, "OR-1 refused cancel moved no money")
 end
 
 print("== config: orders.sorts (O2) ==")

@@ -122,3 +122,33 @@ the comment says.
 - Order keys come from `smp_items.key(ItemStack(name), "M1")`, so the
   meta hash is always `"0"`. Rebuilding at collection time (`stack_from_key`)
   therefore loses nothing.
+
+## Status (2026-09-27)
+
+Branch `agent/sec-s04-orders` (worktree `coconut-sec-s04`). Code only
+under `friedcake/mods/smp_orders/**` + `dev-tests/test_orders.lua` +
+`smp_orders/test.lua`; §10 records in `spec/features/f04-orders.md`.
+
+| ID | Outcome | Where |
+|----|---------|-------|
+| OR-1 | FIXED | `orders.lua` `save_one`/`reserve_id` write-through; `escrow.lua` record-before-money; `routing.lua` create reordered, collect/cancel save; crash test `== OR-1 … ==` in `dev-tests/test_orders.lua` |
+| OR-2 | FIXED | `routing.lua` header contract verbatim + `can_take_stack` export; `fill_from_stack` delegates validation; shape unchanged for S03/S05 callers; tests in `dev-tests` (`== OR-2 … ==`) and `smp_orders/test.lua` |
+| OR-3 | FIXED | `routing.lua` `absorb_listing` pays `l.price` (fallback `unit × count`); test `== OR-3 … ==` |
+| OR-4 | FIXED (PROPOSED edge) | `delivery.lua` version pinned only in `delivery.open`; stale `delivery.show` closes the session and returns parked items (PROPOSED, justified in f04 §10); test `== OR-4 … ==` |
+| SE-4 / CB-1 | FIXED | `delivery.lua` `allow_put` soft `smp_combat.is_tagged` check (covers drag + shift-click via `IMoveAction::apply` on the destination); `mod.conf` `optional_depends += smp_combat` (no cycle); test `== SE-4 / CB-1 … ==` |
+| Harness | FIXED (incidental) | `dev-tests/test_orders.lua` `find_root()` probed `friedcake/modpack.conf` (does not exist; real path `friedcake/mods/modpack.conf`), so worktree runs silently loaded the main checkout's `smp_orders`. Probe corrected. |
+
+**Tests.** `luajit friedcake/dev-tests/test_orders.lua` → `passed=780
+failed=0 ALL OK` (baseline 598). `test_engine_apis.lua` → `passed=16`.
+Full `dev-tests/` from the worktree root: 24/27 green; the 3 failures are
+pre-existing and untouched (`test_config_mirror.lua` mirror rows,
+`test_enderchest.lua` `T8 modpack.conf readable`, `test_integration.lua`
+`cannot open modpack.conf`).
+
+**Hand-offs.** S03 (AH-1) / S05 (AX-1): `fill_from_stack` keeps its
+`{accepted,payout,remaining} | nil, reason` shape — only the caller-side
+`type(r) == 'table'` test belongs to those briefs; no `smp_ah` edit was
+needed from here. Engine note: `ModStorage::setString` commits per
+statement on the sqlite3 backend (new worlds) but buffers until
+`endSave` on the legacy `files` backend — surfaced as an integrator note
+in f04 §10, not edited in `spec/shared/`.

@@ -7,8 +7,12 @@
 -- smp_store tables, but smp_store exposes no order API and feature mods
 -- must not edit it. Until the integrator lands an orders table there
 -- (see f04 §10 Proposed shared changes), smp_orders persists orders in
--- its own mod-storage namespace with the same dirty-flag/flush pattern
--- smp_store uses. Money and ledger always go through smp_store.api.
+-- its own mod-storage namespace. Money and ledger always go through
+-- smp_store.api. Since S04/OR-1, ECONOMIC transitions (create, deliver,
+-- payout, refund, cancel, expire, collect) write through with
+-- save_one() in the same callback as the money move; the batched
+-- dirty-flag flush (save_dirty) only picks up fields marked dirty by
+-- non-economic paths.
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -69,17 +73,55 @@ function smp_orders.mark_dirty(id)
 	db.dirty[id] = true
 end
 
--- Insert a new order record. `rec` must carry buyer, key, template,
--- ench, qty, unit_price and escrow; the rest is defaulted. Returns id.
-function smp_orders.insert_order(rec)
+-- S04/OR-1 write-through: persist ONE order record right now, instead of
+-- waiting for the batched flush.
+--
+-- Money already writes through smp_store immediately (backends/
+-- mod_storage.lua: "mod_storage writes are immediate; nothing to
+-- flush"), so an order record that lags it by up to flush_interval is a
+-- split-brain: a hard crash inside that window leaves escrow and the
+-- record disagreeing, and the buyer can then cancel/refund money that
+-- was already paid out. `set_string` is a plain synchronous write, so
+-- this adds no yield (shared §2.3).
+--
+-- Callers write the record BEFORE moving money, so a crash inside the
+-- remaining gap leaves a bounded loss (escrow debited, credit not yet
+-- written) and never a dupe (credit written, escrow not yet debited).
+--
+-- The batched save_dirty() is kept for fields marked dirty by other
+-- paths (and by tests); economic transitions never rely on it.
+function smp_orders.save_one(o)
+	if type(o) ~= "table" or type(o.id) ~= "number" then return false end
+	storage():set_string("order:" .. o.id, core.write_json(o))
+	db.dirty[o.id] = nil
+	return true
+end
+
+-- S04/OR-1: allocate an id and persist next_id WITHOUT creating the
+-- record, so create() can take the escrow first (see routing.lua). Ids
+-- stay dense; a crash between reserve and insert leaves a harmless gap.
+function smp_orders.reserve_id()
 	local id = db.next_id
 	db.next_id = id + 1
+	storage():set_string("next_id", tostring(db.next_id))
+	return id
+end
+
+-- Insert a new order record. `rec` must carry buyer, key, template,
+-- ench, qty, unit_price and escrow; the rest is defaulted. `rec.id` may
+-- be pre-set from reserve_id(). Returns id. The record is written
+-- through immediately (S04/OR-1).
+function smp_orders.insert_order(rec)
+	local id = rec.id or smp_orders.reserve_id()
 	rec.id = id
 	normalize(rec)
+	if id >= db.next_id then
+		db.next_id = id + 1
+		storage():set_string("next_id", tostring(db.next_id))
+	end
 	db.orders[id] = rec
 	index_add(rec)
-	smp_orders.mark_dirty(id)
-	storage():set_string("next_id", tostring(db.next_id))
+	smp_orders.save_one(rec)
 	return id
 end
 
@@ -91,6 +133,8 @@ end
 -- Persistence
 ----------------------------------------------------------------------
 
+-- Batched flush. Economic transitions write through with save_one()
+-- (S04/OR-1); this only picks up records left dirty by other paths.
 function smp_orders.save_dirty()
 	local st = storage()
 	for id in pairs(db.dirty) do
@@ -265,7 +309,7 @@ function smp_orders.expire_due(now)
 			smp_orders.escrow.refund(o, refund)
 			o.state = "expired"
 			o.version = o.version + 1
-			smp_orders.mark_dirty(o.id)
+			smp_orders.save_one(o)   -- S04/OR-1: state durable with the refund
 			expired = expired + 1
 			smp_orders.notify_buyer(o, S("Your order for @1 expired, @2 refunded",
 				smp_orders.display.order_name(o),
