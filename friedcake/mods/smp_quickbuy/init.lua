@@ -32,13 +32,22 @@ dofile(modpath .. "/buy.lua")
 dofile(modpath .. "/formspec.lua")
 
 local F = smp_quickbuy.formspec
+local MENU = F.MENU   -- one formname for the whole menu (see formspec.lua)
 
 ----------------------------------------------------------------------
 -- Small helpers
 ----------------------------------------------------------------------
 
-local function show(player, formname, formspec)
-	core.show_formspec(player:get_player_name(), formname, formspec)
+local function chat(player, msg)
+	core.chat_send_player(player:get_player_name(), msg)
+end
+
+local function item_label(key)
+	local def = core.registered_items and core.registered_items[key]
+	if def and type(def.description) == "string" and def.description ~= "" then
+		return def.description
+	end
+	return key
 end
 
 -- Parse a quantity input. Plain integers, plus the k/m/b suffixes accepted
@@ -65,23 +74,80 @@ local function parse_qty(text)
 end
 
 ----------------------------------------------------------------------
--- Menu openers
+-- Menu state
+--
+-- Every screen (main / entries / add / warn) is shown under ONE formname.
+-- Luanti drops any field submission whose formname differs from the last
+-- formname the server sent ("possible exploitation attempt"), so switching
+-- formnames mid-menu caused rapid clicks — and even a single click followed
+-- by a re-open — to be silently discarded. A single formname never changes,
+-- so the engine check always passes; the current screen is tracked here in
+-- the session instead.
 ----------------------------------------------------------------------
 
-local function open_main(player)
-	local name = player:get_player_name()
-	local session = smp_core.open_session(name, F.MAIN, { page = 1, prices = {} })
-	session.prices = {}   -- force a fresh live price lookup on this redraw
-	show(player, F.MAIN, F.main(player, session))
+local function session_for(name, screen)
+	return smp_core.open_session(name, MENU, { screen = screen })
 end
 
-local function open_add(player)
+local function show(player, session)
+	core.show_formspec(player:get_player_name(), MENU, F.render(player, session))
+end
+
+local function goto_main(player)
 	local name = player:get_player_name()
-	local held = (player.get_wielded_item and player:get_wielded_item()) or nil
-	local key = held and held:get_name() or nil
-	if not key or key == "" then
-		core.chat_send_player(name, S("Hold the item you want to add."))
-		open_main(player)
+	local s = session_for(name, "main")
+	s.screen = "main"
+	s.prices = {}   -- force a fresh live price lookup on this redraw
+	show(player, s)
+end
+
+local function goto_entries(player)
+	local name = player:get_player_name()
+	local s = session_for(name, "entries")
+	s.screen = "entries"
+	show(player, s)
+end
+
+local function goto_warn(player, entry_index, shown_price, cost)
+	local name = player:get_player_name()
+	local s = session_for(name, "warn")
+	s.screen = "warn"
+	s.entry_index = entry_index
+	s.shown_price = shown_price
+	s.cost = cost
+	show(player, s)
+end
+
+-- Add (or replace) one entry, with capacity feedback. Returns true on success.
+local function commit_entry(player, key, ench, qty, edit_index)
+	local name = player:get_player_name()
+	if edit_index then
+		local cur = smp_quickbuy.entries.get(name, edit_index)
+		if not cur then return false end
+		smp_quickbuy.entries.set(name, edit_index,
+			{ key = cur.key, ench = cur.ench, qty = qty })
+		return true
+	end
+	local ok, err = smp_quickbuy.entries.add(name,
+		{ key = key, ench = ench, qty = qty })
+	if not ok and err == "capacity" then
+		chat(player, S("You reached the Quick Buy entry limit."))
+		return false
+	end
+	if ok then chat(player, S("Added @1 to Quick Buy.", item_label(key))) end
+	return ok and true or false
+end
+
+-- Open the "add current item" flow. One item in hand → add it directly and
+-- return to the main panel (no prompt). More than one → ask for a quantity,
+-- capped at the number actually held.
+local function goto_add(player)
+	local name = player:get_player_name()
+	local held = player:get_wielded_item()
+	local key = held and held:get_name() or ""
+	if key == "" then
+		chat(player, S("Hold the item you want to add."))
+		goto_main(player)
 		return
 	end
 
@@ -91,18 +157,39 @@ local function open_add(player)
 		if type(e) == "table" then ench = e end
 	end
 
-	local session = smp_core.open_session(name, F.ADD_QTY, {})
-	session.key        = key
-	session.ench       = ench
-	session.held_count = (held.get_count and held:get_count()) or 1
-	session.edit_index = nil
-	show(player, F.ADD_QTY, F.add_qty(session))
+	local count = (held.get_count and held:get_count()) or 1
+	if count <= 1 then
+		commit_entry(player, key, ench, 1, nil)
+		goto_main(player)
+		return
+	end
+
+	local s = session_for(name, "add")
+	s.screen = "add"
+	s.key = key
+	s.ench = ench
+	s.qty_default = count
+	s.qty_max = count
+	s.edit_index = nil
+	show(player, s)
 end
 
-local function open_entries(player)
+-- Open the "How many?" prompt for an existing entry (Edit button).
+local function goto_edit(player, ei)
 	local name = player:get_player_name()
-	smp_core.open_session(name, F.ENTRIES, {})
-	show(player, F.ENTRIES, F.entries(player))
+	local entry = smp_quickbuy.entries.get(name, ei)
+	if not entry then
+		goto_entries(player)
+		return
+	end
+	local s = session_for(name, "add")
+	s.screen = "add"
+	s.key = entry.key
+	s.ench = entry.ench
+	s.qty_default = entry.qty
+	s.qty_max = nil   -- editing an existing listing: no held-stack cap
+	s.edit_index = ei
+	show(player, s)
 end
 
 -- Called from the main panel (and again from the warn screen on confirm).
@@ -111,170 +198,132 @@ local function try_buy(player, entry_index, shown_price, confirmed)
 	local r, a, b, c = smp_quickbuy.buy.entry(player, entry_index, shown_price, confirmed)
 
 	if r == "warn" then
-		-- a = entry_index, b = shown_price, c = live cost. Open the
-		-- re-confirm screen (Review Order pattern, §4.7).
-		local session = smp_core.open_session(name, F.WARN, {})
-		session.entry_index = a
-		session.shown_price = b
-		session.cost        = c
-		show(player, F.WARN, F.warn(player, session))
+		-- a = entry_index, b = shown_price, c = live cost.
+		goto_warn(player, a, b, c)
 		return
 	end
 
 	-- Success or refusal both redraw the main panel so the prices shown are
 	-- always the live ones (a refusal message has already been sent).
-	open_main(player)
+	goto_main(player)
 end
 
 ----------------------------------------------------------------------
--- Field handlers (client fields are untrusted; every action re-validates)
+-- Screen handlers (client fields are untrusted; every action re-validates)
 ----------------------------------------------------------------------
 
 local function on_main(player, fields)
 	local name = player:get_player_name()
-	if fields.quit then
-		smp_core.close_session(name, F.MAIN)
-		return true
-	end
-	local session = smp_core.get_session(name, F.MAIN)
-	if not session then return true end
+	local s = smp_core.get_session(name, MENU)
+	if not s then return end
 
-	if fields.add then open_add(player); return true end
-	if fields.your_entries then open_entries(player); return true end
+	if fields.add then goto_add(player); return end
+	if fields.your_entries then goto_entries(player); return end
 	if fields.prev then
-		session.page = math.max(1, (session.page or 1) - 1)
-		show(player, F.MAIN, F.main(player, session)); return true
+		s.page = math.max(1, (s.page or 1) - 1)
+		show(player, s); return
 	end
 	if fields.next then
-		session.page = (session.page or 1) + 1
-		show(player, F.MAIN, F.main(player, session)); return true
+		s.page = (s.page or 1) + 1
+		show(player, s); return
 	end
 
 	for fname, _ in pairs(fields) do
 		local idx = fname:match("^entry_(%d+)$")
 		if idx then
 			local i = tonumber(idx)
-			local shown = session.prices and session.prices[i]
+			local shown = s.prices and s.prices[i]
 			try_buy(player, i, shown, false)
-			return true
+			return
 		end
 	end
-	return true
 end
 
 local function on_entries(player, fields)
 	local name = player:get_player_name()
-	if fields.quit then
-		smp_core.close_session(name, F.ENTRIES)
-		return true
-	end
-	if not smp_core.get_session(name, F.ENTRIES) then return true end
+	local s = smp_core.get_session(name, MENU)
+	if not s then return end
 
 	if fields.back then
-		smp_core.close_session(name, F.ENTRIES)
-		open_main(player)
-		return true
+		goto_main(player)
+		return
 	end
 
 	for fname, _ in pairs(fields) do
 		local ri = tonumber(fname:match("^remove_(%d+)$"))
 		if ri then
 			smp_quickbuy.entries.remove(name, ri)
-			show(player, F.ENTRIES, F.entries(player))
-			return true
+			show(player, s)
+			return
 		end
 		local ei = tonumber(fname:match("^edit_(%d+)$"))
 		if ei then
-			local entry = smp_quickbuy.entries.get(name, ei)
-			if entry then
-				local s = smp_core.open_session(name, F.ADD_QTY, {})
-				s.key        = entry.key
-				s.ench       = entry.ench
-				s.held_count = entry.qty
-				s.edit_index = ei
-				show(player, F.ADD_QTY, F.add_qty(s))
-			end
-			return true
+			goto_edit(player, ei)
+			return
 		end
 	end
-	return true
 end
 
-local function on_add_qty(player, fields)
+local function on_add(player, fields)
 	local name = player:get_player_name()
-	if fields.quit then
-		smp_core.close_session(name, F.ADD_QTY)
-		open_main(player)
-		return true
-	end
-	local session = smp_core.get_session(name, F.ADD_QTY)
-	if not session then return true end
+	local s = smp_core.get_session(name, MENU)
+	if not s then return end
 
 	if fields.cancel then
-		smp_core.close_session(name, F.ADD_QTY)
-		open_main(player)
-		return true
+		goto_main(player)
+		return
 	end
 
 	if fields.add then
 		local qty = parse_qty(fields.amount)
 		if not qty then
-			core.chat_send_player(name, S("Enter a whole number of at least 1."))
-			show(player, F.ADD_QTY, F.add_qty(session))
-			return true
+			chat(player, S("Enter a whole number of at least 1."))
+			show(player, s)
+			return
 		end
-		if session.edit_index then
-			local cur = smp_quickbuy.entries.get(name, session.edit_index)
-			if cur then
-				smp_quickbuy.entries.set(name, session.edit_index,
-					{ key = cur.key, ench = cur.ench, qty = qty })
-			end
-		else
-			local ok, err = smp_quickbuy.entries.add(name,
-				{ key = session.key, ench = session.ench, qty = qty })
-			if not ok and err == "capacity" then
-				core.chat_send_player(name, S("You reached the Quick Buy entry limit."))
-			end
+		if s.qty_max and qty > s.qty_max then
+			qty = s.qty_max
+			chat(player, S("You only have @1 to add.", smp_core.fmt_qty(s.qty_max)))
 		end
-		smp_core.close_session(name, F.ADD_QTY)
-		open_main(player)
-		return true
+		commit_entry(player, s.key, s.ench, qty, s.edit_index)
+		goto_main(player)
+		return
 	end
-	return true
 end
 
 local function on_warn(player, fields)
 	local name = player:get_player_name()
-	if fields.quit then
-		smp_core.close_session(name, F.WARN)
-		return true
-	end
-	local session = smp_core.get_session(name, F.WARN)
-	if not session then return true end
+	local s = smp_core.get_session(name, MENU)
+	if not s then return end
 
 	if fields.cancel_warn then
-		smp_core.close_session(name, F.WARN)
-		open_main(player)
-		return true
+		goto_main(player)
+		return
 	end
 	if fields.confirm then
-		local idx = session.entry_index
-		local shown = session.shown_price
-		smp_core.close_session(name, F.WARN)
+		local idx = s.entry_index
+		local shown = s.shown_price
 		try_buy(player, idx, shown, true)   -- confirmed: guard bypassed
-		return true
+		return
 	end
-	return true
 end
 
 core.register_on_player_receive_fields(function(player, formname, fields)
-	if type(formname) ~= "string" or formname:sub(1, 13) ~= "smp_quickbuy:" then
+	if formname ~= MENU then return false end
+	local name = player:get_player_name()
+	local s = smp_core.get_session(name, MENU)
+	if not s then return false end
+
+	if fields.quit then
+		smp_core.close_session(name, MENU)
 		return false
 	end
-	if formname == F.MAIN then on_main(player, fields)
-	elseif formname == F.ENTRIES then on_entries(player, fields)
-	elseif formname == F.ADD_QTY then on_add_qty(player, fields)
-	elseif formname == F.WARN then on_warn(player, fields)
+
+	local screen = s.screen or "main"
+	if screen == "main" then on_main(player, fields)
+	elseif screen == "entries" then on_entries(player, fields)
+	elseif screen == "add" then on_add(player, fields)
+	elseif screen == "warn" then on_warn(player, fields)
 	end
 	return false
 end)
@@ -289,7 +338,7 @@ core.register_chatcommand("shop", {
 	func = function(player_name, _)
 		local player = core.get_player_by_name(player_name)
 		if not player then return false, S("Player not found.") end
-		open_main(player)
+		goto_main(player)
 		return true
 	end,
 })
