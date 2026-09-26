@@ -528,6 +528,22 @@ end
 -- (f03 §4.5, all OBSERVED except the confirm control itself)
 ----------------------------------------------------------------------
 
+--- S03/AH-2: public entry points take a player NAME. An ObjectRef (or any
+-- non-string) would reach core.get_player_by_name / chat_send_player, whose
+-- luaL_checkstring raises — fatal inside a callback (S05/QB-1). Refuse
+-- quietly instead: `refuse()` itself would chat to the bad name.
+local function bad_name(pname)
+	return type(pname) ~= "string" or pname == ""
+end
+
+--- Soft combat check (smp_combat is optional): a tagged player may not park
+-- items in the insert grid, where they would dodge the combat-log drop
+-- (S02 SE-4 / S07 CB-1).
+local function tagged(pname)
+	return smp_combat and type(smp_combat.is_tagged) == "function"
+		and smp_combat.is_tagged(pname) and true or false
+end
+
 --- Owner-only detached inventory for `Insert Item` (shared §2.6 R5).
 local function make_insert_callbacks(pname)
 	local function owner(player)
@@ -552,6 +568,12 @@ local function make_insert_callbacks(pname)
 			if listname ~= "insert" then return 0 end
 			if stack:is_empty() then return 0 end
 			if occupied(inv) then return 0 end
+			-- S03/AH-4: after `take_inserted` the grid stays in place but the
+			-- stack lives in the flow; anything put here now would be wiped by
+			-- restore_inserted / commit_listing. Only the insert stage accepts.
+			local f = smp_ah._flows[pname]
+			if not f or f.stage ~= "insert" then return 0 end
+			if tagged(pname) then return 0 end
 			return stack:get_count()
 		end,
 		allow_take = function(inv, listname, index, stack, player)
@@ -635,6 +657,9 @@ function smp_ah.restore_inserted(pname)
 	local inv = core.get_detached_inventory and
 		core.get_detached_inventory(insert_inv_name(pname))
 	if not inv then return false end
+	for _, stray in ipairs(inv:get_list("insert") or {}) do
+		if not stray:is_empty() then return_stack(pname, stray) end
+	end
 	inv:set_list("insert", {})
 	local left = inv:add_item("insert", f.stack)
 	if left:is_empty() then
@@ -782,7 +807,7 @@ end
 -- created (shared §2.3).
 -- @return true | nil, reason_code
 function smp_ah.validate_listing(pname, stack, total_price)
-	if not pname or pname == "" then return nil, "offline" end
+	if bad_name(pname) then return nil, "offline" end
 	if not stack or stack:is_empty() then return nil, "empty" end
 	if not keys.key(stack, "M2") then return nil, "empty" end
 	total_price = math.floor(tonumber(total_price) or -1)
@@ -896,6 +921,15 @@ function smp_ah.commit_listing(pname)
 		return refuse(pname, err or "unknown")
 	end
 	smp_ah._flows[pname] = nil
+	-- S03/AH-4: return anything left in the grid before it is destroyed.
+	local grid = core.get_detached_inventory and
+		core.get_detached_inventory(insert_inv_name(pname))
+	if grid then
+		for _, stray in ipairs(grid:get_list("insert") or {}) do
+			if not stray:is_empty() then return_stack(pname, stray) end
+		end
+		grid:set_list("insert", {})
+	end
 	if core.remove_detached_inventory then
 		core.remove_detached_inventory(insert_inv_name(pname))
 	end
@@ -924,6 +958,7 @@ end
 --
 -- @return record | nil, reason
 function smp_ah.buy(pname, id, seen_version)
+	if bad_name(pname) then return nil, "offline" end
 	local rec = listings.get(id)
 	if not rec then return refuse(pname, "unknown") end
 	if rec.state ~= "active" or
@@ -994,6 +1029,7 @@ end
 --- Cancel an active listing, or reclaim an expired one. PROPOSED: the
 -- reference server's mechanism was never recorded (V-42).
 function smp_ah.withdraw(pname, id)
+	if bad_name(pname) then return nil, "offline" end
 	local rec = listings.get(id)
 	if not rec then return refuse(pname, "unknown") end
 	if rec.seller ~= pname then return refuse(pname, "not_yours") end

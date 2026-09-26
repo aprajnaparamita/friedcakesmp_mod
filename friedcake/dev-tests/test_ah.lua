@@ -1391,6 +1391,83 @@ section("S3-AH-1s", "the same three cases through /ah sell", function()
 	smp_orders.can_take_stack = nil
 end)
 
+section("S3-AH-2", "public entry points refuse a non-string player", function()
+	wipe()
+	local rec = mk("ah2s", "mcl_core:dirt 1", 100)
+	-- A table stands in for an ObjectRef; the strict harness stubs raise if
+	-- it ever reaches get_player_by_name / chat_send_player.
+	local objref = { get_player_name = function() return "ah2b" end }
+	local ok1, r1, e1 = pcall(smp_ah.buy, objref, rec.id, rec.version)
+	ok(ok1, "S3-AH-2 buy with an ObjectRef does not raise (" .. tostring(r1) .. ")")
+	eq(r1, nil, "S3-AH-2 buy refuses")
+	eq(e1, "offline", "S3-AH-2 buy says offline")
+	eq(listings.get(rec.id).state, "active", "S3-AH-2 the listing is untouched")
+	local ok2, r2 = pcall(smp_ah.withdraw, objref, rec.id)
+	ok(ok2 and r2 == nil, "S3-AH-2 withdraw refuses without raising")
+	local ok3, r3, e3 = pcall(smp_ah.create_listing, 42, H.ItemStack("mcl_core:dirt 1"), 100)
+	ok(ok3 and r3 == nil and e3 == "offline", "S3-AH-2 create_listing refuses a number")
+	local ok4, r4 = pcall(smp_ah.buy, "", rec.id, rec.version)
+	ok(ok4 and r4 == nil, "S3-AH-2 buy refuses an empty name")
+end)
+
+section("S3-AH-4", "the insert grid only accepts items during the insert stage", function()
+	wipe()
+	local ivy = H.player("ivy", { items = { "mcl_core:dirt 2", "mcl_core:stone 5" } })
+	H.set_money("ivy", 0)
+	H.cmd("ah", "ivy", "")
+	H.receive("ivy", "smp_ah:board", { ah_your_items = "" })
+	H.receive("ivy", "smp_ah:your_items", { ah_list = "" })
+	local dinv = H.detached["smp_ah_insert_ivy"]
+	dinv:set_size("insert", 5)
+	local dirt = ivy._inv:get_stack("main", 1)
+	ivy._inv:set_stack("main", 1, H.ItemStack())
+	ok(dinv:simulate_put("insert", 1, dirt, ivy):is_empty(),
+		"S3-AH-4 the insert stage accepts the stack")
+
+	H.receive("ivy", "smp_ah:insert", { ah_price = "" })
+	eq(H.formname("ivy"), "smp_ah:price", "S3-AH-4 on the price prompt")
+	local stone = ivy._inv:get_stack("main", 2)
+	local refused = dinv:simulate_put("insert", 1, stone, ivy)
+	eq(refused:get_count(), 5, "S3-AH-4 the price stage refuses a put (modified client)")
+
+	-- Plant a stray directly (as if a put had slipped through) and back out:
+	-- restore_inserted must return it, not wipe it.
+	ivy._inv:set_stack("main", 2, H.ItemStack())
+	dinv:set_stack("insert", 2, H.ItemStack("mcl_core:stone 5"))
+	H.receive("ivy", "smp_ah:price", { quit = "true" })
+	eq(count_item("ivy", "mcl_core:stone"), 5,
+		"S3-AH-4 a stray in the grid is returned on back-out, not wiped")
+
+	-- Forward again, plant a stray, and confirm: commit_listing returns it.
+	H.receive("ivy", "smp_ah:insert", { ah_price = "" })
+	for i = 1, ivy._inv:get_size("main") do   -- move the stone out again
+		if ivy._inv:get_stack("main", i):get_name() == "mcl_core:stone" then
+			ivy._inv:set_stack("main", i, H.ItemStack())
+		end
+	end
+	H.detached["smp_ah_insert_ivy"]:set_stack("insert", 2, H.ItemStack("mcl_core:stone 5"))
+	H.receive("ivy", "smp_ah:price", { ah_done = "", ah_price = "1" })
+	H.receive("ivy", "smp_ah:confirm_listing", { ah_confirm = "" })
+	eq(#listings.for_seller("ivy"), 1, "S3-AH-4 the listing was created")
+	eq(count_item("ivy", "mcl_core:stone"), 5,
+		"S3-AH-4 a stray in the grid is returned at commit, not destroyed")
+end)
+
+section("S3-SE4", "a combat-tagged player cannot park items in the insert grid", function()
+	wipe()
+	local saved = smp_combat
+	smp_combat = { is_tagged = function(n) return n == "tia" end }
+	local tia = H.player("tia", { items = { "mcl_core:dirt 2" } })
+	H.cmd("ah", "tia", "")
+	H.receive("tia", "smp_ah:board", { ah_your_items = "" })
+	H.receive("tia", "smp_ah:your_items", { ah_list = "" })
+	local dinv = H.detached["smp_ah_insert_tia"]
+	dinv:set_size("insert", 5)
+	local left = dinv:simulate_put("insert", 1, H.ItemStack("mcl_core:dirt 2"), tia)
+	eq(left:get_count(), 2, "S3-SE4 the put is refused while tagged")
+	smp_combat = saved
+end)
+
 
 ----------------------------------------------------------------------
 
