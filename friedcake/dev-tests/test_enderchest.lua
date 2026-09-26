@@ -16,12 +16,12 @@ local function find_root()
 	if prefix and prefix ~= "" then
 		return (prefix:gsub("/+$", ""))
 	end
-	local probe = io.open("friedcake/modpack.conf", "r")
+	local probe = io.open("friedcake/mods/modpack.conf", "r")
 	if probe then
 		probe:close()
 		return "."
 	end
-	return "/Volumes/Dara/dev/coconut"
+	error("cannot locate the repo root: run from the repo root or pass an absolute script path")
 end
 
 local ROOT = find_root()
@@ -468,7 +468,7 @@ eq(allow(carl, "put", detached, { listname = "smp_enderchest" }), nil,
 -- T8 — modpack wiring
 ----------------------------------------------------------------------
 
-local f = io.open(ROOT .. "/friedcake/modpack.conf", "r")
+local f = io.open(ROOT .. "/friedcake/mods/modpack.conf", "r")
 ok(f ~= nil, "T8 modpack.conf readable")
 if f then
 	local content = f:read("*a")

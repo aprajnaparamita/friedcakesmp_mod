@@ -21,7 +21,7 @@ local function find_root()
 	if prefix and prefix ~= "" then
 		return (prefix:gsub("/+$", ""))
 	end
-	local probe = io.open("friedcake/modpack.conf", "r")
+	local probe = io.open("friedcake/mods/modpack.conf", "r")
 	if probe then
 		probe:close()
 		return "."

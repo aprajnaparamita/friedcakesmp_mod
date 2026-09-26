@@ -113,7 +113,7 @@ local script_path = (arg and arg[0]) or "friedcake/dev-tests/test_integration.lu
 local HERE = script_path:match("^(.*)[/\\][^/\\]+$") or "."
 
 local SURFACE_FILE = HERE .. "/engine_api_surface.txt"
-local MODPACK_FILE = HERE .. "/../modpack.conf"
+local MODPACK_FILE = HERE .. "/../mods/modpack.conf"
 local MODS_ROOT = HERE .. "/../mods"
 
 ---------------------------------------------------------------------------

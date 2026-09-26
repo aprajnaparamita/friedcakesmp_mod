@@ -22,7 +22,7 @@ local function find_root()
 		probe:close()
 		return "."
 	end
-	return "/Volumes/Dara/dev/coconut"
+	error("cannot locate the repo root: run from the repo root or pass an absolute script path")
 end
 
 local ROOT = find_root()
