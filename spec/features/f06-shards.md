@@ -177,6 +177,7 @@ end
 | V-27 | Exact name of the shard balance command |
 | V-60 | Shard shop layout — never opened |
 | V-61 | Are shards awarded while AFK, given the AFK zone was removed? **Closed (D8, 2026-09-24): f16 descoped permanently; no AFK zone will ever exist. `shards.require_activity` stays read, default false, documented inert.** |
+| V-96 | **[NEW]** Should the Shard Potion of Haste stay in the catalogue? A post-overhaul summary says the shard shop is "used strictly for high-tier items like Shard Tools" and that "consumables like totems and golden carrots were removed". The catalogue has no totems or golden carrots, but the Haste potion (§3, 6,000 shards) is a consumable, and §4 marks it LIVE [S9]. The two sources conflict; no change made. Source: user-supplied AI summary of Reddit/YouTube posts, 2026-09-27 — unverified; the summary itself warns it may be wrong. |
 
 ### Fix-wave record (fix brief, 2026-09-25)
 
