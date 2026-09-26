@@ -31,7 +31,9 @@ local function find_root()
 	if prefix and prefix ~= "" then
 		return (prefix:gsub("/+$", ""))
 	end
-	local probe = io.open("friedcake/modpack.conf", "r")
+	-- modpack.conf lives under friedcake/mods/ (it declares the modpack),
+	-- not at friedcake/ itself.
+	local probe = io.open("friedcake/mods/modpack.conf", "r")
 	if probe then
 		probe:close()
 		return "."
@@ -41,6 +43,11 @@ end
 
 local REPO = find_root()
 local MODS = REPO .. "/friedcake/mods/"
+
+----------------------------------------------------------------------
+-- Strict engine stubs (MS-3): raise on non-string player names, matching
+-- luaL_checkstring behaviour. This catches QB-1, SH-1, EC-2 type bugs.
+----------------------------------------------------------------------
 
 local failures = {}
 local function check(cond, msg)
@@ -513,6 +520,26 @@ local dropped = {}          -- items that hit the ground
 local shown_formspecs = {}  -- [player] = { formname, formspec }
 local closed_formspecs = {}
 
+----------------------------------------------------------------------
+-- Strict engine stubs (MS-3): raise on non-string player names, matching
+-- luaL_checkstring behaviour. These wrap the harness's own functions.
+----------------------------------------------------------------------
+
+local function strict_get_player_by_name(name)
+	if type(name) ~= "string" then
+		error("bad argument #1 to 'get_player_by_name' (string expected, got " .. type(name) .. ")")
+	end
+	return players[name]
+end
+
+local function strict_chat_send_player(name, msg)
+	if type(name) ~= "string" then
+		error("bad argument #1 to 'chat_send_player' (string expected, got " .. type(name) .. ")")
+	end
+	_G.__chat = _G.__chat or {}
+	_G.__chat[#_G.__chat + 1] = { name = name, msg = msg }
+end
+
 local function make_player(name)
 	local inv = new_inv()
 	inv:set_size("main", 36)
@@ -622,10 +649,7 @@ core = {
 			print(string.format("  [%s] %s", level, tostring(msg)))
 		end
 	end,
-	chat_send_player = function(name, msg)
-		_G.__chat = _G.__chat or {}
-		_G.__chat[#_G.__chat + 1] = { name = name, msg = msg }
-	end,
+	chat_send_player = strict_chat_send_player,
 
 	serialize = ser,
 	deserialize = deser,
@@ -695,7 +719,7 @@ core = {
 	register_on_dignode = function() end,
 	register_on_placenode = function() end,
 
-	get_player_by_name = function(name) return players[name] end,
+	get_player_by_name = strict_get_player_by_name,
 	get_connected_players = function()
 		local out = {}
 		for _, p in pairs(players) do out[#out + 1] = p end
@@ -930,12 +954,14 @@ local function drain_chat()
 end
 
 local function open_sell(player_name)
+	smp_sell._reset_sell_cooldown(player_name)
 	local ok = commands.sell.func(player_name, "")
 	drain_chat()
 	return ok
 end
 
 local function confirm(player_name)
+	smp_sell._reset_sell_cooldown(player_name)
 	fire_fields(player_name, smp_sell.menu.FORMNAME, { confirm = "" })
 	return drain_chat()
 end
@@ -1553,29 +1579,50 @@ do
 end
 
 ----------------------------------------------------------------------
--- T10: selling while combat-tagged succeeds
+-- T10: selling while combat-tagged — container refuses, hand/all work
 ----------------------------------------------------------------------
 
 print("\n== T10: combat ==")
 
 do
-	-- A stubbed smp_combat that tags everyone. smp_sell must never consult
-	-- it: f02 §4.6 [S3] and f10 T3 both say /sell works while tagged.
+	-- A stubbed smp_combat that tags everyone.
+	-- SE-4 (S02/SE-4): the sell CONTAINER refuses puts while tagged to prevent
+	-- the combat-log escape (S07/CB-1). But /sell hand and /sell all sell
+	-- immediately and MUST still work while tagged.
 	smp_combat = {
 		is_tagged = function() return true end,
 		blocked_commands = { sell = true, worth = true },   -- f10 MUST NOT do this
 	}
 	set_money("alice", 0)
 	alice._inv:set_list("main", {})
-	open_sell("alice")
-	put_in_container("alice", ItemStack("mcl_mobitems:bone 4"), 1)
-	local msgs = confirm("alice")
-	eq(money("alice"), 4000, "T10 selling while combat-tagged succeeds")
-	check(smp_sell.ALLOWED_IN_COMBAT.sell == true,
-		"T10 smp_sell publishes its combat whitelist for f10")
 
-	local ok, out = commands.worth.func("alice", "mcl_mobitems:bone")
-	check(ok and out:find("Bone", 1, true) ~= nil, "T10 /worth works while tagged")
+	-- Container should REFUSE puts while tagged (SE-4)
+	open_sell("alice")
+	local put_result = put_in_container("alice", ItemStack("mcl_mobitems:bone 4"), 1)
+	eq(put_result, false, "T10 container refuses put while tagged")
+	-- Confirm should not sell anything (container is empty)
+	local msgs = confirm("alice")
+	eq(money("alice"), 0, "T10 container confirms sells nothing while tagged")
+
+	-- /sell hand MUST work while tagged (sells immediately, no container)
+	alice._inv:set_stack("main", 1, ItemStack("mcl_mobitems:bone 4"))
+	smp_sell._reset_sell_cooldown("alice")
+	local ok, hand_msgs = commands.sell.func("alice", "hand")
+	eq(ok, true, "T10 /sell hand works while tagged")
+	eq(money("alice"), 4000, "T10 /sell hand pays while tagged")
+
+	-- /sell all MUST work while tagged
+	alice._inv:set_list("main", {})
+	alice._inv:set_stack("main", 1, ItemStack("mcl_mobitems:bone 4"))
+	smp_sell._reset_sell_cooldown("alice")
+	local ok2, all_msgs = commands.sell.func("alice", "all")
+	eq(ok2, true, "T10 /sell all works while tagged")
+	eq(money("alice"), 8000, "T10 /sell all pays while tagged")
+
+	-- /worth works while tagged
+	local ok3, out = commands.worth.func("alice", "mcl_mobitems:bone")
+	check(ok3 and out:find("Bone", 1, true) ~= nil, "T10 /worth works while tagged")
+
 	smp_combat = nil
 end
 
@@ -1592,6 +1639,7 @@ do
 	alice._inv:set_stack("main", 2, ItemStack("smp_test:junk 3"))
 	alice:set_wield_index(1)
 
+	smp_sell._reset_sell_cooldown("alice")
 	local ok = commands.sell.func("alice", "hand")
 	check(ok, "/sell hand succeeds")
 	eq(money("alice"), 64000, "/sell hand sells the held stack")
@@ -1602,6 +1650,7 @@ do
 	set_money("alice", 0)
 	alice._inv:set_stack("main", 1, ItemStack("smp_test:junk 7"))
 	alice:set_wield_index(1)
+	smp_sell._reset_sell_cooldown("alice")
 	ok = commands.sell.func("alice", "hand")
 	eq(money("alice"), 0, "/sell hand on an ineligible item pays nothing")
 	eq(alice._inv:get_stack("main", 1):get_count(), 7,
@@ -1613,6 +1662,7 @@ do
 	alice._inv:set_stack("main", 1, ItemStack("mcl_mobitems:bone 64"))
 	alice._inv:set_stack("main", 5, ItemStack("smp_test:junk 2"))
 	alice._inv:set_stack("main", 9, ItemStack("mcl_core:diamond 3"))
+	smp_sell._reset_sell_cooldown("alice")
 	ok = commands.sell.func("alice", "all")
 	check(ok, "/sell all succeeds")
 	eq(money("alice"), 64000 + 3 * 900000, "/sell all sells every sellable stack")
@@ -1623,12 +1673,14 @@ do
 
 	-- /sell all with nothing to sell.
 	alice._inv:set_list("main", {})
+	smp_sell._reset_sell_cooldown("alice")
 	local ok2, msg = commands.sell.func("alice", "all")
 	eq(ok2, false, "/sell all with an empty inventory refuses")
 	check(msg and msg:find("No items to sell", 1, true) ~= nil,
 		"/sell all says there is nothing to sell")
 
 	-- Unknown subcommand.
+	smp_sell._reset_sell_cooldown("alice")
 	local ok3, msg3 = commands.sell.func("alice", "everything")
 	eq(ok3, false, "an unknown /sell argument is refused")
 	check(msg3 and msg3:find("Usage: /sell", 1, true) ~= nil, "usage is shown")
@@ -1787,6 +1839,7 @@ do
 
 	set_money("alice", 0)
 	alice._inv:set_list("main", {})
+	smp_sell._reset_sell_cooldown("alice")
 	open_sell("alice")
 	local fs = shown_formspecs["alice"].formspec
 	check(fs:find("item_image_button", 1, true) == nil,

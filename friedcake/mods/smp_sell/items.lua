@@ -374,6 +374,14 @@ local function sellable(stack, ctx)
 	if is_named(stack)                   then return false, "named" end
 	if has_contents(stack)               then return false, "container" end
 	if #nonvolatile_meta(stack, ctx) > 0 then return false, "metadata" end
+	-- SH-2 hand-off (S05): refuse stacks stamped by the shard shop
+	-- (smp:shardshop = "1") so AFK shards can't become money via /sell.
+	if stack and stack.get_meta then
+		local meta = stack:get_meta()
+		if meta and meta:get_string("smp:shardshop") == "1" then
+			return false, "shardshop"
+		end
+	end
 	return true, nil, enchantments(stack)
 end
 M.sellable = sellable

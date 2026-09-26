@@ -195,8 +195,10 @@ end
 
 -- Enchantment bonus in integer cents for a sorted "id:level" list (the
 -- items.enchantments form): `per_level` cents per enchantment level, curses
--- excluded. PROPOSED — f02 §10 V-99.
-function P.enchant_bonus(ench, per_level)
+-- excluded. Capped at `base_price` so an enchanted item can never exceed
+-- 2x its base value (PROPOSED — f02 §10 V-99). Enchanted books are priced
+-- from the price table, not from the bonus.
+function P.enchant_bonus(ench, per_level, base_price)
 	per_level = math.floor(tonumber(per_level) or 0)
 	if per_level <= 0 or type(ench) ~= "table" then return 0 end
 	local levels = 0
@@ -206,7 +208,11 @@ function P.enchant_bonus(ench, per_level)
 			levels = levels + tonumber(level)
 		end
 	end
-	return levels * per_level
+	local bonus = levels * per_level
+	if base_price and base_price > 0 then
+		bonus = math.min(bonus, base_price)
+	end
+	return bonus
 end
 
 -- Unit value actually paid by the server: (base_price + bonus) *

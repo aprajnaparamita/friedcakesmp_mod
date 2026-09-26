@@ -29,12 +29,14 @@
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
-local deps = ...   -- { items, prices, history, receipt, orders, engine, cfg, S }
+local deps = ...   -- { items, prices, history, receipt, orders, engine, cfg, S, sell_cooldown_active, set_sell_cooldown }
 
 local items  = deps.items
 local engine = deps.engine
 local cfg    = deps.cfg
 local S      = deps.S
+local sell_cooldown_active = deps.sell_cooldown_active
+local set_sell_cooldown = deps.set_sell_cooldown
 
 local M = {}
 
@@ -335,6 +337,13 @@ local function make_callbacks(player_name)
 			if listname ~= "main" then return 0 end
 			if not is_owner(player, player_name) then return 0 end
 			if index < 1 or index > M.slot_count() then return 0 end
+			-- SE-4 (S02/SE-4): refuse puts while combat-tagged — a tagged
+			-- player could otherwise park valuables here and retrieve them
+			-- after the combat-log drop (S07/CB-1). Soft-check so the mod
+			-- works without smp_combat.
+			if smp_combat and smp_combat.is_tagged and smp_combat.is_tagged(player_name) then
+				return 0
+			end
 			-- Any item may be dropped in; eligibility is decided on confirm
 			-- and ineligible items are returned (f02 §4.1, T3, V-57).
 			return stack:get_count()
@@ -407,6 +416,14 @@ function M.confirm(player)
 	local session = smp_core.get_session(name, FORMNAME)
 	if not session then return false end                 -- R4: no session
 
+	-- SE-5: rate-limit container confirm to ~1/s
+	if smp_sell._reset_sell_cooldown then
+		if sell_cooldown_active(name) then
+			core.chat_send_player(name, S("Please wait before selling again"))
+			return false
+		end
+	end
+
 	local stacks = M.snapshot(name)
 
 	if #stacks == 0 then
@@ -424,6 +441,7 @@ function M.confirm(player)
 	})
 
 	M.close(player, "confirm")
+	if ok then set_sell_cooldown(name) end
 	for _, line in ipairs(messages or {}) do
 		core.chat_send_player(name, line)
 	end

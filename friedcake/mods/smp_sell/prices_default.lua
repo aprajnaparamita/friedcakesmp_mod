@@ -45,8 +45,24 @@ return {
 	["mcl_core:gravel"]              = 200,
 	["mcl_core:flint"]               = 500,
 	["mcl_core:obsidian"]            = 50000,
-	["mcl_walls:cobble"]             = 700,   -- anchor [S2]
+	-- mcl_walls:cobble is an alias of the cobblestone WALL (not cobblestone).
+	-- The cobblestone anchor is on mcl_core:cobble = 600. Walls/stairs/slabs
+	-- priced at or below their cobble-equivalent (wall <= 700, slab <= 300).
+	["mcl_walls:cobble"]             = 700,   -- anchor [S2] -- wall
 	["mcl_walls:mossycobble"]        = 1000,
+	["mcl_walls:stonebrick"]         = 1000,
+	["mcl_stairs:slab_cobble"]       = 300,
+	["mcl_stairs:slab_stonebrick"]   = 400,
+	["mcl_stairs:slab_sandstone"]    = 150,
+	["mcl_stairs:slab_nether_brick"] = 500,
+	["mcl_stairs:slab_quartz"]       = 1500,
+	["mcl_stairs:slab_brick"]        = 400,
+	["mcl_stairs:stair_cobble"]      = 300,
+	["mcl_stairs:stair_stonebrick"]  = 400,
+	["mcl_stairs:stair_sandstone"]   = 150,
+	["mcl_stairs:stair_nether_brick"] = 500,
+	["mcl_stairs:stair_quartz"]      = 1500,
+	["mcl_stairs:stair_brick"]       = 400,
 	["mcl_amethyst:calcite"]         = 900,
 	["mcl_amethyst:tinted_glass"]    = 4000,
 	["mcl_amethyst:amethyst_block"]  = 48000,

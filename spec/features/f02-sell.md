@@ -293,3 +293,49 @@ Implemented under `friedcake/mods/smp_sell/` and `friedcake/dev-tests/test_sell.
 All ten acceptance tests (T1–T10) pass in `friedcake/dev-tests/test_sell.lua`
 under `luajit`, and the in-game `test.lua` (64 assertions) passes under the
 dev harness.
+
+## 13. Security audit fixes (fixes/security/S02-sell.md, 2026-09-27)
+
+### 13.1 SE-1 — Default price for every registered item (V-98)
+**Fixed:** `sell.default_price` default changed from `100` ($1) to `0` (feature off).
+An operator must explicitly opt in by setting a positive value.
+- `init.lua:97` default changed to `0`
+- `prices.lua:189` only applies fallback when `fallback > 0`
+- Mirror change required in `spec/shared/06-config-reference.md` → ESCALATE via D7
+
+### 13.2 SE-2 — Enchant bonus cap (V-99)
+**Fixed:** `prices.enchant_bonus` now caps at `base_price`: `bonus = min(levels × per_level, base)`.
+An enchanted item can never exceed 2× its base value. $500/level default kept.
+Enchanted books priced from price table, not from bonus.
+- `prices.lua:199-210` signature changed to accept `base_price` parameter
+- `sell.lua:87` and `init.lua:426` pass `base` to `enchant_bonus`
+- Recorded in f02 §10 V-99
+
+### 13.3 SE-3 — Cobblestone anchor on wall (V-88)
+**Fixed:** Cobblestone anchor keyed on `mcl_core:cobble` (600 cents), not `mcl_walls:cobble` (the wall).
+Walls, stairs and slabs priced at or below cobble-equivalent:
+- `prices_default.lua`: `mcl_core:cobble` = 600 (anchor), `mcl_walls:cobble` = 700 (wall)
+- Added stairs/slabs at ≤ cobble-equivalent prices
+- Mirror change for wall price → ESCALATE via D7
+
+### 13.4 SE-4 — Combat-log escape through sell container
+**Fixed:** Container `allow_put` refuses while `smp_combat.is_tagged(name)` (soft check).
+- `menu.lua:336-339` adds combat-tag check before owner check
+- `/sell hand` and `/sell all` work while tagged (sell immediately, no container)
+- Coordinates with S07 CB-1 (combat registers leave handler last) and S03/S04 (AH/orders grids)
+
+### 13.5 SE-5 — Rate limit and store prune
+**Fixed (local):** `/sell` and container confirm rate-limited to ~1/s via `sell_cooldown` table.
+- `init.lua:113-140` cooldown implementation
+- `init.lua:373,386` cooldown on `/sell hand` and `/sell all`
+- `menu.lua:413-415,435` cooldown on container confirm (set only on successful sell)
+- Store prune-index escalated to f02 §10 (integrator-owned `smp_store`)
+
+### 13.6 SH-2 hand-off — Refuse shard-shop gear
+**Fixed:** `items.sellable` refuses stacks with `smp:shardshop="1"` meta.
+- `items.lua:376-380` checks for shard-shop meta tag
+- Coordinates with S05 (shardshop stamps stacks, shards adds AFK detection)
+
+### 13.7 Recipe-arbitrage regression test
+**Added:** `dev-tests/recipe_scan.lua` (static) + in-engine path in `smp_sell.test.lua`.
+Walks all craft recipes + stonecutter recipes, asserts `sell_value(output) × output_count ≤ Σ sell_value(inputs) + tolerance`. Prints every violating recipe.
