@@ -175,4 +175,43 @@ eq(cfg.slots.default, 9, "B default slots 9")
 eq(cfg.slots.tier1, 45, "B tier1 slots 45")
 eq(cfg.slots.tier2, 90, "B tier2 slots 90")
 
+----------------------------------------------------------------------
+-- OR-2 — can_take_stack: pure predicate twin of fill_from_stack (S04)
+-- Fake order record, no store/escrow access: only the validation half
+-- of the fill contract is exercised here.
+----------------------------------------------------------------------
+do
+	local key = smp_items.key(ItemStack("mcl_core:diamond"), "M1")
+	local fake = {
+		id = 900001, state = "open", buyer = "f_buyer",
+		key = key, qty = 10, delivered = 0, escrow = 50000,
+	}
+	local match = ItemStack("mcl_core:diamond 4")
+	local can, why = smp_orders.can_take_stack(fake, "f_seller", match)
+	ok(can == true, "OR-2 deliverable stack accepted")
+	eq(why, nil, "OR-2 success gives no reason")
+	eq(match:get_count(), 4, "OR-2 predicate never consumes the stack")
+
+	local over, ow = smp_orders.can_take_stack(fake, "f_seller",
+		ItemStack("mcl_core:diamond 11"))
+	ok(over == false, "OR-2 oversized stack refused")
+	eq(ow, "full", "OR-2 oversized reason is the raw \"full\" token")
+
+	local self_sw, self_w = smp_orders.can_take_stack(fake, "f_buyer",
+		ItemStack("mcl_core:diamond 1"))
+	ok(self_sw == false, "OR-2 self-delivery refused")
+	eq(self_w, "You cannot deliver to your own order", "OR-2 self reason")
+
+	fake.state = "cancelled"
+	local closed, cw = smp_orders.can_take_stack(fake, "f_seller",
+		ItemStack("mcl_core:diamond 1"))
+	ok(closed == false, "OR-2 non-open order refused")
+	eq(cw, "This order has changed", "OR-2 closed reason")
+
+	local nope, nw = smp_orders.can_take_stack(999999, "f_seller",
+		ItemStack("mcl_core:diamond 1"))
+	ok(nope == false, "OR-2 unknown order refused")
+	eq(nw, "This order has changed", "OR-2 unknown reason")
+end
+
 return results
