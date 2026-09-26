@@ -4,6 +4,8 @@
 --
 -- Commands:
 --   /spawner give <player> <type> [count]   issue spawner items (admin)
+--     requires the smp_admin privilege (S06/SP-1); every issue leaves
+--     an audit line in the `action` log (see the command below).
 --
 -- Submodules (loaded below in dependency order):
 --   types.lua       spawner type table (data only; PROPOSED markers)
@@ -240,8 +242,14 @@ end
 
 -- The smp_admin privilege is registered by smp_admin (load order in
 -- modpack.conf puts it before us).
+--
+-- S06/SP-1 (CRITICAL): the field the engine reads is `privs = {…}`
+-- (builtin/common/chatcommands.lua:44-51 — `def.privs = def.privs or {}`,
+-- so anything else requires NO privilege). The old `privilege = "smp_admin"`
+-- was silently ignored and any player could mint spawners. The pack-wide
+-- lint dev-tests/test_chatcmds.lua fails on that key.
 core.register_chatcommand("spawner", {
-	privilege = "smp_admin",
+	privs = { smp_admin = true },
 	func = function(sender, params)
 		local parts = {}
 		for w in params:gmatch("%S+") do parts[#parts + 1] = w end
@@ -277,8 +285,20 @@ core.register_chatcommand("spawner", {
 		end
 		local stack = smp_spawners.make_item(type_id, count)
 		local inv = player:get_inventory()
-		if not inv:add_item("main", stack) then
-			core.item_drop(player:get_pos(), stack)
+
+		-- S06/SP-1: audit every issue. Before the fix there was no
+		-- trail at all, so an exploited world could not be reviewed.
+		core.log("action", "[smp_spawners] /spawner give " .. count ..
+			"x" .. type_id .. " to " .. target .. " by " .. sender)
+
+		-- S06/SP-2: InvRef:add_item returns the leftover stack, which
+		-- is always a truthy ItemStack — the test is `not left:is_empty()`.
+		-- Whatever did not fit is dropped at the target's feet, never
+		-- destroyed (luanti l_inventory.cpp:275-291).
+		local left = inv:add_item("main", stack)
+		if left and not left:is_empty() then
+			core.add_item(vector.offset(player:get_pos(), 0, 0.5, 0),
+				left)
 		end
 		core.chat_send_player(sender,
 			S("Gave @1 @2 @3 Spawner", target, count,

@@ -14,7 +14,12 @@ local function find_root()
 	if prefix and prefix ~= "" then
 		return (prefix:gsub("/+$", ""))
 	end
-	local probe = io.open("friedcake/modpack.conf", "r")
+	-- Relative invocation: trust the working directory. The modpack
+	-- manifest lives at friedcake/mods/modpack.conf — probing
+	-- friedcake/modpack.conf (which does not exist) used to send every
+	-- relative run to the hardcoded fallback checkout, i.e. it tested
+	-- someone else's working tree instead of this one (S06).
+	local probe = io.open("friedcake/mods/modpack.conf", "r")
 	if probe then
 		probe:close()
 		return "."
@@ -115,47 +120,143 @@ local real_os_time = os.time
 os.time = function() return now end
 
 ----------------------------------------------------------------------
--- ItemStack stub
+-- ItemStack stub — engine-faithful where it matters (S06):
+--
+--   * `set_count(n)` CLEARS the stack unless 1 <= n <= 65535
+--     (luanti src/script/lua_api/l_item.cpp:91-96). SP-3 depends on
+--     this being faithful: the mod must never hand itself n > 65535.
+--   * there is NO `ItemStack:remove_item` — the engine method table is
+--     l_item.cpp:535-566; the mutation is `take_item(n)`, which
+--     returns the TAKEN items. The stub deliberately does not fake
+--     `remove_item`, so a regression to it fails here (the lesson of
+--     test_engine_apis.lua: a stub must not encode the bug).
+--   * `get_stack_max()` is the per-item limit; tests override it with
+--     STACK_MAX[item_name] = n.
 ----------------------------------------------------------------------
+
+local STACK_MAX = {}   -- test overrides; default 64 (Mineclonia)
 
 local function new_itemstack(name, count)
 	local meta = {}
-	return {
+	local s = {
 		_name = name or "",
 		_count = count or 1,
 		_meta = meta,
 		get_name = function(self) return self._name end,
 		get_count = function(self) return self._count end,
-		set_count = function(self, n) self._count = n end,
-		get_meta = function(self)
+		set_count = function(self, n)
+			if type(n) ~= "number" then
+				error("ItemStack:set_count: number expected, got "
+					.. type(n), 2)
+			end
+			n = math.floor(n)
+			if n > 0 and n <= 65535 then
+				self._count = n
+			else
+				-- l_item.cpp:91-96: anything outside 1..65535 clears
+				self._count = 0
+				self._name = ""
+			end
+		end,
+		is_empty = function(self)
+			return self._count == 0 or self._name == ""
+		end,
+		clear = function(self)
+			self._count = 0
+			self._name = ""
+		end,
+		get_stack_max = function(self)
+			return STACK_MAX[self._name] or 64
+		end,
+		get_free_space = function(self)
+			return self:get_stack_max() - self:get_count()
+		end,
+		-- take_item(n): removes up to n from THIS stack and returns the
+		-- TAKEN items (lua_api.md, ItemStack section).
+		take_item = function(self, n)
+			if type(n) ~= "number" then
+				error("ItemStack:take_item: number expected, got "
+					.. type(n), 2)
+			end
+			n = math.floor(n)
+			if n < 1 then n = 1 end
+			if n > self._count then n = self._count end
+			local taken = new_itemstack(self._name, n)
+			for k, v in pairs(self._meta) do taken._meta[k] = v end
+			self._count = self._count - n
+			if self._count <= 0 then
+				self._count = 0
+				self._name = ""
+			end
+			return taken
+		end,
+		get_meta = function()
 			return {
 				get_string = function(_, k) return meta[k] or "" end,
 				set_string = function(_, k, v) meta[k] = tostring(v) end,
 			}
 		end,
-		remove_item = function(self, n)
-			self._count = self._count - (n or 1)
-			if self._count <= 0 then self._name = "" end
-			return self
-		end,
 		__tostring = function(self)
 			return self._name .. "x" .. self._count
 		end,
 	}
+	return s
 end
 ItemStack = function(name, count) return new_itemstack(name, count) end
 
+-- Two stacks merge only when name AND metadata match (engine
+-- ItemStack::canBeMergedWith); used by the inventory stub below.
+local function stack_meta_key(s)
+	local keys = {}
+	for k in pairs(s._meta) do keys[#keys + 1] = k end
+	table.sort(keys)
+	local out = {}
+	for _, k in ipairs(keys) do
+		out[#out + 1] = k .. "=" .. tostring(s._meta[k])
+	end
+	return table.concat(out, "\n")
+end
+
 ----------------------------------------------------------------------
--- Fake players and inventories
+-- vector — an engine global (src/script/lua_api/l_util.cpp); plain
+-- luajit has no such thing. S06/SP-2 drops inventory leftovers at
+-- `vector.offset(pos, 0, 0.5, 0)` (the node / the player's feet).
 ----------------------------------------------------------------------
 
-local function make_player(name, x, y, z)
-	local inv = {}
+vector = {
+	new = function(x, y, z)
+		if type(x) == "table" then return { x = x.x, y = x.y, z = x.z } end
+		return { x = x or 0, y = y or 0, z = z or 0 }
+	end,
+	offset = function(v, dx, dy, dz)
+		return { x = v.x + dx, y = v.y + dy, z = v.z + dz }
+	end,
+}
+
+----------------------------------------------------------------------
+-- Fake players and inventories
+--
+-- The inventory mirrors the engine's InvRef (src/script/lua_api/
+-- l_inventory.cpp): a fixed-size slot list; `add_item` merges into
+-- matching stacks first, then fills the first empty slots (splitting
+-- stacks above stack_max), and ALWAYS returns the leftover ItemStack —
+-- a truthy object, empty only when everything fit (l_inventory.cpp:
+-- 275-291). S06/SP-2 depends on that being faithful: `if not
+-- inv:add_item(...)` is never true.
+--
+-- opts = { slots = <capacity> }   (default 36 = the player "main" list)
+----------------------------------------------------------------------
+
+local function make_player(name, x, y, z, opts)
+	local capacity = (opts and opts.slots) or 36
+	local slots = {}   -- [1..capacity] = ItemStack or nil; dense from 1
 	local p = {}
 	p._name = name
 	p._pos = { x = x or 0, y = y or 0, z = z or 0 }
 	p._sneak = false
-	p._inv = inv
+	p._slots = slots
+	p._inv = slots          -- occupied slots in engine order (tests read it)
+	p._capacity = capacity
 	p._wielded = ItemStack("")
 	p.get_player_name = function() return name end
 	p.get_pos = function() return p._pos end
@@ -167,9 +268,78 @@ local function make_player(name, x, y, z)
 	p.get_wielded_item = function() return p._wielded end
 	p.get_inventory = function()
 		return {
-			add_item = function(self, list, stack)
-				inv[#inv + 1] = stack
-				return true
+			get_size = function(_, list)
+				if list ~= "main" then return 0 end
+				return capacity
+			end,
+			get_stack = function(_, list, i)
+				if list ~= "main" then return ItemStack("") end
+				return slots[i] or ItemStack("")
+			end,
+			-- True iff add_item would absorb the whole stack.
+			room_for_item = function(_, list, stack)
+				if list ~= "main" or not stack then return false end
+				if stack:is_empty() then return true end
+				local left = stack:get_count()
+				local key = stack_meta_key(stack)
+				for i = 1, capacity do
+					local s = slots[i]
+					if s and not s:is_empty()
+						and s:get_name() == stack:get_name()
+						and stack_meta_key(s) == key then
+						left = left - math.min(
+							s:get_stack_max() - s:get_count(), left)
+						if left <= 0 then return true end
+					end
+				end
+				for i = 1, capacity do
+					if not slots[i] then
+						left = left - stack:get_stack_max()
+						if left <= 0 then return true end
+					end
+				end
+				return false
+			end,
+			add_item = function(_, list, stack)
+				if list ~= "main" then return stack end
+				if not stack or stack:is_empty() then
+					return ItemStack("")
+				end
+				-- Leftover: a fresh stack carrying the same meta.
+				local left = new_itemstack(stack:get_name(),
+					stack:get_count())
+				for k, v in pairs(stack._meta) do left._meta[k] = v end
+				-- 1. merge into partial stacks with identical meta
+				for i = 1, capacity do
+					if left:get_count() <= 0 then break end
+					local s = slots[i]
+					if s and not s:is_empty()
+						and s:get_name() == left:get_name()
+						and stack_meta_key(s) == stack_meta_key(left) then
+						local room = s:get_stack_max() - s:get_count()
+						if room > 0 then
+							local move = math.min(room, left:get_count())
+							s:set_count(s:get_count() + move)
+							left:set_count(left:get_count() - move)
+						end
+					end
+				end
+				-- 2. first empty slots, splitting at stack_max
+				for i = 1, capacity do
+					if left:get_count() <= 0 then break end
+					if not slots[i] then
+						local n = math.min(left:get_count(),
+							left:get_stack_max())
+						local put = new_itemstack(left:get_name(), n)
+						for k, v in pairs(left._meta) do
+							put._meta[k] = v
+						end
+						slots[i] = put
+						left:set_count(left:get_count() - n)
+					end
+				end
+				-- 3. whatever is left did NOT fit: returned, never lost
+				return left
 			end,
 		}
 	end
@@ -179,6 +349,24 @@ end
 ----------------------------------------------------------------------
 -- core stub
 ----------------------------------------------------------------------
+
+-- Engine-side registries (S06/SP-1): `core.get_player_by_name`
+-- resolves connections here, `core.get_player_privs` reads the
+-- privilege table a test grants explicitly (the engine only ever
+-- grants through register_privilege + grants, so nothing is default).
+_G.__players = {}
+_G.__player_privs = {}
+
+-- MS-3 (strict stub, S05): the engine RAISES on a non-string player
+-- name (luaL_checkstring), so the stubs below do too — a lenient stub
+-- is what let the QB-1/SH-1/EC-2 class of bugs pass the harness.
+local function require_name(name, api)
+	if type(name) ~= "string" then
+		error(api .. ": player name must be a string, got "
+			.. type(name), 2)
+	end
+	return name
+end
 
 core = {
 	DIR_DELIM = "/",
@@ -255,8 +443,20 @@ core = {
 			{ pos = pos, name = name, player = player }
 		return protected_forced
 	end,
-	item_drop = function(pos, stack)
-		dropped[#dropped + 1] = stack
+	-- core.add_item(pos, itemstack): spawn an item entity at pos
+	-- (lua_api.md "core.add_item(pos, item)"): the SP-2 leftover path.
+	add_item = function(pos, stack)
+		dropped[#dropped + 1] = { pos = pos, stack = stack,
+			via = "add_item" }
+		return true
+	end,
+	-- core.item_drop(itemstack, dropper, pos) — engine signature
+	-- (builtin/game/item.lua:360). Nothing in this mod calls it any
+	-- more; kept engine-shaped so a wrong call is visible here.
+	item_drop = function(itemstack, dropper, pos)
+		dropped[#dropped + 1] = { pos = pos, stack = itemstack,
+			dropper = dropper, via = "item_drop" }
+		return itemstack
 	end,
 	get_meta = function(pos)
 		local k = pk(pos)
@@ -346,10 +546,17 @@ core = {
 	get_objects_inside_radius = get_objects_inside_radius,
 	objects_inside_radius = get_objects_inside_radius,
 	-- player / chat
+	--
+	-- MS-3 (strict stub, S05): see require_name above — the engine
+	-- RAISES on a non-string player name (luaL_checkstring), so these
+	-- do too; a lenient stub is what let the QB-1/SH-1/EC-2 class of
+	-- bugs pass the harness.
 	get_player_by_name = function(name)
+		require_name(name, "core.get_player_by_name")
 		return _G.__players and _G.__players[name] or nil
 	end,
 	chat_send_player = function(name, msg)
+		require_name(name, "core.chat_send_player")
 		chats[name] = chats[name] or {}
 		chats[name][#chats[name] + 1] = msg
 	end,
@@ -377,8 +584,58 @@ core = {
 	register_on_joinplayer = function() end,
 	register_on_shutdown = function() end,
 	register_globalstep = function() end,
-	register_chatcommand = function() end,
 	register_privilege = function() end,
+	-- Chat commands — builtin/common/chatcommands.lua:44-52. The engine
+	-- defaults `def.privs = def.privs or {}` and stores the def
+	-- verbatim, so ANY other key is never read: that is exactly how the
+	-- pre-S06 `privilege = "smp_admin"` asked for nothing and let every
+	-- player mint spawners. Reproducing the default here is what makes
+	-- the SP-1 test fail on the bug instead of hiding it.
+	registered_chatcommands = {},
+	register_chatcommand = function(name, def)
+		def = def or {}
+		def.params = def.params or ""
+		def.description = def.description or ""
+		def.privs = def.privs or {}
+		def.mod_origin = core.get_current_modname() or "??"
+		core.registered_chatcommands[name] = def
+	end,
+	-- builtin/game/misc.lua:87 — an ObjectRef that quacks like a player.
+	is_player = function(player)
+		local t = type(player)
+		return (t == "userdata" or t == "table") and
+			type(player.is_player) == "function" and
+			player:is_player() and true or false
+	end,
+	get_player_privs = function(name)
+		return _G.__player_privs[name] or {}
+	end,
+	-- builtin/game/misc.lua:17-50 — table or list form, missing list
+	-- as the second return value.
+	check_player_privs = function(name, ...)
+		if core.is_player(name) then
+			name = name:get_player_name()
+		elseif type(name) ~= "string" then
+			error("core.check_player_privs expects a player or " ..
+				"playername as argument.", 2)
+		end
+		local requested = { ... }
+		local have = core.get_player_privs(name)
+		local missing = {}
+		if type(requested[1]) == "table" then
+			for priv, value in pairs(requested[1]) do
+				if value and not have[priv] then
+					missing[#missing + 1] = priv
+				end
+			end
+		else
+			for _, priv in pairs(requested) do
+				if not have[priv] then missing[#missing + 1] = priv end
+			end
+		end
+		if #missing > 0 then return false, missing end
+		return true, ""
+	end,
 	get_gametime = function() return now end,
 }
 
@@ -480,6 +737,62 @@ local function reset_protected()
 end
 local function last_protected()
 	return protected_calls[#protected_calls]
+end
+
+-- Chat lines a player received (the harness's core.chat_send_player).
+local function chat_of(name)
+	return chats[name] or {}
+end
+local function chat_has(name, needle)
+	for _, l in ipairs(chat_of(name)) do
+		if tostring(l):find(needle, 1, true) then return true end
+	end
+	return false
+end
+local function chat_reset(name)
+	chats[name] = {}
+end
+
+-- Recorded core.log lines matching a needle.
+local function log_count(needle)
+	local n = 0
+	for _, l in ipairs(logs) do
+		if l:find(needle, 1, true) then n = n + 1 end
+	end
+	return n
+end
+
+-- Connect a fake player the way the engine would: get_player_by_name
+-- resolves it and it starts with NO privileges (grant explicitly, as
+-- a server operator would). Returns the player for chaining.
+local function connect(player, privs)
+	local name = player:get_player_name()
+	_G.__players[name] = player
+	_G.__player_privs[name] = privs or {}
+	chat_reset(name)
+	return player
+end
+
+-- Mirrors builtin/game/chat.lua:55-96 (the on_chatmessage handler):
+-- parse "/cmd params", look the def up, check the DEFINITION's privs
+-- BEFORE running it, and only then call def.func. Like the engine,
+-- `sender` is the sender's NAME (a string), not an ObjectRef. Returns
+-- what the engine would: `false, missing_privs` when refused,
+-- otherwise whatever def.func returns.
+local function run_chatcommand(sender, message)
+	local cmd, param = string.match(message, "^/([^ ]+) *(.*)")
+	if not cmd then return false, "no command" end
+	param = param or ""
+	local def = core.registered_chatcommands[cmd]
+	if not def then return false, "invalid command" end
+	local has_privs, missing = core.check_player_privs(sender, def.privs)
+	if not has_privs then
+		core.chat_send_player(sender, "You don't have permission to run "
+			.. "this command (missing privileges: "
+			.. table.concat(missing, ", ") .. ").")
+		return false, missing
+	end
+	return def.func(sender, param)
 end
 
 -- An injected settings store with the engine's semantics
@@ -1542,6 +1855,278 @@ do
 	def.on_dig(pos3, { name = "smp_spawners:spawner" }, nb)
 	eq(core.get_node_or_nil(pos3).name, "smp_spawners:spawner",
 		"eng a three-argument on_dig without silk refuses the dig")
+end
+
+----------------------------------------------------------------------
+-- Security batch S06 — SP-1: /spawner is admin-gated and audited
+----------------------------------------------------------------------
+
+do
+	local def = core.registered_chatcommands["spawner"]
+	ok(def ~= nil, "SP-1 /spawner is registered")
+	eq(def and def.privilege, nil,
+		"SP-1 the ignored `privilege` key is gone")
+	eq(def and def.privs and def.privs.smp_admin, true,
+		"SP-1 the engine-read `privs` table demands smp_admin")
+	ok(type(def and def.func) == "function", "SP-1 the command has a func")
+
+	-- Sender WITHOUT smp_admin: chat.lua checks def.privs before it
+	-- ever calls def.func, so nothing is minted and nothing is logged.
+	local sender = connect(make_player("sp_noadmin", 10, 65, 10))
+	local target = connect(make_player("sp_target", 12, 65, 12))
+	local audit_before = log_count("[smp_spawners] /spawner give")
+	local ran, missing = run_chatcommand(sender:get_player_name(),
+		"/spawner give sp_target skeleton 5")
+	eq(ran, false, "SP-1 a sender without smp_admin is refused")
+	ok(type(missing) == "table" and missing[1] == "smp_admin",
+		"SP-1 smp_admin is named as the missing privilege")
+	ok(chat_has("sp_noadmin", "missing privileges: smp_admin"),
+		"SP-1 the refusal reaches the sender as a chat line")
+	eq(target:get_inventory():get_stack("main", 1):is_empty(), true,
+		"SP-1 no spawner was minted for the target")
+	eq(log_count("[smp_spawners] /spawner give"), audit_before,
+		"SP-1 a refused issue leaves no audit line")
+
+	-- With the privilege the same command works, and it is audited.
+	_G.__player_privs["sp_noadmin"] = { smp_admin = true }
+	ran = run_chatcommand(sender:get_player_name(),
+		"/spawner give sp_target skeleton 5")
+	eq(ran, true, "SP-1 a sender with smp_admin runs the command")
+	local got = target:get_inventory():get_stack("main", 1)
+	eq(got:get_name(), "smp_spawners:spawner_item",
+		"SP-1 the target received a spawner item")
+	eq(got:get_count(), 5, "SP-1 the target received the requested count")
+	ok(has_log("[smp_spawners] /spawner give 5xskeleton to sp_target "
+		.. "by sp_noadmin"),
+		"SP-1 the issue is written to the action log")
+end
+
+----------------------------------------------------------------------
+-- Security batch S06 — SP-2: leftovers are dropped, never destroyed
+----------------------------------------------------------------------
+
+do
+	-- (a) /spawner give into a full inventory: the leftover falls at
+	-- the target's feet. InvRef:add_item ALWAYS returns a leftover
+	-- stack (l_inventory.cpp:275-291), so the test is is_empty().
+	local sender = connect(make_player("sp_adm2", 10, 65, 10),
+		{ smp_admin = true })
+	local target = connect(make_player("sp_bulge", 12, 65, 12,
+		{ slots = 1 }))
+	local filler = ItemStack(BONE)
+	filler:set_count(64)
+	target:get_inventory():add_item("main", filler)
+
+	local before = #dropped
+	run_chatcommand(sender:get_player_name(),
+		"/spawner give sp_bulge skeleton 64")
+	eq(#dropped, before + 1,
+		"SP-2 the give leftover is dropped, not destroyed")
+	local d = dropped[#dropped]
+	eq(d.via, "add_item", "SP-2 the leftover uses core.add_item")
+	ok(d.via ~= "item_drop",
+		"SP-2 never the mis-called core.item_drop(pos, stack)")
+	eq(d.stack:get_name(), "smp_spawners:spawner_item",
+		"SP-2 the leftover is the spawner stack")
+	eq(d.stack:get_count(), 64, "SP-2 every refused item survives")
+	near(d.pos.y, 65.5, 1e-9, "SP-2 dropped at the target's feet")
+
+	-- (b) A Silk Touch dig into a full inventory: same rule, dropped
+	-- half a node above the spawner.
+	local pos = place_spawner("skeleton", 1)
+	local vdef = core.registered_nodes["smp_spawners:spawner"]
+	local digger = connect(make_player("sp_fulldig", 10, 65, 10,
+		{ slots = 1 }))
+	local filler2 = ItemStack(BONE)
+	filler2:set_count(64)
+	digger:get_inventory():add_item("main", filler2)
+	digger._wielded = { _name = "mcl_tools:pickaxe",
+		_ench = { silk_touch = 1 } }
+
+	before = #dropped
+	vdef.on_dig(pos, { name = "smp_spawners:spawner" }, digger)
+	eq(core.get_node_or_nil(pos).name, "air", "SP-2 the dig removed the node")
+	eq(#dropped, before + 1, "SP-2 the dig leftover is dropped")
+	local d2 = dropped[#dropped]
+	eq(d2.via, "add_item", "SP-2 the dig leftover uses core.add_item")
+	eq(d2.stack:get_name(), "smp_spawners:spawner_item",
+		"SP-2 the dig leftover is the spawner stack")
+	eq(d2.stack:get_count(), 1, "SP-2 the dig leftover count")
+	near(d2.pos.y, 64.5, 1e-9, "SP-2 dropped above the node")
+end
+
+----------------------------------------------------------------------
+-- Security batch S06 — SP-3: no oversized stacks, no lost output
+----------------------------------------------------------------------
+
+do
+	-- (a) A take is capped by free inventory space: one free slot
+	-- holds 64, so 436 of the 500 stay stored.
+	local pos = place_spawner("skeleton", 1)
+	local st = state(pos)
+	st.store[BONE] = 500
+	st.last_update = now
+	smp_spawners.write_state(st)
+
+	local player = connect(make_player("sp_cap", 10, 65, 10, { slots = 1 }))
+	local before = #dropped
+	local taken = smp_spawners.take(pos, player, "skeleton", BONE, 500)
+	eq(taken, 64, "SP-3 a take is capped at stack_max x free space")
+	near(state(pos).store[BONE], 436, 1e-9,
+		"SP-3 only the delivered items leave the store")
+	eq(player:get_inventory():get_stack("main", 1):get_count(), 64,
+		"SP-3 the free slot holds a full stack")
+	eq(#dropped, before, "SP-3 a capped take drops nothing on the floor")
+
+	-- (b) A full inventory takes nothing at all and writes nothing.
+	local full = connect(make_player("sp_full", 10, 65, 10, { slots = 1 }))
+	local filler = ItemStack(BONE)
+	filler:set_count(64)
+	full:get_inventory():add_item("main", filler)
+	local store_before = core.get_meta(pos):get_string("smp:store")
+	local v0 = state(pos).version
+	local taken2 = smp_spawners.take(pos, full, "skeleton", BONE, 500)
+	eq(taken2, 0, "SP-3 a full inventory takes nothing")
+	eq(core.get_meta(pos):get_string("smp:store"), store_before,
+		"SP-3 a refused take leaves the store byte-identical")
+	eq(state(pos).version, v0, "SP-3 a refused take writes nothing")
+
+	-- (c) Way past the u16 range: ItemStack:set_count(n) CLEARS the
+	-- stack for n > 65535 (l_item.cpp:91-96), so the take must arrive
+	-- in stack_max-sized chunks instead of one 100000-item stack.
+	local pos2 = place_spawner("skeleton", 1)
+	local st2 = state(pos2)
+	st2.store[BONE] = 100000
+	st2.last_update = now
+	smp_spawners.write_state(st2)
+
+	STACK_MAX[BONE] = 65535   -- per-item override; restore below
+	local big = connect(make_player("sp_big", 10, 65, 10, { slots = 2 }))
+	local taken3 = smp_spawners.take(pos2, big, "skeleton", BONE, 100000)
+	eq(taken3, 100000, "SP-3 a >65535 take is delivered in chunks")
+	near(state(pos2).store[BONE], 0, 1e-9, "SP-3 the store is emptied")
+	local inv = big:get_inventory()
+	eq(inv:get_stack("main", 1):get_count(), 65535,
+		"SP-3 the first chunk stops at stack_max")
+	eq(inv:get_stack("main", 2):get_count(), 34465,
+		"SP-3 the second chunk carries the remainder")
+	eq(inv:get_stack("main", 1):is_empty(), false,
+		"SP-3 no chunk was cleared by set_count")
+	STACK_MAX[BONE] = nil
+
+	-- (d) Sell all with a >u16 store: lots are split at stack_max and
+	-- exactly the handed counts are subtracted.
+	local pos3 = place_spawner("skeleton", 1)
+	local st3 = state(pos3)
+	st3.store[BONE] = 100000
+	st3.last_update = now
+	smp_spawners.write_state(st3)
+	local v3 = state(pos3).version
+	local routed = nil
+	smp_sell = {
+		sell = function(p, stacks)
+			routed = { player = p, stacks = stacks }
+			return true
+		end,
+	}
+	local seller = connect(make_player("sp_sell", 10, 65, 10))
+	local ok_sell, _ = smp_spawners.routing.sell_all(pos3, seller,
+		"skeleton")
+	eq(ok_sell, true, "SP-3 the big sale succeeds")
+	ok(routed ~= nil, "SP-3 f02 was reached")
+	eq(routed and #routed.stacks or 0, 1563,
+		"SP-3 the 100000 lot is split into stack_max lots")
+	local sum, max_count, sane = 0, 0, true
+	for _, lot in ipairs(routed and routed.stacks or {}) do
+		local c = lot:get_count()
+		sum = sum + c
+		if c > max_count then max_count = c end
+		if c < 1 or c > 64 then sane = false end
+	end
+	eq(sum, 100000, "SP-3 every item reaches f02 (conservation)")
+	eq(max_count, 64, "SP-3 no lot exceeds stack_max")
+	ok(sane, "SP-3 no lot is empty or oversized")
+	eq(routed and routed.stacks[#routed.stacks]:get_count() or -1, 32,
+		"SP-3 the tail lot carries the remainder")
+	near(state(pos3).store[BONE], 0, 1e-9,
+		"SP-3 exactly the handed counts are subtracted")
+	ok(state(pos3).version > v3, "SP-3 the version moves on success")
+
+	-- (e) A refused sale subtracts nothing, however large the store.
+	local pos4 = place_spawner("skeleton", 1)
+	local st4 = state(pos4)
+	st4.store[BONE] = 100000
+	st4.last_update = now
+	smp_spawners.write_state(st4)
+	local store4 = core.get_meta(pos4):get_string("smp:store")
+	smp_sell = { sell = function() return false, {} end }
+	local refused = smp_spawners.routing.sell_all(pos4, seller, "skeleton")
+	eq(refused, false, "SP-3 a refused sale returns false")
+	eq(core.get_meta(pos4):get_string("smp:store"), store4,
+		"SP-3 a refused sale leaves the store byte-identical")
+	smp_sell = nil
+end
+
+----------------------------------------------------------------------
+-- Security batch S06 — SP-4: mutations need area access, view does not
+----------------------------------------------------------------------
+
+do
+	local pos = place_spawner("skeleton", 1)
+	local st = state(pos)
+	st.store[BONE] = 64
+	st.xp = 30
+	st.last_update = now
+	smp_spawners.write_state(st)
+
+	local player = connect(make_player("sp_guarded", 10, 65, 10))
+	protected_forced = true
+
+	-- VIEWING stays open: open_requires_access still defaults false and
+	-- the 3-argument revalidate (the view gate) consults no protection.
+	shown_forms["sp_guarded"] = nil
+	smp_spawners.interaction.open_menu(pos, player)
+	ok(shown_forms["sp_guarded"] ~= nil,
+		"SP-4 a protected spawner can still be looked at")
+	ok(smp_spawners.revalidate(pos, "skeleton", player) ~= nil,
+		"SP-4 the view gate does not consult protection")
+
+	-- MUTATIONS all refuse, before anything is written.
+	local store_before = core.get_meta(pos):get_string("smp:store")
+	local v0 = state(pos).version
+	chat_reset("sp_guarded")
+
+	local taken = smp_spawners.take(pos, player, "skeleton", BONE, 64)
+	eq(taken, 0, "SP-4 take refuses on a protected area")
+	eq(state(pos).store[BONE], 64, "SP-4 refused take leaves the store")
+	eq(state(pos).version, v0, "SP-4 refused take writes nothing")
+	ok(chat_has("sp_guarded", "This area is protected"),
+		"SP-4 the player is told why take refused")
+
+	local xp = smp_spawners.collect_xp(pos, player, "skeleton")
+	eq(xp, 0, "SP-4 Collect XP refuses on a protected area")
+	eq(state(pos).xp, 30, "SP-4 refused Collect XP leaves the XP")
+
+	local called = false
+	smp_sell = {
+		sell = function()
+			called = true
+			return true
+		end,
+	}
+	local sold, msg = smp_spawners.routing.sell_all(pos, player,
+		"skeleton")
+	eq(sold, false, "SP-4 Sell all refuses on a protected area")
+	eq(msg, nil,
+		"SP-4 a protected refusal carries no bogus \"removed\" line")
+	eq(called, false, "SP-4 f02 is never reached for a protected area")
+	ok(not chat_has("sp_guarded", "This spawner has been removed"),
+		"SP-4 the player is not told the spawner was removed")
+	eq(core.get_meta(pos):get_string("smp:store"), store_before,
+		"SP-4 a refused sale leaves the store byte-identical")
+	smp_sell = nil
+
+	protected_forced = false
 end
 
 ----------------------------------------------------------------------
