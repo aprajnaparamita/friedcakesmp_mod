@@ -70,17 +70,30 @@ local function hazard(name)
 	return false
 end
 
--- A landing: solid (not air), not liquid, not on the reject list.
+-- Solid check via the node def, when available (dev-tests have no
+-- registered_nodes table, so unknown nodes are treated as solid).
+local function node_is_walkable(name)
+	local def = core.registered_nodes and core.registered_nodes[name]
+	return not def or def.walkable ~= false
+end
+
+-- A landing: a solid (walkable) node that can support the player —
+-- not air, not liquid, not on the reject list.
 local function is_landing(name, dim)
 	if name == "air" or liquid(name) or hazard(name) then return false end
+	if not node_is_walkable(name) then return false end
 	if dim == "end" and name ~= END_STONE then return false end
 	return true
 end
 
--- A "free" node above a landing: not liquid, not hazardous (you must
--- be able to stand and look up). T2: "two breathable nodes above".
-local function is_breathable(name)
-	return not liquid(name) and not hazard(name)
+-- A node the player can occupy above a landing: air, or another
+-- non-walkable, non-liquid, non-hazard node (tall grass, snow, ...).
+-- Solid nodes are rejected so the player can never be buried under
+-- gravel/sand/stone or end up underwater.
+local function is_free(name)
+	if name == "air" then return true end
+	if liquid(name) or hazard(name) then return false end
+	return not node_is_walkable(name)
 end
 
 ----------------------------------------------------------------------
@@ -108,8 +121,12 @@ function smp_tp.find_safe_y(x, z, dim, band)
 	for y = y0, y1, step do
 		local ground = node_at(x, y, z)
 		if is_landing(ground, dim) then
-			if is_breathable(node_at(x, y + 1, z))
-				and is_breathable(node_at(x, y + 2, z)) then
+			-- The two nodes above must be non-solid and non-liquid
+			-- (the player stands there). Because the overworld/end
+			-- scan is top-down from the build limit, the first such
+			-- landing is the surface and therefore has a sky view.
+			if is_free(node_at(x, y + 1, z))
+				and is_free(node_at(x, y + 2, z)) then
 				return vector.new(x, y + 1, z)  -- feet on top of ground
 			end
 		end

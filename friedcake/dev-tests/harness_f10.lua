@@ -308,8 +308,14 @@ core.register_globalstep = function(fn)
 	callbacks.globalstep[#callbacks.globalstep + 1] = fn
 end
 core.register_on_shutdown = function() end
-core.register_on_player_receive_fields = function(formname, fn)
-	callbacks.receive_fields[formname] = fn
+core.register_on_player_receive_fields = function(a, b)
+	if type(a) == "function" then
+		-- 5.17 single-callback API: fn(player, formname, fields)
+		callbacks.receive_fields_any = a
+	else
+		-- legacy (formname, func) form
+		callbacks.receive_fields[a] = b
+	end
 end
 core.after = function(sec, fn)
 	pending[#pending + 1] = { at = now + (sec or 0), fn = fn }

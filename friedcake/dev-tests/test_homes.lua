@@ -273,8 +273,16 @@ local core = {
 	register_on_leaveplayer = function(fn) fake.leaves[#fake.leaves + 1] = fn end,
 	register_on_dieplayer = function(fn) fake.die[#fake.die + 1] = fn end,
 	register_on_shutdown = function() end,
-	register_on_player_receive_fields = function(formname, fn)
-		fake.fields[formname] = fn
+	register_on_player_receive_fields = function(a, b)
+		if type(a) == "function" then
+			-- 5.17 single-callback API: fn(player, formname, fields)
+			fake.receive_fields = a
+		else
+			-- legacy (formname, func) form
+			fake.fields[a] = function(player, formname, fields)
+				if formname == a then return b(player, fields) end
+			end
+		end
 	end,
 	request_insecure_environment = function() return nil end,
 	get_mod_storage = function()
@@ -361,7 +369,8 @@ local function make_player(name, pos)
 	function p:get_player_name() return self._name end
 	function p:get_pos() return self._pos end
 	function p:set_pos(pos) self._pos = vnew(pos.x, pos.y, pos.z) end
-	function p:set_player_velocity(v) self._vel = vnew(v.x, v.y, v.z) end
+	function p:get_velocity() return vnew(self._vel.x, self._vel.y, self._vel.z) end
+	function p:add_velocity(v) self._vel = vnew(self._vel.x + v.x, self._vel.y + v.y, self._vel.z + v.z) end
 	function p:get_meta()
 		return { get = function() return "" end, set = function() end }
 	end
@@ -549,10 +558,10 @@ do
 		"T8 submenu rendered (2x2 grid)")
 	ok(find_plain(fs, "style[delete;textcolor=red]"), "T8 Delete styled red [F0068]")
 	ok(find_plain(fs, "Back"), "T8 Back centred beneath")
-	local handler = fake.fields[H.FORMNAME]
+	local handler = fake.receive_fields
 	ok(handler ~= nil, "T8 homes fields handler registered")
 	reset_chat()
-	handler(fake.players[A], { teleport = "true" })
+	handler(fake.players[A], H.FORMNAME, { teleport = "true" })
 	local w = smp_tp.warmup[A]
 	ok(w ~= nil and w.kind == "home", "T8 live id starts the home warm-up")
 	advance(6)
@@ -568,7 +577,7 @@ do
 	d(A, tostring(id))
 	eq(last_chat(A), "Home deleted", "T8 home deleted while submenu open")
 	reset_chat()
-	handler(fake.players[A], { teleport = "true" })
+	handler(fake.players[A], H.FORMNAME, { teleport = "true" })
 	local msgs = chat_delta(A, 0)
 	eq(#msgs, 1, "T8 exactly one chat line")
 	eq(msgs[1], "Home does not exist", "T8 verbatim refusal")
@@ -580,7 +589,7 @@ do
 	-- A forged submenu key on a STALE submenu session dies the same way.
 	H.set_screen(A, { screen = "sub", id = id })
 	reset_chat()
-	handler(fake.players[A], { rename = "true" })
+	handler(fake.players[A], H.FORMNAME, { rename = "true" })
 	msgs = chat_delta(A, 0)
 	eq(#msgs, 1, "T8 forged rename click also fails safely")
 	eq(msgs[1], "Home does not exist", "T8 forged click refusal")

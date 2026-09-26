@@ -129,8 +129,16 @@ local core = {
 	register_globalstep = function(fn) fake.globalsteps[#fake.globalsteps + 1] = fn end,
 	register_on_leaveplayer = function(fn) fake.leaves[#fake.leaves + 1] = fn end,
 	register_on_dieplayer = function(fn) fake.die[#fake.die + 1] = fn end,
-	register_on_player_receive_fields = function(formname, fn)
-		fake.fields[formname] = fn
+	register_on_player_receive_fields = function(a, b)
+		if type(a) == "function" then
+			-- 5.17 single-callback API: fn(player, formname, fields)
+			fake.receive_fields = a
+		else
+			-- legacy (formname, func) form
+			fake.fields[a] = function(player, formname, fields)
+				if formname == a then return b(player, fields) end
+			end
+		end
 	end,
 }
 minetest = core
@@ -161,7 +169,8 @@ local function make_player(name, pos)
 	function p:get_player_name() return self._name end
 	function p:get_pos() return self._pos end
 	function p:set_pos(pos) self._pos = vnew(pos.x, pos.y, pos.z) end
-	function p:set_player_velocity(v) self._vel = vnew(v.x, v.y, v.z) end
+	function p:get_velocity() return vnew(self._vel.x, self._vel.y, self._vel.z) end
+	function p:add_velocity(v) self._vel = vnew(self._vel.x + v.x, self._vel.y + v.y, self._vel.z + v.z) end
 	function p:get_meta()
 		return { get = function() return "" end, set = function() end }
 	end
@@ -665,6 +674,17 @@ do
 	-- hazard above? it IS liquid -> rejected).
 	test_col({ [60] = "mcl_core:dirt", [61] = "mcl_core:lava_source" }, nil,
 		"lava above landing")
+	-- Regression: the nodes above the landing must be NON-SOLID. A solid
+	-- seafloor/beach under water used to pass the old "breathable" check
+	-- and bury the player in sand/gravel.
+	test_col({ [60] = "mcl_core:sand", [59] = "mcl_core:sand",
+		[58] = "mcl_core:sand", [61] = "mcl_core:water_source",
+		[62] = "mcl_core:water_source", [63] = "mcl_core:water_source",
+		[64] = "mcl_core:water_source" }, nil, "underwater seafloor rejected")
+	test_col({ [61] = "mcl_core:gravel", [60] = "mcl_core:gravel",
+		[59] = "mcl_core:gravel", [62] = "mcl_core:water_source",
+		[63] = "mcl_core:water_source", [64] = "mcl_core:water_source" },
+		nil, "gravel beach under water rejected")
 	-- End: only end stone.
 	local pos = smp_tp.find_safe_y(10, 10, "end", band)
 	ok(pos == nil, "end: non-end-stone landing rejected")
