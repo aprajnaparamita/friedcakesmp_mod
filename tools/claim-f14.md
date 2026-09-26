@@ -134,7 +134,7 @@ the two paths agree.
    friedcake/dev-tests/test_stats.lua    # standalone smoke tests
    ```
 
-   Add `load_mod = smp_stats` to `friedcake/modpack.conf` below the
+   Add `load_mod = smp_stats` to `friedcake/mods/modpack.conf` below the
    existing entries.
 
 3. Implement in this order (so each step is testable):

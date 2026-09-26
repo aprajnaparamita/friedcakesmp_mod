@@ -113,7 +113,7 @@ f08 owns `smp_tp`'s framework: `warmup.lua`, `rtp.lua`, `requests.lua`,
 
    Do **not** add a new `load_mod` line — homes lives inside `smp_tp`,
    which f08's prompt already added. If `smp_tp` is not yet in
-   `friedcake/modpack.conf`, add `load_mod = smp_tp` (not
+   `friedcake/mods/modpack.conf`, add `load_mod = smp_tp` (not
    `smp_homes`).
 
 3. Implement in this order (so each step is testable):

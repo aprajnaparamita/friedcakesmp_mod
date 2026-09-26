@@ -74,7 +74,7 @@ you are not done until they pass.
    └── test.lua         # returns {passed, failed, lines} for /smp test
    ```
 
-3. Add `load_mod = smp_<feature>` to `friedcake/modpack.conf` **below** the
+3. Add `load_mod = smp_<feature>` to `friedcake/mods/modpack.conf` **below** the
    existing entries.
 
 4. Use the shared helpers — never roll your own:

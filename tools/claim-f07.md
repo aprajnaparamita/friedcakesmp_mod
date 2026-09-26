@@ -107,7 +107,7 @@ Read `spec/features/f07-spawners.md` end-to-end. Then read:
    friedcake/dev-tests/test_spawners.lua    # standalone smoke tests
    ```
 
-   Add `load_mod = smp_spawners` to `friedcake/modpack.conf` below
+   Add `load_mod = smp_spawners` to `friedcake/mods/modpack.conf` below
    the existing entries.
 
 3. Implement in this order (so each step is testable):

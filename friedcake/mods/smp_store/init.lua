@@ -18,10 +18,11 @@ smp_store = {}
 ----------------------------------------------------------------------
 
 local SETTING_KEYS = {
-	backend          = "auto",   -- auto | mod_storage | sqlite | postgres
-	flush_interval   = "10",     -- seconds; spec PROPOSED 10s
-	max_balance      = "1000000000000000", -- 10^15 cents = $10^13
-	ledger_page_size = "20",
+	backend            = "auto",   -- auto | mod_storage | sqlite | postgres
+	postgres_proxy_url = "http://127.0.0.1:8457", -- HTTP endpoint of pg_proxy.py
+	flush_interval     = "10",     -- seconds; spec PROPOSED 10s
+	max_balance        = "1000000000000000", -- 10^15 cents = $10^13
+	ledger_page_size   = "20",
 }
 
 local cfg = {}
@@ -50,7 +51,7 @@ smp_store._chosen_backend = nil -- string
 -- populates `package.loaded`, so the backend finds it warm.
 local sqlite_probe -- nil = not tried yet
 local function sqlite_available()
-	if package.loaded["lsqlite3"] ~= nil then
+	if package.loaded and package.loaded["lsqlite3"] ~= nil then
 		return true
 	end
 	if sqlite_probe ~= nil then
@@ -120,14 +121,7 @@ local function try_load(name)
 end
 
 local function load_backend(name)
-	local driver, err
-	if name == "postgres" then
-		-- The Postgres stub is intentional; it refuses to load with a clear
-		-- message so operators know where to wire the real driver.
-		driver, err = try_load("postgres")
-	else
-		driver, err = try_load(name)
-	end
+	local driver, err = try_load(name)
 	if not driver then
 		core.log("error", "[smp_store] backend '" .. name .. "' unavailable: " .. tostring(err))
 		return nil

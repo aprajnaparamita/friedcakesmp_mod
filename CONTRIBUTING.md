@@ -40,7 +40,7 @@ them directly — flag a change in your feature file's open-questions section.
 
 Each `smp_*` mod lives in its own directory. Claiming a mod means:
 
-1. Add `load_mod = smp_<feature>` to `friedcake/modpack.conf` below the
+1. Add `load_mod = smp_<feature>` to `friedcake/mods/modpack.conf` below the
    existing entries.
 2. Add your `mod.conf` declaring dependencies on earlier mods.
 3. Implement under `friedcake/mods/smp_<feature>/`.
@@ -87,7 +87,7 @@ Avoid "wip", "fix", "stuff", or any message a stranger couldn't act on.
 
 The most likely conflict points are:
 
-- `friedcake/modpack.conf` — rebase alphabetically; if both agents add
+- `friedcake/mods/modpack.conf` — rebase alphabetically; if both agents add
   entries, the integrator sorts them.
 - `spec/README.md` feature table — both agents add rows, integrator merges.
 - `spec/shared/` — feature agents don't edit. If a conflict appears, an

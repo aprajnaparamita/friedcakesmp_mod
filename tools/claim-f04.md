@@ -98,7 +98,7 @@ Read `spec/features/f04-orders.md` end-to-end. Then read:
    friedcake/mods/smp_orders/au_bridge.lua   # stub for f03's listings_at_or_below
    ```
 
-   Add `load_mod = smp_orders` to `friedcake/modpack.conf` below the
+   Add `load_mod = smp_orders` to `friedcake/mods/modpack.conf` below the
    existing entries.
 
 3. Implement in this order (so each step is testable):

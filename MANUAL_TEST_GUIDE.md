@@ -57,7 +57,7 @@ expanded automatically — no `enable_modpack` key exists in the engine and
 none is required.
 
 ```sh
-ln -s /path/to/coconut/friedcake "<world path>/worldmods/friedcake"
+ln -s /path/to/coconut/friedcake/mods "<world path>/worldmods/friedcake"
 ```
 
 **B — game-wide.** Loads the pack into every Mineclonia world:
@@ -92,13 +92,25 @@ secure.trusted_mods = smp_store
 server.name = FriedcakeSMP
 ```
 
+For the Postgres backend, also add:
+
+```
+store.backend = postgres
+secure.http_mods = smp_store
+store.postgres_proxy_url = http://127.0.0.1:8457
+```
+
+and run `friedcake/mods/smp_store/pg_proxy.py` against a local PostgreSQL
+server (see `friedcake/mods/smp_store/STORAGE.md`).
+
 Notes:
 
-- `secure.trusted_mods` is only needed for the SQLite/Postgres storage
-  backend. The default `store.backend = auto` falls back to `mod_storage`,
-  so an unconfigured world runs without it.
-- `secure.http_mods = smp_store` is only needed once the Postgres backend
-  ships; it is deliberately commented out in `friedcake/minetest.conf.example`.
+- `secure.trusted_mods` is only needed for the SQLite storage backend. The
+  default `store.backend = auto` falls back to `mod_storage`, so an
+  unconfigured world runs without it.
+- `secure.http_mods = smp_store` is required for the Postgres backend (it
+  grants `core.request_http_api()`); it is deliberately commented out in
+  `friedcake/minetest.conf.example` until Postgres is selected.
 - `server.name` is the pack's own display-name key (settings menu subtitle,
   scoreboard title). The engine's own key is `server_name` — the two are not
   aliased.

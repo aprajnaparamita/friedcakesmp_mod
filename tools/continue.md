@@ -50,7 +50,7 @@ Look at the current state of the mod:
 
 ```
 ls -la friedcake/mods/smp_<feature>/
-cat friedcake/modpack.conf                       # is load_mod set?
+cat friedcake/mods/modpack.conf                       # is load_mod set?
 git log agent/<FEATURE> --oneline               # what's been done
 git diff main..agent/<FEATURE> --stat           # what's changed
 ```

@@ -113,7 +113,7 @@ to it. The integrator reconciles the call sites.
    friedcake/dev-tests/test_settings.lua    # standalone smoke tests
    ```
 
-   Add `load_mod = smp_settings` to `friedcake/modpack.conf` below the
+   Add `load_mod = smp_settings` to `friedcake/mods/modpack.conf` below the
    existing entries.
 
 3. Implement in this order (so each step is testable):

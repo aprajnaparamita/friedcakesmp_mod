@@ -14,8 +14,6 @@
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
-io.stderr:write("EXPIRY.LUA LOADED\n")
-
 local M = {}
 
 M.META_KEY = "smp:expires_at"   -- absolute Unix time, seconds
@@ -107,11 +105,9 @@ function M.refresh_description(stack, display_name, S, now)
 
 	-- Resolve translator
 	if S == nil then
-		print("DEBUG expiry: resolving S, _G.core = " .. tostring(_G.core) .. ", _G.core.get_translator = " .. tostring(_G.core and _G.core.get_translator))
 		-- Try global core (test environment or actual engine)
 		if _G.core and type(_G.core.get_translator) == "function" then
 			S = _G.core.get_translator("smp_amethyst")
-			print("DEBUG expiry: got S from core.get_translator")
 		-- Try smp_amethyst module (actual game)
 		elseif _G.smp_amethyst and type(_G.smp_amethyst) == "table" then
 			-- smp_amethyst doesn't expose S directly, create a fallback

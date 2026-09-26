@@ -97,7 +97,7 @@ Two things the spec doesn't say but you'll need:
    friedcake/dev-tests/test_ah.lua   # standalone smoke tests
    ```
 
-   Add `load_mod = smp_ah` to `friedcake/modpack.conf` below the
+   Add `load_mod = smp_ah` to `friedcake/mods/modpack.conf` below the
    existing entries.
 
 3. Implement in this order (so each step is testable):

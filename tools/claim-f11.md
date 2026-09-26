@@ -127,7 +127,7 @@ If one of them assumed something you can't honour, file a
    friedcake/dev-tests/test_social.lua    # standalone smoke tests
    ```
 
-   Add `load_mod = smp_social` to `friedcake/modpack.conf` below the
+   Add `load_mod = smp_social` to `friedcake/mods/modpack.conf` below the
    existing entries.
 
 3. Implement in this order (so each step is testable):

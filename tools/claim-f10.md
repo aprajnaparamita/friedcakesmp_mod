@@ -135,7 +135,7 @@ in `f10-combat.md §10` and stop — don't silently break their bridge.
    friedcake/dev-tests/test_bounty.lua     # standalone smoke tests
    ```
 
-   Add two `load_mod = …` lines to `friedcake/modpack.conf` below the
+   Add two `load_mod = …` lines to `friedcake/mods/modpack.conf` below the
    existing entries:
 
    ```

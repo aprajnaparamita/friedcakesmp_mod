@@ -9,7 +9,7 @@ The project layout splits two concerns:
 
 | Path | What |
 |---|---|
-| `friedcake/` (this directory) | The modpack. Drop into Mineclonia's `mods/` folder. |
+| `friedcake/mods/` | The modpack (the directory containing `modpack.conf`). Drop into Mineclonia's `mods/` folder. |
 | `../spec/` | The specification each `smp_*` mod is built against. |
 
 The spec is the source of truth. The mod code lives here.
@@ -19,7 +19,7 @@ The spec is the source of truth. The mod code lives here.
 | Mod | Phase | State | Owner spec | Notes |
 |---|---|---|---|---|
 | `smp_core` | P0 | **implemented** | `spec/shared/04-ui-kit.md` | Formatter, parser, menu sessions |
-| `smp_store` | P0 | **implemented (SQLite primary, mod_storage fallback, Postgres stub)** | `spec/shared/02-architecture.md §2.2–2.3` | Player records, ledger |
+| `smp_store` | P0 | **implemented (mod_storage, SQLite, Postgres)** | `spec/shared/02-architecture.md §2.2–2.3` | Player records, ledger |
 | `smp_economy` | P0 | **implemented** | `spec/features/f01-economy-core.md` | `/bal`, `/pay`, `/paytoggle`, `/baltop`, `/shards`, `/eco`, `/ledger`, `/smp` |
 | `smp_admin` | P0 | **implemented (privileges only)** | `spec/shared/05-command-reference.md §5.5` | `smp_admin`, `smp_moderator` |
 | `smp_ranks` | P0 | stub | `spec/features/f13-ranks.md` | Reserved |
@@ -31,29 +31,38 @@ under this directory as parallel agents pick them up. See
 
 ## Storage backends
 
-`smp_store` is backend-agnostic. Three are shipped today, one stub:
+`smp_store` is backend-agnostic. Four are shipped:
 
 | `store.backend` | Status | Notes |
 |---|---|---|
 | `mod_storage` | working | `core.get_mod_storage()` + JSON. Zero setup. |
-| `sqlite` | working (recommended) | `lsqlite3` via `request_insecure_environment()`. Mod must be in `secure.trusted_mods`. |
+| `sqlite` | working | `lsqlite3` via `request_insecure_environment()`. Mod must be in `secure.trusted_mods`. (Note: `lsqlite3` is not bundled in Luanti 5.17.0.) |
 | `auto` | working | Tries SQLite → falls back to mod_storage. The default. |
-| `postgres` | **stub** | API defined; refuses to load with a clear error. The eventual driver goes over `core.request_http_api()` to a local `pgwire` proxy — direct TCP from the Lua sandbox is not available. |
+| `postgres` | working | HTTP/JSON to a local `pg_proxy.py`, which owns the PostgreSQL connection. Mod must be in `secure.http_mods`. See `mods/smp_store/STORAGE.md` for setup. |
 
 See `mods/smp_store/STORAGE.md` for the driver contract, the schema, and the
 list of operations every backend must implement.
 
 ## Installation
 
-Drop `friedcake/` into Mineclonia's `mods/` directory, or add its parent
-directory to `secure.mods` in `minetest.conf`. Then add to `minetest.conf`:
+The modpack is `friedcake/mods/` (the directory that contains `modpack.conf`).
+Drop it into Mineclonia's `mods/` directory as `friedcake`, or symlink it into
+a world's `worldmods/` directory:
+
+```sh
+ln -s /path/to/friedcakesmp_mod/friedcake/mods "<world path>/worldmods/friedcake"
+```
+
+Then add to `minetest.conf`:
 
 ```
 secure.trusted_mods = smp_store
 secure.http_mods = smp_store
 ```
 
-(The second line is only required once a Postgres backend is wired in.)
+`secure.trusted_mods` lets `smp_store` reach the insecure environment (SQLite
+backend); `secure.http_mods` is required for the Postgres backend's HTTP
+proxy. With `store.backend = mod_storage` neither is needed.
 
 ## Load order
 
@@ -104,7 +113,7 @@ In-game commands after install:
 
 ## Repository layout (top level)
 
-The modpack lives under `friedcake/`; the parent repo also contains the
+The modpack lives under `friedcake/mods/`; the parent repo also contains the
 spec, the source pipeline, and the agent-flow tooling. See
 `/Volumes/Dara/dev/coconut/README.md`, `AGENTS.md`, `CONTRIBUTING.md` and
 `tools/agent-flow.sh` for the workflow.

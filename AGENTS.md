@@ -34,7 +34,7 @@ that says the same. Anything pinned to a specific commit in the spec is
    the merge gate.
 4. Branch: `git checkout -b agent/fNN-<short-name>` from `main`.
 5. Implement under `friedcake/mods/smp_<feature>/`.
-6. Add `load_mod = smp_<feature>` to `friedcake/modpack.conf` **below** the
+6. Add `load_mod = smp_<feature>` to `friedcake/mods/modpack.conf` **below** the
    existing entries.
 7. Add `friedcake/mods/smp_<feature>/test.lua`.
 8. Verify locally: `luajit friedcake/dev-tests/test_<feature>.lua`.

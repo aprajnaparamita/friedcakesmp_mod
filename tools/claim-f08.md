@@ -122,7 +122,7 @@ Read `spec/features/f08-teleport.md` end-to-end. Then read:
    friedcake/dev-tests/test_tp.lua      # standalone smoke tests
    ```
 
-   Add two `load_mod = …` lines to `friedcake/modpack.conf` below the
+   Add two `load_mod = …` lines to `friedcake/mods/modpack.conf` below the
    existing entries:
 
    ```

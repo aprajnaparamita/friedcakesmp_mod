@@ -116,7 +116,7 @@ Read `spec/features/f06-shards.md` end-to-end. Then read:
    friedcake/dev-tests/test_amethyst.lua      # standalone smoke tests
    ```
 
-   Add three `load_mod = …` lines to `friedcake/modpack.conf` below
+   Add three `load_mod = …` lines to `friedcake/mods/modpack.conf` below
    the existing entries, in this order:
 
    ```

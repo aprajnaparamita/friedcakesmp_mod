@@ -116,7 +116,7 @@ note the normalisation in `f13-ranks.md §10`.
    friedcake/dev-tests/test_ranks.lua      # standalone smoke tests
    ```
 
-   `smp_ranks` is **already in `friedcake/modpack.conf`** (it was
+   `smp_ranks` is **already in `friedcake/mods/modpack.conf`** (it was
    scaffolded as a stub). Verify the line is present; do not add a
    duplicate.
 

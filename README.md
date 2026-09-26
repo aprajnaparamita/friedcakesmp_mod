@@ -28,9 +28,10 @@ video and the public wiki. Nothing is copied from the original.
 | `spec/` | The specification: 16 feature files (`spec/features/f01-economy-core.md` … `f16-legacy.md`), the shared contract (`spec/shared/00-conventions.md` … `08-ui-strings.md`) and the plan (`spec/plan/` — roadmap, open questions, acceptance tests). |
 | `friedcake/` | The modpack — 22 `smp_*` mods covering the economy, auction house, orders, Quick Buy, selling, spawners, shards, teleports, homes, combat, bounties, settings, social, statistics and world rules. |
 
-Install it by dropping `friedcake/` into Mineclonia's `mods/` directory, or
-into a world's `worldmods/` directory. Installation, storage backends and
-load order are documented in [`friedcake/README.md`](friedcake/README.md).
+Install it by dropping `friedcake/mods/` (the modpack) into Mineclonia's
+`mods/` directory as `friedcake`, or symlinking it into a world's `worldmods/`
+directory. Installation, storage backends and load order are documented in
+[`friedcake/README.md`](friedcake/README.md).
 
 ## Documentation
 
@@ -49,14 +50,14 @@ load order are documented in [`friedcake/README.md`](friedcake/README.md).
 ## Status
 
 Thirteen feature branches have been merged (see [`INTEGRATION.md`](INTEGRATION.md));
-`friedcake/modpack.conf` declares 22 mods, and features f01–f15 are
+`friedcake/mods/modpack.conf` declares 22 mods, and features f01–f15 are
 implemented. Feature f16 (legacy modules) has not been started. The verdicts
 below are the audit's, summarised from
 [`SPEC-CONFORMANCE-REPORT.md`](SPEC-CONFORMANCE-REPORT.md).
 
 | Spec | Mod(s) | State |
 |---|---|---|
-| shared §2.2 storage | `smp_store` | implemented — `mod_storage`, SQLite, Postgres stub |
+| shared §2.2 storage | `smp_store` | implemented — `mod_storage`, SQLite, Postgres |
 | shared §0.4 UI kit | `smp_core` | implemented — money formatter, amount parser, menu sessions |
 | shared §2.5 items | `smp_items` | implemented — M0–M2 item keys |
 | shared §5.5 privileges | `smp_admin` | implemented — `smp_admin`, `smp_moderator` |
@@ -118,13 +119,14 @@ Two things to know before testing:
 │   ├── features/f01–f16             # one .md per feature
 │   ├── shared/00–08                 # conventions, architecture, UI kit, mirrors
 │   └── plan/                        # roadmap, open questions, acceptance tests
-├── friedcake/                       # the modpack (drop into Mineclonia mods/)
+├── friedcake/                       # modpack wrapper (docs, dev-tests, mods/)
 │   ├── README.md                    # installation, storage backends, commands
 │   ├── WORLD_RULES.md               # f15 rules → engine settings mapping
 │   ├── minetest.conf.example        # recommended server configuration
-│   ├── modpack.conf                 # pack metadata + intended load order
-│   ├── mods/smp_*/                  # 22 mods, one directory per feature area
-│   └── dev-tests/                   # standalone luajit smoke tests (20 suites)
+│   ├── dev-tests/                   # standalone luajit smoke tests (20 suites)
+│   └── mods/                        # the modpack (drop into Mineclonia mods/ as "friedcake")
+│       ├── modpack.conf             # pack metadata + intended load order
+│       └── smp_*/                   # 23 mods, one directory per feature area
 ├── tools/
 │   ├── agent-flow.sh                # wrapper for the parallel-agent workflow
 │   └── *.md                         # agent prompts, claim files, integrator notes

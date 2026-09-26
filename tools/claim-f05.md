@@ -125,7 +125,7 @@ Read `spec/features/f05-quickbuy.md` end-to-end. Then read:
    friedcake/dev-tests/test_quickbuy.lua   # standalone smoke tests
    ```
 
-   Add `load_mod = smp_quickbuy` to `friedcake/modpack.conf` below
+   Add `load_mod = smp_quickbuy` to `friedcake/mods/modpack.conf` below
    the existing entries.
 
 3. Implement in this order (so each step is testable):

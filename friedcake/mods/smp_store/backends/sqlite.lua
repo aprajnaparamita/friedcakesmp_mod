@@ -35,7 +35,7 @@ if not insecure then
 end
 
 -- 2. Look up lsqlite3.
-local sqlite3 = package.loaded["lsqlite3"] or insecure.loadlib and nil
+local sqlite3 = package.loaded and package.loaded["lsqlite3"]
 if not sqlite3 then
 	-- Try to require it from the engine's path.
 	local ok, mod = pcall(require, "lsqlite3")

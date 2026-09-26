@@ -110,7 +110,7 @@ integrator can fold them into `smp_core` in one mechanical step.
    friedcake/WORLD_RULES.md             # rule → Luanti mapping (documentation)
    ```
 
-   Add `load_mod = smp_world` to `friedcake/modpack.conf` **below** the
+   Add `load_mod = smp_world` to `friedcake/mods/modpack.conf` **below** the
    existing entries (it depends on `smp_core` and `mcl_worlds`).
 
 3. Implement in this order (so each step is testable):
