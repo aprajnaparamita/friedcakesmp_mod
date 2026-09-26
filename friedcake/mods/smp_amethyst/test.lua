@@ -66,18 +66,27 @@ ok(desc ~= nil and desc:find("Expires") ~= nil,
 	"description shows remaining time: " .. tostring(desc))
 
 -- T3: sweep removes the expired stack and keeps the live one.
+-- S05/AX-2: engine inventory lists are 1-based from Lua (l_inventory.cpp
+-- converts index -> index-1 and rejects < 1), so the stub mirrors that:
+-- slot 0 and anything past `size` read as an empty stack.
 local removed_notified = 0
 local function stub_inv()
 	local slots = {
-		[0] = ItemStack("smp_amethyst:pickaxe"),
-		[1] = ItemStack("smp_amethyst:axe"),
+		[1] = ItemStack("smp_amethyst:pickaxe"),
+		[2] = ItemStack("smp_amethyst:axe"),
 	}
-	smp_amethyst.expiry.set_expiry(slots[0], now + 3600)
-	smp_amethyst.expiry.set_expiry(slots[1], now - 10)
+	smp_amethyst.expiry.set_expiry(slots[1], now + 3600)
+	smp_amethyst.expiry.set_expiry(slots[2], now - 10)
 	return {
 		get_size = function(_, _) return 2 end,
-		get_stack = function(_, _, i) return slots[i] end,
+		get_stack = function(_, _, i)
+			if type(i) ~= "number" or i < 1 or i > 2 then
+				return ItemStack("")
+			end
+			return slots[i] or ItemStack("")
+		end,
 		set_stack = function(_, _, i, v)
+			if type(i) ~= "number" or i < 1 or i > 2 then return end
 			slots[i] = ItemStack(v)
 		end,
 	}
@@ -87,8 +96,9 @@ smp_amethyst.expiry.sweep_list(inv, "main", function(_)
 	removed_notified = removed_notified + 1
 end, now)
 ok(removed_notified == 1, "sweep removed exactly one expired stack")
-ok(inv:get_stack("main", 0):is_empty() == false, "live stack kept")
-ok(inv:get_stack("main", 1):is_empty() == true, "expired stack removed")
+ok(inv:get_stack("main", 0):is_empty() == true, "slot 0 reads empty (1-based lists)")
+ok(inv:get_stack("main", 1):is_empty() == false, "live stack kept")
+ok(inv:get_stack("main", 2):is_empty() == true, "expired stack removed (last slot is swept)")
 
 -- The re-entrancy guard table exists and is empty at rest.
 ok(type(smp_amethyst._digging) == "table", "dig guard table exists")

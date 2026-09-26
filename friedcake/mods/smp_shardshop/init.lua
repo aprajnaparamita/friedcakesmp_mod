@@ -98,9 +98,19 @@ local function purchase(player_name, offer_id)
 		return
 	end
 
-	local inv = core.get_player_by_name(player_name):get_inventory()
+	local target = core.get_player_by_name(player_name)
+	if not target then return end   -- left between field and purchase
+	local inv = target:get_inventory()
+	if not inv then return end
 	-- Build the stack up front so the room check matches the delivery.
+	-- S05/SH-2: stamp every shop-issued stack so downstream value paths
+	-- can recognise shop gear (f06 §10: smp_sell refuses or zeroes stacks
+	-- carrying `smp:shardshop = "1"`). Stamped on the stack that is
+	-- delivered, so the meta travels into the player's inventory.
 	local stack = smp_shardshop.catalogue.make_stack(offer)
+	if stack then
+		stack:get_meta():set_string("smp:shardshop", "1")
+	end
 	if not stack or not inv:room_for_item("main", stack) then
 		core.chat_send_player(player_name, S("Your inventory is full"))
 		return
@@ -142,7 +152,12 @@ smp_shardshop._purchase = purchase
 -- untrusted)
 ----------------------------------------------------------------------
 
-core.register_on_player_receive_fields(function(player_name, formname, fields)
+core.register_on_player_receive_fields(function(player, formname, fields)
+	-- S05/SH-1: the engine passes an ObjectRef here, never a name. The
+	-- session table is keyed by name, so resolving the name first is what
+	-- makes the menu buy at all (and stops sessions leaking on leave).
+	local player_name = player and player:get_player_name()
+	if not player_name then return end
 	if formname == FORM_SHOP then
 		smp_core.handle_fields(player_name, formname, fields,
 			function(session, f)
@@ -151,6 +166,12 @@ core.register_on_player_receive_fields(function(player_name, formname, fields)
 			-- untrusted, so resolve the id against the catalogue.
 			for _, offer in ipairs(smp_shardshop.catalogue.offers) do
 				if f["offer_" .. offer.id] then
+					-- S05/SH-3: open_session returns any existing session
+					-- unchanged and ignores `initial`, so a stale offer_id
+					-- from a dismissed confirm dialog would survive. Drop
+					-- the old session first; a new offer always starts
+					-- from its own id.
+					smp_core.close_session(player_name, FORM_CONFIRM)
 					smp_core.open_session(player_name, FORM_CONFIRM,
 						{ offer_id = offer.id })
 					core.show_formspec(player_name, FORM_CONFIRM,
@@ -163,7 +184,9 @@ core.register_on_player_receive_fields(function(player_name, formname, fields)
 	elseif formname == FORM_CONFIRM then
 		smp_core.handle_fields(player_name, formname, fields,
 			function(session, f)
-			if f.cancel then return "close" end
+			-- S05/SH-3: Esc (`quit`) must close the confirm session too —
+			-- `stay` left the stale offer_id buyable from a later dialog.
+			if f.quit or f.cancel then return "close" end
 			if f.buy then
 				-- Re-validate the offer from the server-side session;
 				-- the client field is never trusted for the debit.
@@ -175,7 +198,11 @@ core.register_on_player_receive_fields(function(player_name, formname, fields)
 	end
 end)
 
-core.register_on_leaveplayer(function(player_name)
+core.register_on_leaveplayer(function(player)
+	-- S05/SH-1: `player` is an ObjectRef; close_session is keyed by name,
+	-- so sessions used to leak on every disconnect.
+	local player_name = player and player:get_player_name()
+	if not player_name then return end
 	smp_core.close_session(player_name, FORM_SHOP)
 	smp_core.close_session(player_name, FORM_CONFIRM)
 end)

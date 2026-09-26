@@ -9,7 +9,18 @@
 -- plus catalogue integrity (spear omitted, armour resolved at runtime)
 -- and the shard_spend ledger entry on success.
 
-local ROOT = "/Volumes/Dara/dev/coconut/friedcake/mods"
+-- Repo root from the script path, so this harness runs from a git
+-- worktree checkout too (pattern: dev-tests/test_economy.lua).
+local function find_root()
+	local script = (arg and arg[0]) or ""
+	local prefix = script:match("^(.-)friedcake/dev%-tests/[^/]*$")
+	if prefix and prefix ~= "" then
+		return (prefix:gsub("/+$", ""))
+	end
+	return "."
+end
+
+local ROOT = find_root() .. "/friedcake/mods"
 
 ----------------------------------------------------------------------
 -- core stub (pattern: test_shards.lua)
@@ -158,12 +169,22 @@ function IS.new(name, count)
 	local self = setmetatable({}, IS)
 	self.name = name or ""
 	self.count = count or 1
+	self.fields = {}
 	return self
 end
 function IS:get_name() return self.name end
 function IS:is_empty() return self.name == "" end
 function IS:get_count() return self.count end
 function IS:set_count(n) self.count = n end
+-- S05/SH-2: the shop stamps `smp:shardshop` on what it delivers, so the
+-- stub needs item metadata.
+function IS:get_meta()
+	local f = self.fields
+	return {
+		get_string = function(_, k) return f[k] or "" end,
+		set_string = function(_, k, v) f[k] = v end,
+	}
+end
 setmetatable(IS, { __call = function(_, name, count)
 	return IS.new(name, count)
 end })
@@ -194,6 +215,20 @@ smp_amethyst = {
 	end,
 }
 
+-- Callback registry: smp_shards and smp_shardshop both register engine
+-- callbacks, and the S05 cases need to fire them exactly as the engine
+-- does (with an ObjectRef, never a name).
+local hooks = {}
+local function cap(hook)
+	return function(fn)
+		hooks[hook] = hooks[hook] or {}
+		table.insert(hooks[hook], fn)
+	end
+end
+local function fire(hook, ...)
+	for _, fn in ipairs(hooks[hook] or {}) do fn(...) end
+end
+
 core = {
 	get_mod_storage = function() return store end,
 	write_json = json_encode,
@@ -203,14 +238,23 @@ core = {
 	log = function(level, ...)
 		if level == "error" then print("[log-error]", ...) end
 	end,
+	-- STRICT engine stubs (S05/QB-1 harness requirement): the engine runs
+	-- luaL_checkstring on both and RAISES on a non-string first argument
+	-- (l_env.cpp:648, l_server.cpp:92).
 	chat_send_player = function(name, msg)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.chat_send_player expects a string name, got %s",
+				type(name)), 2)
+		end
 		chat[name] = chat[name] or {}
 		chat[name][#chat[name] + 1] = msg
 	end,
 	request_insecure_environment = function() return nil end,
 	settings = {
-		get = function() return "" end,
-		get_bool = function() return false end,
+		-- Engine parity: an unset setting yields the DEFAULT, not "".
+		get = function(_, _, default) return default or "" end,
+		get_bool = function(_, _, default) return default or false end,
 	},
 	get_worldpath = function() return "/tmp" end,
 	get_modpath = function(m) return ROOT .. "/" .. m end,
@@ -219,10 +263,16 @@ core = {
 	registered_chatcommands = commands,
 	register_privilege = function() end,
 	register_on_shutdown = function() end,
-	register_globalstep = function() end,
-	register_on_leaveplayer = function() end,
-	register_on_joinplayer = function() end,
-	register_on_player_receive_fields = function() end,
+	register_globalstep = cap("globalstep"),
+	register_on_leaveplayer = cap("leave"),
+	register_on_joinplayer = cap("join"),
+	register_on_player_receive_fields = cap("fields"),
+	register_on_dignode = cap("dig"),
+	register_on_placenode = cap("place"),
+	register_on_punchplayer = cap("punch"),
+	register_on_item_pickup = cap("pickup"),
+	register_on_chat_message = cap("chat"),
+	register_on_chatcommand = cap("chatcommand"),
 	formspec_escape = function(s)
 		return tostring(s):gsub("([%[%]%;])", "%%%1")
 	end,
@@ -231,6 +281,11 @@ core = {
 	end,
 	close_formspec = function() end,
 	get_player_by_name = function(name)
+		if type(name) ~= "string" then
+			error(string.format(
+				"engine parity: core.get_player_by_name expects a string name, got %s",
+				type(name)), 2)
+		end
 		if name == "dave" then
 			return {
 				get_player_name = function() return "dave" end,
@@ -454,5 +509,123 @@ assert(commands["shardshop"] ~= nil, "/shardshop registered")
 local r = commands["shardshop"].func("dave", "")
 assert(r == true, "/shardshop succeeds")
 print("purchase paths ok (T8, success, insufficient, unknown)")
+
+----------------------------------------------------------------------
+-- S05/SH-1: the field handlers receive an ObjectRef, never a name.
+----------------------------------------------------------------------
+
+-- What the engine hands register_on_player_receive_fields /
+-- register_on_leaveplayer.
+local dave_ref = { get_player_name = function() return "dave" end }
+
+-- The stubs are strict, like the engine (luaL_checkstring): an ObjectRef
+-- would raise, which is exactly what the old code fed them.
+assert(not pcall(core.get_player_by_name, dave_ref),
+	"SH-1 stub: core.get_player_by_name raises on an ObjectRef")
+assert(not pcall(core.chat_send_player, dave_ref, "hi"),
+	"SH-1 stub: core.chat_send_player raises on an ObjectRef")
+assert(hooks.fields and #hooks.fields > 0, "field handlers registered")
+assert(hooks.leave and #hooks.leave > 0, "leave handlers registered")
+
+-- A harness purchase through the REAL field handler: debit + deliver.
+inv_state.room = true
+do
+	local rec = smp_store.api.ensure_player("dave")
+	rec.shards = 100000
+	smp_store.api.upsert_player(rec)
+	local n_before = #delivered
+
+	-- 1. the grid is on screen (the shop session is open) and the player
+	--    clicks an offer with an ObjectRef in hand
+	assert(smp_shardshop.open(dave) == true, "shop opened")
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_shard_pickaxe = true })
+	local sess = smp_core.get_session("dave", "smp_shardshop:confirm")
+	assert(sess and sess.offer_id == "shard_pickaxe",
+		"SH-1 the session is keyed by the RESOLVED name")
+
+	-- 2. press Buy: the purchase runs under that name
+	fire("fields", dave_ref, "smp_shardshop:confirm", { buy = true })
+	assert(smp_store.api.get_player("dave").shards == 97000,
+		"SH-1 handler purchase debited 3000")
+	assert(#delivered == n_before + 1, "SH-1 handler purchase delivered")
+	assert(delivered[#delivered]:get_name() == "smp_amethyst:pickaxe",
+		"SH-1 delivered the pickaxe")
+
+	-- S05/SH-2: what the shop delivers carries the shop marker, so
+	-- smp_sell (S02) can refuse or zero it.
+	assert(delivered[#delivered]:get_meta():get_string("smp:shardshop") == "1",
+		"SH-2 delivered stack is stamped smp:shardshop=1")
+
+	-- the confirm session closed after a successful purchase
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm") == nil,
+		"confirm session closed after Buy")
+	print("SH-1 ok: purchase through the real field handler")
+end
+
+-- Sessions are closed on leave (they used to leak: close_session is
+-- keyed by name and the handler was handed an ObjectRef).
+do
+	smp_shardshop.open(dave)
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_shard_pickaxe = true })
+	assert(smp_core.get_session("dave", "smp_shardshop:shop"),
+		"shop session open")
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm"),
+		"confirm session open")
+
+	fire("leave", dave_ref)
+	assert(smp_core.get_session("dave", "smp_shardshop:shop") == nil,
+		"SH-1 shop session closed on leave")
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm") == nil,
+		"SH-1 confirm session closed on leave")
+	print("SH-1 ok: leave closes the sessions")
+end
+
+----------------------------------------------------------------------
+-- S05/SH-3: a stale offer_id must never be what Buy purchases.
+----------------------------------------------------------------------
+do
+	local rec = smp_store.api.ensure_player("dave")
+	rec.shards = 100000
+	smp_store.api.upsert_player(rec)
+
+	-- (a) clicking offer B replaces the stale confirm session for A.
+	assert(smp_shardshop.open(dave) == true, "shop opened")
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_shard_pickaxe = true })
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_haste_potion = true })
+	local sess = smp_core.get_session("dave", "smp_shardshop:confirm")
+	assert(sess and sess.offer_id == "haste_potion",
+		"SH-3 a new offer replaces the stale session (got "
+		.. tostring(sess and sess.offer_id) .. ")")
+
+	-- Buy purchases the offer on screen (B), not the stale A.
+	local n_before = #delivered
+	local shards_before = smp_store.api.get_player("dave").shards
+	fire("fields", dave_ref, "smp_shardshop:confirm", { buy = true })
+	assert(#delivered == n_before + 1, "SH-3 one stack delivered")
+	assert(delivered[#delivered]:get_name() == "smp_amethyst:haste_potion",
+		"SH-3 Buy bought the offer on screen (B), got "
+		.. delivered[#delivered]:get_name())
+	assert(smp_store.api.get_player("dave").shards == shards_before - 6000,
+		"SH-3 B's price (6000) was debited, not A's 3000")
+
+	-- (b) Esc closes the confirm session outright, so a later Buy with no
+	--     session buys nothing.
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_shard_pickaxe = true })
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm"),
+		"SH-3 confirm session open before Esc")
+	fire("fields", dave_ref, "smp_shardshop:confirm", { quit = true })
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm") == nil,
+		"SH-3 Esc closes the confirm session")
+	n_before = #delivered
+	fire("fields", dave_ref, "smp_shardshop:confirm", { buy = true })
+	assert(#delivered == n_before, "SH-3 Buy with no session delivers nothing")
+
+	-- (c) cancel does the same.
+	fire("fields", dave_ref, "smp_shardshop:shop", { offer_shard_pickaxe = true })
+	fire("fields", dave_ref, "smp_shardshop:confirm", { cancel = true })
+	assert(smp_core.get_session("dave", "smp_shardshop:confirm") == nil,
+		"SH-3 cancel closes the confirm session")
+	print("SH-3 ok: no stale offer_id can be bought")
+end
 
 print("ALL OK")

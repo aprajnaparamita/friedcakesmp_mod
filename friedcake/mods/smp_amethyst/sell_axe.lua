@@ -29,8 +29,8 @@ local function stack_key(stack)
 	return nil
 end
 
--- Fill a stack into the best open order for its key. Returns true when
--- the order accepted the whole stack.
+-- Fill a stack into the best open order for its key. Returns true only
+-- when the order accepted the stack and was paid for it.
 local function route_to_order(player, stack, key)
 	if not (smp_orders and type(smp_orders.best_open_order) == "function") then
 		return false
@@ -39,7 +39,14 @@ local function route_to_order(player, stack, key)
 	if not order then return false end
 	if type(smp_orders.fill_from_stack) ~= "function" then return false end
 	local ok, accepted = pcall(smp_orders.fill_from_stack, order, player, stack)
-	return ok and accepted ~= false
+	-- S05/AX-1: fill_from_stack REFUSES with `nil, reason` (changed / own
+	-- order / no match / "full") and accepts with `{ accepted = n, ... }`.
+	-- The old `accepted ~= false` was true for nil, so a refused fill was
+	-- reported as routed and the stack was deleted from the container
+	-- without payment (the axe is caller-side of the same misread as
+	-- AH-1/OR-2). pcall success is not the call's success: read both.
+	return ok and type(accepted) == "table"
+		and (accepted.accepted or 0) > 0
 end
 
 -- Base-price sell routing (f02). Contract PROPOSED:
@@ -96,7 +103,10 @@ core.register_tool("smp_amethyst:sell_axe", {
 
 		local routed, skipped = 0, 0
 		local size = inv:get_size("main") or 0
-		for i = 0, size - 1 do
+		-- S05/AX-2: inventory lists are 1-based from Lua (l_inventory.cpp
+		-- subtracts 1 and rejects index < 0). The old `0, size - 1` read an
+		-- empty slot 0 and never touched the last slot.
+		for i = 1, size do
 			local stack = inv:get_stack("main", i)
 			if not stack:is_empty() then
 				local key = stack_key(stack)
