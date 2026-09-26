@@ -187,3 +187,18 @@ visible lag by spamming it.
 - SE-1 and SE-2 decided in f02 §10 and implemented. The recipe-arbitrage
   test lands and is green.
 - SE-5's rate limit is in, and the store change is escalated.
+
+## Status (2026-09-27, verified)
+
+| ID | Outcome | Change |
+|---|---|---|
+| SE-1 | **FIXED** | `sell.default_price` default → `0` (feature off). Mirror change → ESCALATE (f02 §13.1). |
+| SE-2 | **FIXED** | Enchant bonus capped at `base_price`. Enchanted books are unlisted, so unsellable while the default price is 0 (f02 §13.2). |
+| SE-3 | **FIXED except the OBSERVED wall** | 17 PROPOSED prices corrected, found by the live-registry scan. The $7 cobble wall ($1 over cobble) is OBSERVED [S2] and awaits an integrator ruling (f02 §13.3). |
+| SE-4 | **FIXED** | Sell grid `allow_put` refuses while tagged; `/sell hand` still works in combat (in-game T10 updated). |
+| SE-5 | **FIXED** (local) | `/sell` and container confirm rate-limited ~1/s. Store prune-index → ESCALATE. |
+| SH-2 hand-off | **FIXED** | `items.sellable` refuses `smp:shardshop="1"` stacks. |
+| Recipe test | **ADDED** | `smp_sell/arbitrage.lua`, asserted by `/smp test smp_sell`. Run headless on Luanti 5.17 + Mineclonia: 1834 recipes, 38 → 0 violations; a reverted price is caught. |
+
+**Tests:** `dev-tests/test_sell.lua` ALL OK (it also runs the in-mod suite, 65 assertions).
+The arbitrage assertion runs only in-engine (the harness has no recipes).

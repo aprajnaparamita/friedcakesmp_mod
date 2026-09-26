@@ -83,8 +83,8 @@ function E.plan(player_name, stacks, source)
 	for _, g in ipairs(collected.groups) do
 		local base = prices.base_price(g.key)
 		-- Enchanted stacks earn a flat bonus per enchantment level on top of
-		-- the base price (PROPOSED — f02 §10 V-99).
-		local bonus = prices.enchant_bonus(g.ench, cfg.enchant_bonus)
+		-- the base price (PROPOSED — f02 §10 V-99). Capped at base price.
+		local bonus = prices.enchant_bonus(g.ench, cfg.enchant_bonus, base)
 		local unit = prices.unit_value(g.key, multiplier, bonus)
 		if base and unit and unit > 0 then
 			local entry = {

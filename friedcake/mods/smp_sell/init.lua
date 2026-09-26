@@ -42,7 +42,7 @@ smp_sell = {
 
 -- Forward declarations: reload_cfg() closes over these, and the modules are
 -- assigned below in dependency order.
-local items, prices, history, receipt, orders, engine, menu
+local items, prices, history, receipt, orders, engine, menu, arbitrage
 
 local function get_str(key, default)
 	local v = core.settings and core.settings:get(key)
@@ -94,7 +94,11 @@ local function reload_cfg()
 	cfg.base_prices_path   = get_str("sell.base_prices", "")
 	-- PROPOSED (f02 §10 V-98/V-99): server price for unlisted items, and the
 	-- per-enchantment-level bonus, both integer cents.
-	cfg.default_price      = math.max(0, math.floor(get_num("sell.default_price", 100)))
+	-- V-98: default_price = 0 disables the default (feature off) until an
+	-- operator opts in. The $1 default was an unlimited money faucet (moss,
+	-- bone-meal flora, craft-multiplier recipes). SEE f02 §10 for the mirror
+	-- change to spec/shared/06-config-reference.md.
+	cfg.default_price      = math.max(0, math.floor(get_num("sell.default_price", 0)))
 	cfg.enchant_bonus      = math.max(0, math.floor(get_num("sell.enchant_bonus", 50000)))
 	cfg.sell_enchanted     = get_str("sell.enchanted", "true") ~= "false"
 	cfg.max_balance        = get_num("economy.max_balance",
@@ -106,6 +110,31 @@ local function reload_cfg()
 		prices.set_default_price(cfg.default_price)
 		prices.reload(cfg.base_prices_path)
 	end
+end
+
+----------------------------------------------------------------------
+-- Sell cooldown (SE-5: ~1/s rate limit for /sell and container confirm)
+----------------------------------------------------------------------
+
+local sell_cooldown = {}
+local SELL_COOLDOWN_SECONDS = 1
+
+local function now_seconds()
+	if type(core.get_gametime) == "function" then return core.get_gametime() end
+	return os.time()
+end
+
+local function sell_cooldown_active(name)
+	local until_t = sell_cooldown[name]
+	return until_t ~= nil and now_seconds() < until_t
+end
+
+function smp_sell._reset_sell_cooldown(name)
+	sell_cooldown[name] = nil
+end
+
+local function set_sell_cooldown(name)
+	sell_cooldown[name] = now_seconds() + SELL_COOLDOWN_SECONDS
 end
 
 ----------------------------------------------------------------------
@@ -140,7 +169,10 @@ engine  = load_module("sell.lua", {
 menu    = load_module("menu.lua", {
 	items = items, prices = prices, history = history, receipt = receipt,
 	orders = orders, engine = engine, cfg = cfg, S = S,
+	sell_cooldown_active = sell_cooldown_active,
+	set_sell_cooldown = set_sell_cooldown,
 })
+arbitrage = load_module("arbitrage.lua")
 
 reload_cfg()
 
@@ -152,6 +184,7 @@ smp_sell.receipt = receipt
 smp_sell.orders  = orders
 smp_sell.engine  = engine
 smp_sell.menu    = menu
+smp_sell.arbitrage = arbitrage
 
 ----------------------------------------------------------------------
 -- Public API
@@ -328,11 +361,18 @@ core.register_chatcommand("sell", {
 		local player = core.get_player_by_name(player_name)
 		if not player then return false end
 
+		-- SE-5: rate-limit /sell to ~1/s (reuses /pay cooldown pattern)
+		if sell_cooldown_active(player_name) then
+			return false, S("Please wait before selling again")
+		end
+
 		param = (param or ""):match("^%s*(.-)%s*$") or ""
 		local sub = param:match("^(%S+)")
 
 		if sub == nil then
 			-- `/sell` opens the observed container [F0092-F0096].
+			-- Cooldown is set on actual sale (confirm/hand/all), not on menu open,
+			-- because in close mode the sale happens on quit.
 			menu.open(player)
 			return true
 		elseif sub == "hand" or sub == "all" then
@@ -346,6 +386,7 @@ core.register_chatcommand("sell", {
 				-- A refusal is reported as the command result, like /pay.
 				return false, (messages and messages[1]) or S("No items to sell")
 			end
+			set_sell_cooldown(player_name)
 			for _, line in ipairs(messages or {}) do
 				core.chat_send_player(player_name, line)
 			end
@@ -423,7 +464,8 @@ core.register_chatcommand("worth", {
 			item_exempt = cfg.meta_exempt_items,
 			sell_enchanted = cfg.sell_enchanted,
 		})
-		local bonus = ok and prices.enchant_bonus(ench, cfg.enchant_bonus) or 0
+		local base = ok and prices.base_price(key) or 0
+		local bonus = ok and prices.enchant_bonus(ench, cfg.enchant_bonus, base) or 0
 		local unit = prices.unit_value(key, cfg.multiplier, bonus)
 		if not unit then
 			return true, S("@1 has no server price", name)

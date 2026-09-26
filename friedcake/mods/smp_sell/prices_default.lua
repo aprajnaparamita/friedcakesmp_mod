@@ -35,7 +35,7 @@ return {
 	["mcl_core:cobble"]              = 600,   -- anchor [S2]
 	["mcl_core:mossycobble"]         = 900,
 	["mcl_core:stone_smooth"]        = 800,
-	["mcl_core:stonebrick"]          = 800,
+	["mcl_core:stonebrick"]          = 700,   -- S02: <= stone (4 stone -> 4 bricks; stonecutter 1:1)
 	["mcl_core:dirt"]                = 100,
 	["mcl_core:dirt_with_grass"]     = 150,
 	["mcl_core:coarse_dirt"]         = 120,
@@ -45,8 +45,19 @@ return {
 	["mcl_core:gravel"]              = 200,
 	["mcl_core:flint"]               = 500,
 	["mcl_core:obsidian"]            = 50000,
-	["mcl_walls:cobble"]             = 700,   -- anchor [S2]
-	["mcl_walls:mossycobble"]        = 1000,
+	-- mcl_walls:cobble is an alias of the cobblestone WALL. Its $7 is OBSERVED
+	-- [S2] and sits $1 above cobble; kept pending an integrator ruling (f02
+	-- §10). Every other wall/stair/slab is priced at or below its source
+	-- block: smp_sell/arbitrage.lua enforces that (/smp test smp_sell).
+	["mcl_walls:cobble"]             = 700,   -- anchor [S2] -- wall
+	["mcl_walls:mossycobble"]        = 900,   -- S02: <= mossy cobble (stonecutter 1:1)
+	["mcl_walls:stonebrick"]         = 700,   -- S02: <= stonebrick (stonecutter 1:1)
+	["mcl_stairs:slab_cobble"]       = 300,
+	["mcl_stairs:slab_stonebrick"]   = 350,   -- S02: 2 per stonebrick at the stonecutter
+	["mcl_stairs:slab_sandstone"]    = 150,
+	["mcl_stairs:stair_cobble"]      = 300,
+	["mcl_stairs:stair_stonebrick"]  = 400,
+	["mcl_stairs:stair_sandstone"]   = 150,
 	["mcl_amethyst:calcite"]         = 900,
 	["mcl_amethyst:tinted_glass"]    = 4000,
 	["mcl_amethyst:amethyst_block"]  = 48000,
@@ -59,9 +70,9 @@ return {
 	["mcl_core:charcoal_lump"]       = 1500,
 	["mcl_core:lapis"]               = 6000,
 	["mcl_core:iron_ingot"]          = 25000,
-	["mcl_core:iron_nugget"]         = 2700,
+	["mcl_core:iron_nugget"]         = 2770,   -- S02: 9 nuggets within 1% of an ingot
 	["mcl_core:gold_ingot"]          = 60000,
-	["mcl_core:gold_nugget"]         = 6600,
+	["mcl_core:gold_nugget"]         = 6660,   -- S02: 9 nuggets within 1% of an ingot
 	["mcl_core:diamond"]             = 900000,
 	["mcl_core:emerald"]             = 1200000,
 	["mcl_core:coalblock"]           = 18000,
@@ -82,7 +93,7 @@ return {
 
 	-- Mob drops ------------------------------------------------------
 	["mcl_mobitems:bone"]            = 1000,  -- anchor ($10.00)
-	["mcl_core:bone_block"]          = 9000,
+	["mcl_core:bone_block"]          = 3000,   -- S02: 9 bone meal = 3 bones ($30), not $90
 	["mcl_mobitems:rotten_flesh"]    = 300,
 	["mcl_mobitems:string"]          = 800,
 	["mcl_mobitems:spider_eye"]      = 900,
@@ -124,9 +135,9 @@ return {
 	-- Miscellaneous --------------------------------------------------
 	["mcl_books:book"]               = 1200,
 	["mcl_books:bookshelf"]          = 5000,
-	["mcl_chests:chest"]             = 2500,
-	["mcl_chests:violet_shulker_box"] = 1500000,
-	["mcl_chests:violet_shulker_box_small"] = 1500000,
+	["mcl_chests:chest"]             = 2400,   -- S02: <= 8 planks
+	["mcl_chests:violet_shulker_box"] = 800000,   -- S02: <= 2 shells + chest
+	["mcl_chests:violet_shulker_box_small"] = 800000,   -- S02: <= 2 shells + chest
 	["mcl_end:dragon_egg"]           = 0,     -- not sellable (trophy)
 
 	-- Tools ----------------------------------------------------------
@@ -135,23 +146,23 @@ return {
 	["mcl_tools:pick_wood"]          = 900,
 	["mcl_tools:shovel_wood"]        = 500,
 	["mcl_tools:axe_wood"]           = 1100,
-	["mcl_tools:sword_wood"]         = 900,
+	["mcl_tools:sword_wood"]         = 700,   -- S02: <= 2 planks + stick
 	["mcl_tools:pick_stone"]         = 1500,
 	["mcl_tools:shovel_stone"]       = 800,
 	["mcl_tools:axe_stone"]          = 1800,
-	["mcl_tools:sword_stone"]        = 1500,
+	["mcl_tools:sword_stone"]        = 1300,   -- S02: <= 2 cobble + stick
 	["mcl_tools:pick_copper"]        = 12000,
 	["mcl_tools:sword_copper"]       = 12000,
 	["mcl_tools:pick_iron"]          = 60000,
-	["mcl_tools:shovel_iron"]        = 30000,
+	["mcl_tools:shovel_iron"]        = 25000,   -- S02: <= 1 ingot + 2 sticks
 	["mcl_tools:axe_iron"]           = 70000,
-	["mcl_tools:sword_iron"]         = 55000,
+	["mcl_tools:sword_iron"]         = 50000,   -- S02: <= 2 ingots + stick
 	["mcl_tools:pick_gold"]          = 140000,
-	["mcl_tools:sword_gold"]         = 130000,
+	["mcl_tools:sword_gold"]         = 120000,   -- S02: <= 2 ingots + stick
 	["mcl_tools:pick_diamond"]       = 2100000,
-	["mcl_tools:shovel_diamond"]     = 1000000,
+	["mcl_tools:shovel_diamond"]     = 900000,   -- S02: <= 1 diamond + 2 sticks
 	["mcl_tools:axe_diamond"]        = 2400000,
-	["mcl_tools:sword_diamond"]      = 1900000,
+	["mcl_tools:sword_diamond"]      = 1800000,   -- S02: <= 2 diamonds + stick
 	["mcl_tools:pick_netherite"]     = 9000000,
 	["mcl_tools:shovel_netherite"]   = 4500000,
 	["mcl_tools:axe_netherite"]      = 10000000,

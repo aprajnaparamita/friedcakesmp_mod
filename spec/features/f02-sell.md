@@ -293,3 +293,79 @@ Implemented under `friedcake/mods/smp_sell/` and `friedcake/dev-tests/test_sell.
 All ten acceptance tests (T1–T10) pass in `friedcake/dev-tests/test_sell.lua`
 under `luajit`, and the in-game `test.lua` (64 assertions) passes under the
 dev harness.
+
+## 13. Security audit fixes (fixes/security/S02-sell.md, 2026-09-27)
+
+### 13.1 SE-1 — Default price for every registered item (V-98)
+**Fixed:** `sell.default_price` default changed from `100` ($1) to `0` (feature off).
+An operator must explicitly opt in by setting a positive value.
+- `init.lua:97` default changed to `0`
+- `prices.lua:189` only applies fallback when `fallback > 0`
+- Mirror change required in `spec/shared/06-config-reference.md` → ESCALATE via D7
+
+### 13.2 SE-2 — Enchant bonus cap (V-99)
+**Fixed:** `prices.enchant_bonus` now caps at `base_price`: `bonus = min(levels × per_level, base)`.
+An enchanted item can never exceed 2× its base value. $500/level default kept.
+Enchanted books priced from price table, not from bonus.
+- `prices.lua:199-210` signature changed to accept `base_price` parameter
+- `sell.lua:87` and `init.lua:426` pass `base` to `enchant_bonus`
+- Recorded in f02 §10 V-99
+
+### 13.3 SE-3 — Premiums on crafted blocks (V-88)
+**Corrected 2026-09-27.** The audit first said cobblestone was unlisted; it is
+not (`mcl_core:cobble` = 600, OBSERVED [S2]). The real issue is smaller:
+`mcl_walls:cobble` = 700 (also OBSERVED [S2]) sits $1 above cobble, and the
+stonecutter makes 1 cobble → 1 wall, so every generator block earns +17%.
+
+- **Open for the integrator (OBSERVED value, not changed):** keep the $7
+  wall (the reference server pays it), or lower it to $6. It is the only
+  allow-listed premium in `arbitrage.lua` (`A.OBSERVED_PREMIUMS`).
+- PROPOSED prices corrected so no recipe sells above its inputs (found by the
+  live-registry scan, §13.7): stonebrick 800→700, stonebrick wall 1000→700,
+  mossy cobble wall 1000→900, stonebrick slab 400→350, bone block 9000→3000
+  (9 bone meal = 3 bones), violet shulker box (+small) 1500000→800000
+  (2 shells + chest), chest 2500→2400, iron nugget 2700→2770, gold nugget
+  6600→6660, wood/stone/iron/gold/diamond swords and iron/diamond shovels
+  lowered to their material value.
+- Removed six stair/slab entries added earlier in this wave: four named
+  items that do not exist in Mineclonia (`slab_quartz`, `stair_quartz`,
+  `slab_brick`, `stair_brick`; the real names are `*_quartzblock` and
+  `*_brick_block`), and the two nether-brick ones, which would have made
+  netherrack (unlimited) sellable through smelting and the stonecutter.
+
+### 13.4 SE-4 — Combat-log escape through sell container
+**Fixed:** Container `allow_put` refuses while `smp_combat.is_tagged(name)` (soft check).
+- `menu.lua:336-339` adds combat-tag check before owner check
+- `/sell hand` and `/sell all` work while tagged (sell immediately, no container)
+- Coordinates with S07 CB-1 (combat registers leave handler last) and S03/S04 (AH/orders grids)
+
+### 13.5 SE-5 — Rate limit and store prune
+**Fixed (local):** `/sell` and container confirm rate-limited to ~1/s via `sell_cooldown` table.
+- `init.lua:113-140` cooldown implementation
+- `init.lua:373,386` cooldown on `/sell hand` and `/sell all`
+- `menu.lua:413-415,435` cooldown on container confirm (set only on successful sell)
+- Store prune-index escalated to f02 §10 (integrator-owned `smp_store`)
+
+### 13.6 SH-2 hand-off — Refuse shard-shop gear
+**Fixed:** `items.sellable` refuses stacks with `smp:shardshop="1"` meta.
+- `items.lua:376-380` checks for shard-shop meta tag
+- Coordinates with S05 (shardshop stamps stacks, shards adds AFK detection)
+
+### 13.7 Recipe-arbitrage regression test
+**Added:** `smp_sell/arbitrage.lua` (`smp_sell.arbitrage.scan`), asserted by
+the in-game suite (`/smp test smp_sell`): zero violations required. It walks
+the LIVE registry — `core.get_all_craft_recipes` for every item plus
+Mineclonia's stonecutter recipes (yields mirrored from
+`mcl_stonecutter/init.lua`) — computes each item's cheapest cost (sell value,
+or cheapest recipe) and flags any recipe whose priced output sells for more
+than its inputs, beyond max(10 cents, 1%). Cooking recipes are reported but
+not failed (fuel and time); `A.OBSERVED_PREMIUMS` lists premiums the
+reference server pays. The luajit harness has no recipes, so the check is
+in-engine only; it was run headless on Luanti 5.17 + Mineclonia: 1834
+recipes, 38 violations before the §13.3 repricing, 0 after, and a mutation
+(bone block back to $90) is caught. The static `recipe_scan.lua` from the
+first attempt was removed: it could not evaluate Mineclonia's recipe
+helpers (walls, stairs, slabs, beds, copper) and missed exactly those.
+
+**Note on SE-2:** enchanted books are not priced from the table; with
+`sell.default_price = 0` they are unlisted and therefore unsellable.
