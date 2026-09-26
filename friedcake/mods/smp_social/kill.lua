@@ -15,17 +15,18 @@
 local S = core.get_translator(core.get_current_modname())
 
 local FORMNAME = "smp_social:kill"
+local E = core.formspec_escape
 
 local function confirm_formspec()
 	return table.concat({
 		"formspec_version[6]",
-		"size[6,3.8]",
+		"size[7.2,3.8]",
 		"bgcolor[#000000C0]",
-		"label[0.6,0.7;" .. S("Kill") .. "]",
-		"label[0.6,1.7;" .. S("Are you sure you want to kill yourself?") .. "]",
+		"label[0.6,0.7;" .. E(S("Kill")) .. "]",
+		"label[0.6,1.5;6,0.8;" .. E(S("Are you sure you want to kill yourself?")) .. "]",
 		"style[kill_cancel;bgcolor=red]",
-		"button[0.6,2.6;2.4,0.8;kill_cancel;" .. S("Cancel") .. "]",
-		"button[3.0,2.6;2.4,0.8;kill_confirm;" .. S("Kill") .. "]",
+		"button[0.6,2.6;2.8,0.8;kill_cancel;" .. E(S("Cancel")) .. "]",
+		"button[3.8,2.6;2.8,0.8;kill_confirm;" .. E(S("Kill")) .. "]",
 	}, "")
 end
 

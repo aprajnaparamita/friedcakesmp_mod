@@ -46,7 +46,7 @@ end
 function smp_ranks.formspec()
 	local fs = {
 		"formspec_version[6]",
-		"size[9,9.9]",
+		"", -- size[], filled in once the tier rows are counted
 		"bgcolor[#000000C0]",
 		"label[0.4,0.55;" .. core.formspec_escape(S("Ranks")) .. "]",
 	}
@@ -58,11 +58,13 @@ function smp_ranks.formspec()
 	local store_y = 1.3 + #rows * 0.9 + 0.3
 	local store = smp_ranks.cfg.store_text
 	if store == "" then store = S("(no store link configured)") end
-	fs[#fs + 1] = string.format("field[0.4,%.2f;8.2,0.8;store;%s;%s]",
+	fs[#fs + 1] = string.format("field[0.4,%.2f;10.2,0.8;store;%s;%s]",
 		store_y, core.formspec_escape(S("Store")), core.formspec_escape(store))
 	fs[#fs + 1] = "field_close_on_enter[store;false]"
-	fs[#fs + 1] = string.format("button[3.5,%.2f;2,0.8;back;%s]",
+	fs[#fs + 1] = string.format("button[4.5,%.2f;2,0.8;back;%s]",
 		store_y + 1.2, core.formspec_escape(S("Back")))
+	-- Grow with the tier list so Back always stays inside the dialog.
+	fs[2] = string.format("size[11,%.2f]", math.max(9.9, store_y + 2.5))
 	return table.concat(fs, "")
 end
 

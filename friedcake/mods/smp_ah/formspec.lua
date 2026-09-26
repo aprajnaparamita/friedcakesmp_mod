@@ -230,6 +230,7 @@ local CONTROLS = {
 	-- Uses a comparator (redstone) to suggest price comparison.
 	match_lowest = {
 		candidates = {
+			"mcl_comparators:comparator_off_comp",
 			"mcl_redstone:comparator", "mcl_redstone:comparator_off",
 		},
 		probe = "comparator",

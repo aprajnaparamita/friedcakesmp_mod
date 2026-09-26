@@ -463,13 +463,17 @@ function fs.confirm_delivery(player_name, order, delivering_count, payout_previe
 	-- "You're delivering 1 Totems of Undying" (PLURAL at qty 1), itemstring.
 	-- The Java "15 component(s)" line is dropped (shared §0.5.1).
 	local panel_lines = display.confirm_lines(order, delivering_count)
+	-- One area label for the whole panel so long item names wrap inside
+	-- the box instead of running off the form's right edge. The box spans
+	-- the grid and control rows.
+	local panel_h = control_y + 1 - 0.6
+	local esc_lines = {}
+	for i, line in ipairs(panel_lines) do esc_lines[i] = F(line) end
 	local panel = {
-		string.format("box[12.0,0.6;3.5,%f;#2A0A3A]", 0.5 * #panel_lines + 0.4),
+		string.format("box[12.0,0.6;3.5,%f;#2A0A3A]", panel_h),
+		string.format("label[12.15,0.7;3.2,%f;%s]", panel_h - 0.2,
+			table.concat(esc_lines, "\n")),
 	}
-	for i, line in ipairs(panel_lines) do
-		panel[#panel + 1] = string.format("label[12.2,%f;%s]",
-			0.8 + (i - 1) * 0.5, F(line))
-	end
 
 	return table.concat({
 		"formspec_version[6]",

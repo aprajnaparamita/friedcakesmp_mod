@@ -237,7 +237,8 @@ function smp_quickbuy.formspec.entries(player)
 		out[#out + 1] = string.format("item_image_button[0.5,%s;1,1;%s;row_%d;]",
 			y, esc(entry.key), i)
 		out[#out + 1] = "tooltip[row_" .. i .. ";" .. esc(entry_tooltip(entry, price)) .. "]"
-		out[#out + 1] = string.format("label[1.7,%s;%s]", y + 0.3, esc(label))
+		-- Area label: long names wrap/truncate before the Edit button.
+		out[#out + 1] = string.format("label[1.7,%s;3.7,1;%s]", y, esc(label))
 		out[#out + 1] = string.format("button[5.5,%s;1.6,0.8;edit_%d;%s]",
 			y, i, esc(S("Edit")))
 		out[#out + 1] = string.format("button[7.1,%s;1.6,0.8;remove_%d;%s]",
@@ -277,26 +278,28 @@ function smp_quickbuy.formspec.warn(player, session)
 	local shown = session.shown_price or 0
 	local cost  = session.cost or 0
 
-	local out = { preamble("8,7") }
-	out[#out + 1] = "label[0.5,0.2;" .. esc(title) .. "]"
-	out[#out + 1] = string.format("item_image_button[0.5,0.6;1,1;%s;icon;]",
+	local out = { preamble("10,7") }
+	-- Vertical stack; area labels wrap long item names inside the dialog
+	-- (formspec_version 6 plain labels are placed by their centre).
+	out[#out + 1] = "label[0.5,0.2;9,0.6;" .. esc(title) .. "]"
+	out[#out + 1] = string.format("item_image_button[0.5,1.0;1,1;%s;icon;]",
 		esc(entry and entry.key or ""))
-	out[#out + 1] = string.format("label[2,0.6;" .. esc(S("Item: @1", title)) .. "]")
-	out[#out + 1] = string.format("label[2,1.2;" .. esc(S("Amount: @1",
-		entry and smp_core.fmt_qty(entry.qty) or "1")) .. "]")
-	out[#out + 1] = string.format("label[2,1.8;" .. esc(S("Shown price: @1",
-		smp_core.fmt_money(shown, "body"))) .. "]")
-	out[#out + 1] = string.format("label[2,2.4;" .. esc(S("Current price: @1",
-		smp_core.fmt_money(cost, "body"))) .. "]")
-	out[#out + 1] = string.format("label[2,3.0;" .. esc(S("Total: @1",
-		smp_core.fmt_money(cost, "body"))) .. "]")
-	out[#out + 1] = "label[2,3.8;" .. esc(S(
+	out[#out + 1] = "label[2,0.95;7.5,0.5;" .. esc(S("Item: @1", title)) .. "]"
+	out[#out + 1] = "label[2,1.75;" .. esc(S("Amount: @1",
+		entry and smp_core.fmt_qty(entry.qty) or "1")) .. "]"
+	out[#out + 1] = "label[2,2.3;" .. esc(S("Shown price: @1",
+		smp_core.fmt_money(shown, "body"))) .. "]"
+	out[#out + 1] = "label[2,2.85;" .. esc(S("Current price: @1",
+		smp_core.fmt_money(cost, "body"))) .. "]"
+	out[#out + 1] = "label[2,3.4;" .. esc(S("Total: @1",
+		smp_core.fmt_money(cost, "body"))) .. "]"
+	out[#out + 1] = "label[0.5,3.9;9,1.1;" .. esc(S(
 		"The price rose beyond three times what was shown. Confirm to buy anyway.")) .. "]"
 
 	-- "Cancel!" keeps its observed exclamation mark (§0.5); the commit button
 	-- is named for the action (§4.7).
 	out[#out + 1] = "button[0.5,5.4;2,0.9;cancel_warn;" .. esc(S("Cancel!")) .. "]"
-	out[#out + 1] = "button[5.5,5.4;2,0.9;confirm;" .. esc(S("Confirm")) .. "]"
+	out[#out + 1] = "button[7.5,5.4;2,0.9;confirm;" .. esc(S("Confirm")) .. "]"
 	return table.concat(out)
 end
 
