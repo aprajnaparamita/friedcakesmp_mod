@@ -204,6 +204,43 @@ do
 end
 
 ----------------------------------------------------------------------
+-- S3/AH-2: the public entry points refuse a non-string player name
+----------------------------------------------------------------------
+
+do
+	local rec = smp_ah.create_listing(TEST, ItemStack("mcl_core:cobble 1"), 100)
+	ok(rec ~= nil, "AH-2 setup listing created")
+
+	-- What `register_on_player_receive_fields` passes as `name`: an
+	-- ObjectRef, not a string. The engine's own APIs raise on it, so the
+	-- mod has to refuse before it ever reaches one (MS-3).
+	local objref = {}
+	ok(not pcall(core.get_player_by_name, objref),
+		"AH-2 get_player_by_name(ObjectRef) raises like luaL_checkstring")
+	ok(not pcall(core.chat_send_player, objref, "hi"),
+		"AH-2 chat_send_player(ObjectRef) raises like luaL_checkstring")
+
+	local r, e = smp_ah.buy(objref, rec.id, nil)
+	eq(r, nil, "AH-2 buy(ObjectRef) is refused")
+	eq(e, "offline", "AH-2 buy(ObjectRef) with the offline reason")
+
+	local r2, e2 = smp_ah.withdraw(objref, rec.id)
+	eq(r2, nil, "AH-2 withdraw(ObjectRef) is refused")
+	eq(e2, "offline", "AH-2 withdraw(ObjectRef) with the offline reason")
+
+	local r3, e3 = smp_ah.create_listing(objref, ItemStack("mcl_core:cobble 1"), 100)
+	eq(r3, nil, "AH-2 create_listing(ObjectRef) is refused")
+	eq(e3, "offline", "AH-2 create_listing(ObjectRef) with the offline reason")
+
+	eq(select(2, smp_ah.buy(nil, rec.id, nil)), "offline", "AH-2 buy(nil) refuses")
+	eq(select(2, smp_ah.buy("", rec.id, nil)), "offline", "AH-2 buy(\"\") refuses")
+
+	-- Nothing was mutated by the refusals.
+	eq(listings.get(rec.id).state, "active", "AH-2 the listing is untouched")
+	listings.purge(rec.id)
+end
+
+----------------------------------------------------------------------
 -- Cleanup: leave the store as we found it.
 ----------------------------------------------------------------------
 

@@ -635,6 +635,18 @@ H.storage_data = function(modname) return H.storages[modname] or {} end
 
 local ESC = string.char(27)
 
+-- MS-3 (S03): the dev-test stubs for the engine's string arguments are as
+-- strict as `luaL_checkstring` — strings and numbers pass, anything else
+-- (an ObjectRef passed as a name) RAISES. S05 QB-1 crashed the server
+-- through exactly this path, and a lenient stub would hide it.
+local function checkname(fn, argidx, v)
+	if type(v) ~= "string" and type(v) ~= "number" then
+		error(string.format("bad argument #%d to '%s' (string expected, got %s)",
+			argidx, fn, type(v)), 3)
+	end
+end
+H.checkname = checkname
+
 function H.boot(opts)
 	opts = opts or {}
 	H.settings_map = opts.settings or {}
@@ -728,7 +740,13 @@ function H.boot(opts)
 		end,
 		debug = function(msg) H.logs[#H.logs + 1] = { level = "debug", msg = tostring(msg) } end,
 
+		-- MS-3 (S03): as strict as the engine — `luaL_checkstring` accepts
+		-- strings and numbers and RAISES on anything else (see `checkname`
+		-- above). An ObjectRef passed as a name is a fatal error in a
+		-- callback (S05 QB-1), so the stub must fail the same way.
 		chat_send_player = function(name, msg)
+			checkname("chat_send_player", 1, name)
+			checkname("chat_send_player", 2, msg)
 			H.chat[name] = H.chat[name] or {}
 			table.insert(H.chat[name], tostring(msg))
 		end,
@@ -747,7 +765,11 @@ function H.boot(opts)
 			table.insert(H.closed[name], formname)
 		end,
 
-		get_player_by_name = function(name) return H.players[name] end,
+		get_player_by_name = function(name)
+			-- MS-3: as strict as the engine's `luaL_checkstring` (see above).
+			checkname("get_player_by_name", 1, name)
+			return H.players[name]
+		end,
 		get_connected_players = function()
 			local out = {}
 			for _, p in pairs(H.players) do out[#out + 1] = p end

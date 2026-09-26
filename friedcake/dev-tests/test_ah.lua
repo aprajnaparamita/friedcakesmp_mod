@@ -500,10 +500,17 @@ section("T7", "order routing contract", function()
 	local calls, filled = {}, {}
 	smp_orders.best_open_order = function(key)
 		calls[#calls + 1] = key
-		if key == diamond_key then return { id = 77, unit_price = 100000 } end  -- $1000/item
+		if key == diamond_key then return { id = 77, unit_price = 100000, qty = 100, delivered = 0 } end  -- $1000/item
 		return nil
 	-- The real contract (smp_orders/routing.lua): consume the WHOLE stack and
 	-- return `{accepted, payout, remaining}`, or refuse with `nil, reason`.
+	end
+	smp_orders.can_take_stack = function(order, name, stack)
+		if order.buyer == name then return false, "own order" end
+		local remaining = math.max(0, (tonumber(order.qty) or 0) - (tonumber(order.delivered) or 0))
+		if remaining <= 0 then return false, "full" end
+		if stack:get_count() > remaining then return false, "full" end
+		return true, ""
 	end
 	smp_orders.fill_from_stack = function(order, pname, stack)
 		filled[#filled + 1] = { id = order.id, who = pname, stack = stack:to_string() }
@@ -1158,9 +1165,17 @@ section("S3-AH-1", "an order refusal never destroys the seller's stack", functio
 	-- `smp_orders` is f04's mod and the harness loads none of it, so the
 	-- contract is faked exactly as smp_orders/routing.lua implements it:
 	-- `{accepted, payout, remaining}` on success, `nil, reason` on refusal.
+	-- Also `can_take_stack` (S04/OR-2 export) for the pre-check.
 	local filled, raised = {}, 0
 	smp_orders.remaining = function(o)
 		return math.max(0, (tonumber(o.qty) or 0) - (tonumber(o.delivered) or 0))
+	end
+	smp_orders.can_take_stack = function(order, name, stack)
+		if order.buyer == name then return false, "own order" end
+		local remaining = math.max(0, (tonumber(order.qty) or 0) - (tonumber(order.delivered) or 0))
+		if remaining <= 0 then return false, "full" end
+		if stack:get_count() > remaining then return false, "full" end
+		return true, ""
 	end
 
 	-- (a) The audited griefing repro: the order has 1 item left, the stack
@@ -1199,8 +1214,12 @@ section("S3-AH-1", "an order refusal never destroys the seller's stack", functio
 
 	-- (c) The literal misread: `fill_from_stack` IS called and refuses with
 	--     `nil, "full"` — pcall still succeeds, so reading pcall's flag as
-	--     "routed" deleted the stack here.
-	smp_orders.remaining = nil   -- no pre-check available: post-check only
+	--     "routed" deleted the stack here. Pre-check disabled to test post-check.
+	--     NEW BEHAVIOUR: if can_take_stack is missing, the order is not routed
+	--     at all (safer), so fill_from_stack is never called. The listing is
+	--     created normally and the stack survives.
+	smp_orders.remaining = nil
+	smp_orders.can_take_stack = nil
 	smp_orders.best_open_order = function()
 		return { id = 92, buyer = "order_buyer", unit_price = 10000,
 			qty = 64, delivered = 63 }
@@ -1216,23 +1235,30 @@ section("S3-AH-1", "an order refusal never destroys the seller's stack", functio
 		tostring(err_c) .. ")")
 	eq(type(rec_c) == "table" and rec_c.count, 64, "S3-AH-1c with the full count")
 	eq(err_c, nil, "S3-AH-1c the refusal is NOT reported as routed")
-	eq(#filled, 1, "S3-AH-1c fill_from_stack was called and refused")
-	eq(stack_c:get_count(), 64, "S3-AH-1c the stack survived the refusal")
+	eq(#filled, 0, "S3-AH-1c fill_from_stack was NOT called (no pre-check = no route)")
+	eq(stack_c:get_count(), 64, "S3-AH-1c the stack survived")
 
 	-- (d) A raising `fill_from_stack` (pcall success = false) falls through
-	--     with the stack intact as well.
+	--     with the stack intact as well. Pre-check disabled to test post-check.
 	smp_orders.fill_from_stack = function() raised = raised + 1 error("boom") end
 	local stack_d = H.ItemStack("mcl_core:diamond 64")
 	local rec_d, err_d = smp_ah.create_listing("seller_d", stack_d, 6400)
 	ok(type(rec_d) == "table" and rec_d.id ~= nil,
 		"S3-AH-1d a raising fill still creates the listing (" ..
 		tostring(err_d) .. ")")
-	eq(raised, 1, "S3-AH-1d the error was caught")
+	eq(raised, 0, "S3-AH-1d the error was NOT raised (no pre-check = no route)")
 	eq(stack_d:get_count(), 64, "S3-AH-1d the stack is untouched")
 
 	-- (e) The happy path: the order takes the whole stack and pays.
 	smp_orders.remaining = function(o)
 		return math.max(0, (tonumber(o.qty) or 0) - (tonumber(o.delivered) or 0))
+	end
+	smp_orders.can_take_stack = function(order, name, stack)
+		if order.buyer == name then return false, "own order" end
+		local remaining = math.max(0, (tonumber(order.qty) or 0) - (tonumber(order.delivered) or 0))
+		if remaining <= 0 then return false, "full" end
+		if stack:get_count() > remaining then return false, "full" end
+		return true, ""
 	end
 	smp_orders.best_open_order = function()
 		return { id = 93, buyer = "order_buyer", unit_price = 10000,
@@ -1304,6 +1330,16 @@ section("S3-AH-1s", "the same three cases through /ah sell", function()
 
 	-- (c) Order remaining >= 64: routed, the seller is paid, the stack is
 	--     consumed, and no listing is left behind.
+	smp_orders.remaining = function(o)
+		return math.max(0, (tonumber(o.qty) or 0) - (tonumber(o.delivered) or 0))
+	end
+	smp_orders.can_take_stack = function(order, name, stack)
+		if order.buyer == name then return false, "own order" end
+		local remaining = math.max(0, (tonumber(order.qty) or 0) - (tonumber(order.delivered) or 0))
+		if remaining <= 0 then return false, "full" end
+		if stack:get_count() > remaining then return false, "full" end
+		return true, ""
+	end
 	smp_orders.best_open_order = function()
 		return { id = 96, buyer = "order_buyer", unit_price = 10000,
 			qty = 100, delivered = 0 }
@@ -1325,7 +1361,10 @@ section("S3-AH-1s", "the same three cases through /ah sell", function()
 	-- (d) No `remaining` pre-check available and the fill refuses: only the
 	--     post-check stands between the player and item loss. The command
 	--     must still create the listing with the stack in the record.
+	--     NEW BEHAVIOUR: no can_take_stack = no route, so fill_from_stack
+	--     is never called. Listing created normally, stack in the record.
 	smp_orders.remaining = nil
+	smp_orders.can_take_stack = nil
 	smp_orders.best_open_order = function()
 		return { id = 97, buyer = "order_buyer", unit_price = 10000,
 			qty = 64, delivered = 63 }
@@ -1338,17 +1377,18 @@ section("S3-AH-1s", "the same three cases through /ah sell", function()
 	sd:set_wield_index(1)
 	eq(H.cmd("ah", "sd", "sell 64"), true, "S3-AH-1s(d) /ah sell returns true")
 	local rec_d = listings.for_seller("sd")[1]
-	ok(rec_d ~= nil, "S3-AH-1s(d) the listing was created despite the refusal")
+	ok(rec_d ~= nil, "S3-AH-1s(d) the listing was created (no pre-check = no route)")
 	eq(rec_d and rec_d.count, 64, "S3-AH-1s(d) with the full count")
 	eq(rec_d and rec_d.stack, "mcl_core:diamond 64",
 		"S3-AH-1s(d) the stack is in the record")
-	eq(#filled, 1, "S3-AH-1s(d) the fill was attempted and refused")
+	eq(#filled, 0, "S3-AH-1s(d) fill_from_stack was NOT called (no pre-check)")
 	eq(count_item("sd", "mcl_core:diamond"), 0,
 		"S3-AH-1s(d) it left the hand into the listing")
 
 	smp_orders.best_open_order = function() return nil end
 	smp_orders.fill_from_stack = nil
 	smp_orders.remaining = nil
+	smp_orders.can_take_stack = nil
 end)
 
 

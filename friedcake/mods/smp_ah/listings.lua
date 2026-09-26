@@ -107,6 +107,46 @@ local function mark(key, value)
 	state.dirty[key] = value
 end
 
+--- Write one key straight through to storage and drop it from the dirty
+-- batch (S03 coordination item B, from S04 OR-1: "listing records are
+-- flushed on a timer while money is written immediately — a hard crash
+-- splits them").
+--
+-- State transitions (`insert`, `set_state`, `purge`, `insert_transaction`)
+-- MUST use this: the money move that accompanies them is already durable in
+-- `smp_store`, so the record that mirrors it cannot wait for the next
+-- `flush_interval`. Cosmetic fields (`touch`: a version bump for an edited
+-- sign message) stay on the batched flush.
+--
+-- Falls back to `mark` when no storage is attached yet (load-order safety);
+-- nothing is lost either way, it just waits for the next flush.
+local function save(key, value)
+	if not storage then
+		mark(key, value)
+		return false
+	end
+	state.dirty[key] = nil
+	if value == false then
+		if type(storage.remove) == "function" then
+			storage:remove(key)
+		else
+			storage:set_string(key, "")
+		end
+	else
+		storage:set_string(key, value)
+	end
+	return true
+end
+
+--- Persist the id sequences next to a write-through insert, so a crash
+-- between two inserts can never hand out an id that is already on disk.
+-- (`load` also clamps with `max_id() + 1`; this is the belt to that brace.)
+local function save_seq()
+	if not storage then return end
+	storage:set_string("ah:seq", tostring(state.next_id))
+	storage:set_string("ah:txseq", tostring(state.next_txid))
+end
+
 local function encode(v)
 	if not core or type(core.write_json) ~= "function" then return nil end
 	local ok, s = pcall(core.write_json, v)
@@ -428,7 +468,10 @@ function listings.insert(rec)
 	-- `key` stays the M2 key (f03 §5); `key_m2` is the indexed alias.
 	rec.key_m2 = rec.key
 	index_insert(rec)
-	mark(lkey(rec.id), encode(rec) or false)
+	-- S03/OR-1: the listing exists the moment the fee is charged, so it is
+	-- written through, not batched.
+	save(lkey(rec.id), encode(rec) or false)
+	save_seq()
 	return rec, nil
 end
 
@@ -470,7 +513,10 @@ function listings.set_state(id, new_state)
 		m1_insert(rec)
 		index_tokens(rec)
 	end
-	mark(lkey(rec.id), encode(rec) or false)
+	-- S03/OR-1 write-through: the money for this transition has already
+	-- moved (purchase, cancel, sweep absorb), so the new state must be on
+	-- disk before the callback returns — never on the 10 s timer.
+	save(lkey(rec.id), encode(rec) or false)
 	return rec
 end
 
@@ -488,7 +534,10 @@ function listings.purge(id)
 	local rec = listings.get(id)
 	if not rec then return false end
 	index_remove(rec, true)
-	mark(lkey(rec.id), false)
+	-- S03/OR-1 write-through: the item has already gone back into the
+	-- seller's inventory, so the record must disappear from disk at once or
+	-- a hard crash could hand it out for a second reclaim.
+	save(lkey(rec.id), false)
 	return true
 end
 
@@ -772,13 +821,15 @@ function listings.insert_transaction(rec)
 	rec.sold_at_ms = math.floor(tonumber(rec.sold_at_ms) or listings.now_ms())
 	table.insert(state.tx, 1, rec)              -- newest first [S23]
 	state.tx_ids[#state.tx_ids + 1] = rec.id
-	mark(tkey(rec.id), encode(rec) or false)
+	-- S03/OR-1 write-through: this row records money that has already moved.
+	save(tkey(rec.id), encode(rec) or false)
+	save_seq()
 	-- Cap the retained history at `ah.history` (100 per page, 10 pages).
 	local cap = cfg.history_page * cfg.history_pages
 	while #state.tx > cap do
 		table.remove(state.tx, #state.tx)
 		local old = table.remove(state.tx_ids, 1)
-		if old then mark(tkey(old), false) end
+		if old then save(tkey(old), false) end
 	end
 	return rec
 end
