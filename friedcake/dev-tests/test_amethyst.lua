@@ -8,7 +8,17 @@
 -- Runs under plain LuaJIT with no core stub: logic.lua and expiry.lua
 -- are pure.
 
-local ROOT = "/Volumes/Dara/dev/coconut/friedcake/mods/smp_amethyst"
+local ROOT
+for _, c in ipairs({
+	"friedcake/mods/smp_amethyst/",   -- repo root (documented way)
+	"mods/smp_amethyst/",             -- cwd is friedcake/
+	"../mods/smp_amethyst/",          -- cwd is friedcake/dev-tests/
+	"/Volumes/Dara/dev/coconut/friedcake/mods/smp_amethyst/", -- dev machine
+}) do
+	local f = io.open(c .. "init.lua", "r")
+	if f then f:close(); ROOT = c:gsub("/+$", ""); break end
+end
+assert(ROOT, "smp_amethyst mod not found")
 local logic = dofile(ROOT .. "/logic.lua")
 local expiry = dofile(ROOT .. "/expiry.lua")
 
@@ -217,7 +227,7 @@ do
 		end,
 		get_current_modname = function() return "smp_amethyst" end,
 		get_modpath = function(m)
-			return "/Volumes/Dara/dev/coconut/friedcake/mods/" .. m
+			return ROOT
 		end,
 		log = function(l, ...)
 			if l == "error" then print("[ERR]", ...) end
@@ -230,12 +240,13 @@ do
 		registered_nodes = {},
 		register_tool = function(name, def) core.registered_items[name] = def end,
 		register_item = function(name, def) core.registered_items[name] = def end,
+		register_craftitem = function(name, def) core.registered_items[name] = def end,
 		register_on_joinplayer = function(fn)
 			core._join_hooks = core._join_hooks or {}
 			table.insert(core._join_hooks, fn)
 		end,
 		register_globalstep = function() end,
-		register_on_item_pickup = function() end,
+		register_on_item_pickup = function(fn) core._on_item_pickup = fn end,
 		get_connected_players = function() return {} end,
 		chat_send_player = function(name, msg)
 			chats[#chats + 1] = { name = name, msg = msg }
@@ -272,7 +283,7 @@ do
 		{ diggable = true, groups = { pickaxey = 3 } }
 
 	_G.smp_amethyst = nil
-	dofile("/Volumes/Dara/dev/coconut/friedcake/mods/smp_amethyst/init.lua")
+	dofile(ROOT .. "/init.lua")
 
 	-- All six items registered.
 	for _, name in ipairs({
@@ -291,6 +302,7 @@ do
 
 	local function fake_player(name, tool)
 		return {
+			is_player = function() return true end,
 			get_player_name = function() return name end,
 			get_wielded_item = function() return tool end,
 			set_wielded_item = function(_, st) tool = st end,
@@ -498,7 +510,7 @@ do
 
 		-- Reload init to pick up the stubs (the sell axe uses them at call time)
 		_G.smp_amethyst = nil
-		dofile("/Volumes/Dara/dev/coconut/friedcake/mods/smp_amethyst/init.lua")
+		dofile(ROOT .. "/init.lua")
 
 		-- Simulate sell axe use on a container with an amethyst pickaxe
 		world = {}
@@ -538,6 +550,33 @@ do
 		assert(not smp_amethyst.blacklist[smp_amethyst.blacklist[1] .. "_fake"],
 			"blacklist is exact itemstrings only")
 		print("T7 ok: amethyst items accepted by sell/auction paths")
+	end
+
+	----------------------------------------------------------------------
+	-- Regression: register_on_item_pickup must NOT block normal pickup.
+	-- A truthy return short-circuits the engine's default add-to-inventory.
+	----------------------------------------------------------------------
+	do
+		assert(core._on_item_pickup, "pickup callback registered")
+		local p = fake_player("pickup_test", ItemStack(""))
+
+		-- Normal (non-amethyst) item: defer to the engine (nil).
+		local wood = ItemStack("mcl_core:wood")
+		assert(core._on_item_pickup(wood, p) == nil,
+			"non-amethyst pickup defers to engine")
+
+		-- Live amethyst item (future expiry): also defer (nil).
+		local live = ItemStack("smp_amethyst:pickaxe")
+		smp_amethyst.expiry.set_expiry(live, os.time() + 10000)
+		assert(core._on_item_pickup(live, p) == nil,
+			"live amethyst pickup defers to engine")
+
+		-- Expired amethyst item: consumed (empty stack returned).
+		local dead = ItemStack("smp_amethyst:pickaxe")
+		smp_amethyst.expiry.set_expiry(dead, os.time() - 100)
+		local r = core._on_item_pickup(dead, p)
+		assert(r ~= nil and r:is_empty(), "expired amethyst pickup returns empty")
+		print("pickup regression ok: normal items are not blocked")
 	end
 end
 

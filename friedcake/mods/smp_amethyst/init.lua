@@ -208,12 +208,18 @@ end)
 
 -- An expired item picked up from the ground/container is removed lazily
 -- (f06 §4.3: "items in containers are removed lazily when ... picked up").
+--
+-- register_on_item_pickup callbacks OVERRIDE the default pickup: a truthy
+-- return is taken as the final stack and skips the engine's add-to-inventory
+-- step. So return nil for anything we don't consume, and return the emptied
+-- stack only when we actually remove an expired amethyst item.
 core.register_on_item_pickup(function(itemstack, player)
-	if not player or not player:is_player() then return itemstack end
+	if not player or not player:is_player() then return nil end
 	if expiry.is_amethyst(itemstack:get_name()) and expiry.is_expired(itemstack) then
-		smp_amethyst.remove_expired(itemstack, player)
+		smp_amethyst.remove_expired(itemstack, player)  -- messages + empties
+		return ItemStack("")  -- consumed: nothing is added to the inventory
 	end
-	return itemstack
+	return nil  -- defer to the engine's normal pickup
 end)
 
 ----------------------------------------------------------------------
