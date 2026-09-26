@@ -734,6 +734,35 @@ local function best_open_order(m1_key)
 	if (tonumber(order.unit_price) or 0) <= 0 then return nil end
 	return order
 end
+--- S03/AH-1: can `order` take this whole stack? Asked BEFORE routing, so an
+-- order that must refuse is never even called (a refusal used to be read as
+-- success and destroyed the seller's stack).
+--
+-- Prefers `smp_orders.can_take_stack(order, name, stack)` when the orders mod
+-- exposes it (S04 OR-2), then falls back to the two refusal reasons the AH
+-- can know on its own: not enough remaining quantity, and the seller's own
+-- order. A missing piece of the contract is not treated as "no" — it leaves
+-- the decision to `fill_from_stack` itself, whose refusal is `nil, reason`
+-- and is handled by the caller either way.
+local function order_can_take(order, pname, stack)
+	if type(smp_orders) ~= "table" then return false end
+	if type(smp_orders.can_take_stack) == "function" then
+		local ok, can = pcall(smp_orders.can_take_stack, order, pname, stack)
+		if ok then return can and true or false end
+		log("error", "smp_orders.can_take_stack failed: " .. tostring(can))
+	end
+	if order.buyer ~= nil and order.buyer == pname then return false end
+	if type(smp_orders.remaining) == "function" then
+		local ok, rem = pcall(smp_orders.remaining, order)
+		if ok then
+			if (math.floor(tonumber(rem) or 0)) < stack:get_count() then return false end
+		else
+			log("error", "smp_orders.remaining failed: " .. tostring(rem))
+		end
+	end
+	return true
+end
+
 
 --- f04 contract: mark a listing consumed by an order. The money comes from
 --- the order's escrow and is `smp_orders`' business; this only closes the
@@ -806,7 +835,8 @@ end
 -- The caller owns `stack` and must have already removed it from wherever it
 -- was; on refusal the caller must return it. Returns:
 --   record, nil        listing created (id in record.id)
---   true,  "routed"    sold into a better-paying open order (f03 §4.11)
+--   result, "routed"   sold into a better-paying open order (f03 §4.11); the
+--                      result is `fill_from_stack`'s `{accepted, payout, ...}`
 --   nil,   reason      refused; the stack is untouched
 function smp_ah.create_listing(pname, stack, total_price)
 	local ok, err = smp_ah.validate_listing(pname, stack, total_price)
@@ -818,19 +848,43 @@ function smp_ah.create_listing(pname, stack, total_price)
 	local m2 = keys.key(stack, "M2")
 	local unit = math.floor(total_price / count)
 
+	--
+	-- S03/AH-1: `fill_from_stack` answers `{accepted, payout, remaining}` when
+	-- it takes the stack and `nil, reason` when it refuses (S04 OR-2).
+	-- pcall's own success flag only means "it did not raise" — reading it as
+	-- "routed" let every refusal delete the seller's stack. Route only on an
+	-- explicit acceptance, and skip orders that cannot take the stack before
+	-- calling them at all.
 	-- Route into a better-paying open order first [S2][S6] (f03 §6.1).
 	local order = best_open_order(m1)
 	if order and (math.floor(tonumber(order.unit_price) or 0) > unit) and
-	   type(smp_orders.fill_from_stack) == "function" then
-		local routed, res = pcall(smp_orders.fill_from_stack, order, pname, stack)
-		if routed then
+	   type(smp_orders.fill_from_stack) == "function" and
+	   order_can_take(order, pname, stack) then
+		local routed, res, why = pcall(smp_orders.fill_from_stack, order, pname, stack)
+		if routed and type(res) == "table" and (tonumber(res.accepted) or 0) > 0 then
 			smp_ah._last_list[pname] = os.time()
 			log("action", string.format("listing routed to order %s: %s x%d from %s",
 				tostring(order.id), stack:get_name(), count, pname))
-			return res or true, "routed"
+			return res, "routed"
 		end
-		log("error", "smp_orders.fill_from_stack failed: " .. tostring(res))
+		if not routed then
+			log("error", "smp_orders.fill_from_stack raised: " .. tostring(res))
+		else
+			log("action", string.format(
+				"order %s refused the stack (%s): %s x%d from %s listed normally",
+				tostring(order.id), tostring(why or "no reason"),
+				stack:get_name(), count, pname))
+		end
+		-- Otherwise fall through: a refusal consumes nothing (whole stack or
+		-- nothing, smp_orders/routing.lua header), so the stack is intact and
+		-- the player gets a normal listing instead of losing it.
 	end
+	-- The stack must still hold exactly what we validated (S03/AH-1):
+	-- re-read the count so a broken contract can never advertise more items
+	-- than the record actually carries.
+	if stack:is_empty() then return nil, "empty" end
+	count = stack:get_count()
+
 
 	local now = os.time()
 	local rec, ierr = listings.insert({
