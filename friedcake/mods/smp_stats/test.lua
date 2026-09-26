@@ -193,9 +193,9 @@ do
 		"name_of rejects a non-player table")
 
 	local key = smp_stats.api.make_key("alice")
-	ok(key:match("^fcsmp_[0-9a-f]+$") ~= nil,
-		"T10 key is fcsmp_ + sha1 hex (got " .. tostring(key) .. ")")
-	eq(#key, 6 + 40, "T10 key is 46 chars")
+	ok(key ~= nil and key:match("^fcsmp_[0-9a-f]+$") ~= nil,
+		"T10 key is fcsmp_ + hex from SecureRandom (got " .. tostring(key) .. ")")
+	eq(#(key or ""), 6 + 40, "T10 key is 46 chars (20 secure bytes, hex-encoded)")
 	local key2 = smp_stats.api.make_key("alice")
 	ok(key2 ~= key, "T10 keys are unique per call")
 end

@@ -216,6 +216,7 @@ end
 -- Harness state the economy mod's lifecycle hooks need (E-02, E-04, E-07).
 local join_handlers = {}   -- core.register_on_joinplayer callbacks
 local leave_handlers = {}  -- core.register_on_leaveplayer callbacks
+local chatcommand_handlers = {} -- core.register_on_chatcommand callbacks (EC-4)
 local gametime = 1000      -- core.get_gametime clock (R9 cooldown uses it)
 local privs_of = {}        -- [name] = { priv = true, ... }
 local online = {}          -- [name] = player object
@@ -232,6 +233,28 @@ local function clear_pay_cooldown(name)
 	end
 end
 
+-- Reset the /baltop cooldown without waiting on the clock (EC-4 hook;
+-- production code never calls it).
+local function clear_baltop_cooldown(name)
+	if smp_economy and smp_economy._reset_baltop_cooldown then
+		smp_economy._reset_baltop_cooldown(name)
+	end
+end
+
+-- MS-3 (S09 brief, applied per-suite as instructed): the engine's C
+-- functions take a NAME and raise through luaL_checkstring when they
+-- are handed anything else — an ObjectRef included. A lenient stub
+-- silently accepted whatever it was given, which is exactly how EC-2's
+-- leave handler (handed an ObjectRef by the engine) slipped through.
+-- The message below mirrors the engine's `bad argument`.
+local function checkstring(fn, value)
+	if type(value) ~= "string" then
+		error(string.format(
+			"bad argument #1 to '%s' (string expected, got %s)",
+			fn, type(value)), 2)
+	end
+end
+
 core = {
 	get_mod_storage = function() return store end,
 	write_json = json_encode,
@@ -240,6 +263,7 @@ core = {
 	get_current_modname = function() return _G.__current_modname or "smp_economy" end,
 	log = function(...) print("[log]", ...) end,
 	chat_send_player = function(name, msg)
+		checkstring("chat_send_player", name)
 		print("[" .. name .. "]", msg)
 		sent[name] = sent[name] or {}
 		sent[name][#sent[name] + 1] = msg
@@ -289,9 +313,15 @@ core = {
 	register_on_joinplayer = function(fn)
 		join_handlers[#join_handlers + 1] = fn
 	end,
+	register_on_chatcommand = function(fn)
+		chatcommand_handlers[#chatcommand_handlers + 1] = fn
+	end,
 	get_gametime = function() return gametime end,
 	get_player_privs = function(name) return privs_of[name] or {} end,
-	get_player_by_name = function(name) return online[name] end,
+	get_player_by_name = function(name)
+		checkstring("get_player_by_name", name)
+		return online[name]
+	end,
 	get_connected_players = function()
 		local out = {}
 		for _, p in pairs(online) do out[#out + 1] = p end
@@ -394,7 +424,27 @@ local function join(name)
 end
 
 local function leave(name)
-	for _, fn in ipairs(leave_handlers) do fn(name) end
+	-- S01/EC-2: the engine passes an ObjectRef to register_on_leaveplayer
+	-- (lua_api.md). Dispatch an ObjectRef (or a plain string when the
+	-- player is already offline, as sibling harnesses do) so the handler's
+	-- "string or ObjectRef" contract is exercised.
+	for _, fn in ipairs(leave_handlers) do
+		fn(online[name] or make_player(name), false)
+	end
+end
+
+-- S01/EC-4: mimic core.register_on_chatcommand dispatch order — the
+-- registered handlers run first, and the command executes only if none
+-- of them returns true ("handled").
+local function dispatch(name, command, param)
+	for _, fn in ipairs(chatcommand_handlers) do
+		if fn(name, command, param) == true then return true, "handled" end
+	end
+	local def = commands[command]
+	if not def or type(def.func) ~= "function" then
+		return false, "unknown command"
+	end
+	return false, def.func(name, param)
 end
 
 local function privs(name, ...)
@@ -776,6 +826,217 @@ eq(smp_economy.give("dana", 5000, "test", "E-18 at cap"), 0,
 eq(smp_economy.get("dana"), 10000, "E-18 get() reads the capped balance")
 settings_values["economy.max_balance"] = nil
 commands["smp"].func("root", "reload")
+
+----------------------------------------------------------------------
+-- S01/EC-2: the leave handler resolves the ObjectRef to a name
+----------------------------------------------------------------------
+
+print("--- EC-2: leave(ObjectRef) closes sessions ---")
+do
+	smp_core.open_session("alice", "smp_economy:ec2", { step = 1 })
+	ok(smp_core._sessions["alice"] ~= nil, "EC-2 a session is open before leave")
+	-- The engine hands an ObjectRef (doc/lua_api.md
+	-- `register_on_leaveplayer(function(ObjectRef, timed_out))`); the
+	-- harness's leave() dispatches exactly that shape. Before the fix
+	-- the handler indexed `_sessions[ObjectRef]` and cleared nothing.
+	leave("alice")
+	eq(smp_core._sessions["alice"], nil,
+		"EC-2 leave(ObjectRef) closes the player's sessions")
+	-- The dual-form fallback: a plain name still works (sibling
+	-- harnesses fire this hook with a name).
+	smp_core.open_session("alice", "smp_economy:ec2", { step = 1 })
+	local ran = true
+	for _, fn in ipairs(leave_handlers) do
+		local good = pcall(fn, "alice", false)
+		ran = ran and good
+	end
+	ok(ran, "EC-2 the plain-name form runs without error")
+	eq(smp_core._sessions["alice"], nil,
+		"EC-2 the plain-name form closes sessions too")
+	-- A value that is neither a name nor a player must be ignored,
+	-- never coerced into a key.
+	smp_core.open_session("alice", "smp_economy:ec2", { step = 1 })
+	ran = true
+	for _, fn in ipairs(leave_handlers) do
+		local good = pcall(fn, 12345, false)
+		ran = ran and good
+	end
+	ok(ran, "EC-2 a non-player value is ignored, not an error")
+	ok(smp_core._sessions["alice"] ~= nil,
+		"EC-2 a non-player value closes nothing")
+	smp_core._sessions["alice"] = nil
+end
+
+----------------------------------------------------------------------
+-- S01/EC-3: the offline-pending list is a bounded aggregate
+----------------------------------------------------------------------
+
+print("--- EC-3: pending aggregate (versioned, capped) ---")
+do
+	smp_store.api.set_money("ec3_tgt", 0, "test", "EC-3 setup")
+	-- Two pays from the SAME sender must fold into ONE aggregate row.
+	clear_pay_cooldown("alice")
+	ok(pay.func("alice", "ec3_tgt 1") == true, "EC-3 first offline pay lands")
+	clear_pay_cooldown("alice")
+	ok(pay.func("alice", "ec3_tgt 2") == true, "EC-3 second offline pay lands")
+	local agg = json_decode(store:get_string("pending:ec3_tgt"))
+	ok(type(agg) == "table", "EC-3 a payload is stored for the offline target")
+	eq(agg and agg.v, 2, "EC-3 the payload carries the version marker")
+	eq(agg and agg.senders and agg.senders.alice, 300,
+		"EC-3 two pays from one sender fold into ONE row (100 + 200 cents)")
+	join("ec3_tgt")
+	local summary = sent["ec3_tgt"] and sent["ec3_tgt"][1]
+	has(summary, "Payments received while you were offline",
+		"EC-3 the join summary keeps its header")
+	has(summary, "alice", "EC-3 the join summary names the sender")
+	has(summary, smp_core.fmt_money(300, "body"),
+		"EC-3 the folded total is what the recipient sees")
+	eq(store:get_string("pending:ec3_tgt"), "",
+		"EC-3 join drains the payload (read-and-clear)")
+
+	-- Distinct-sender cap: 55 senders x 100 cents to one recipient.
+	smp_store.api.set_money("ec3_cap", 0, "test", "EC-3 setup")
+	for i = 1, 55 do
+		smp_store.api.set_money(string.format("ec3_s%02d", i), 100,
+			"test", "EC-3 setup")
+	end
+	for i = 1, 55 do
+		local sender = string.format("ec3_s%02d", i)
+		clear_pay_cooldown(sender)
+		local ok_pay, why = pay.func(sender, "ec3_cap 1")
+		ok(ok_pay == true, "EC-3 pay #" .. i .. " from " .. sender ..
+			(ok_pay == true and "" or " — " .. tostring(why)))
+	end
+	local capped = json_decode(store:get_string("pending:ec3_cap"))
+	eq(capped and capped.v, 2, "EC-3 the capped payload is versioned")
+	local distinct = 0
+	for _ in pairs((capped and capped.senders) or {}) do
+		distinct = distinct + 1
+	end
+	eq(distinct, 50, "EC-3 distinct senders are capped at 50")
+	eq(capped and capped.dropped, 5,
+		"EC-3 the 5 senders past the cap are counted as dropped")
+
+	sent["ec3_cap"] = {}
+	join("ec3_cap")
+	eq(#(sent["ec3_cap"] or {}), 1,
+		"EC-3 the whole queue reaches the recipient as ONE message")
+	local board = sent["ec3_cap"][1] or ""
+	local from_lines = 0
+	for _ in board:gmatch("From [^\n]+") do from_lines = from_lines + 1 end
+	eq(from_lines, 20, "EC-3 at most 20 sender lines are rendered")
+	has(board, "and 35 others",
+		"EC-3 30 unshown + 5 dropped collapse into a single tail line")
+	sent["ec3_cap"] = {}
+	join("ec3_cap")
+	eq(#(sent["ec3_cap"] or {}), 0,
+		"EC-3 the second join is silent (read-and-clear)")
+end
+
+----------------------------------------------------------------------
+-- S01/EC-4: /baltop is cached (60 s) and rate-limited (10 s)
+----------------------------------------------------------------------
+
+print("--- EC-4: /baltop cache + cooldown ---")
+do
+	clear_baltop_cooldown("alice")
+	smp_store.api.set_money("ec4_rich", 123456789, "test", "EC-4 setup")
+	-- First call: the hook arms the window, the func serves the board.
+	local handled, ret = dispatch("alice", "baltop", "")
+	eq(handled, false, "EC-4 the first call is not refused")
+	eq(ret, true, "EC-4 the first call serves the leaderboard")
+	has(sent["alice"][#sent["alice"]],
+		smp_core.fmt_money(123456789, "body"),
+		"EC-4 the board shows the freshly built balance")
+	-- Second call inside the window: handled by the hook alone — the
+	-- func never runs, so no leaderboard is rebuilt or re-sent.
+	local before = #sent["alice"]
+	handled = dispatch("alice", "baltop", "")
+	eq(handled, true, "EC-4 a second call inside 10 s is handled (refused)")
+	eq(#sent["alice"], before + 1, "EC-4 exactly one refusal message is sent")
+	has(sent["alice"][#sent["alice"]], "wait",
+		"EC-4 the refusal asks the player to wait")
+	-- Mutate AFTER the board was built: within 60 s the stale cached
+	-- copy must be served — that is the defuse (no rebuild per call).
+	smp_store.api.set_money("ec4_rich", 98765432, "test", "EC-4 after build")
+	advance(11)
+	handled = dispatch("alice", "baltop", "")
+	eq(handled, false, "EC-4 after 11 s the cooldown lets the call through")
+	local stale = sent["alice"][#sent["alice"]]
+	has(stale, smp_core.fmt_money(123456789, "body"),
+		"EC-4 inside 60 s the CACHED board is served (stale by design)")
+	ok(not stale:find(smp_core.fmt_money(98765432, "body"), 1, true),
+		"EC-4 the cache did not rebuild inside the window")
+	-- Past the cache window the next call rebuilds it.
+	advance(60)
+	handled = dispatch("alice", "baltop", "")
+	eq(handled, false, "EC-4 after 71 s the call goes through")
+	has(sent["alice"][#sent["alice"]],
+		smp_core.fmt_money(98765432, "body"),
+		"EC-4 past 60 s the board is rebuilt from live records")
+end
+
+----------------------------------------------------------------------
+-- S01/EC-5: /pay refuses a credit that would cross either balance cap
+----------------------------------------------------------------------
+
+print("--- EC-5: receiver headroom pre-flight ---")
+do
+	-- A: economy.max_balance is the binding cap.
+	settings_values["economy.max_balance"] = "10000"
+	commands["smp"].func("root", "reload")
+	smp_store.api.set_money("ec5_tgt", 9900, "test", "EC-5 setup")
+	local rows = ledger_rows("ec5_tgt")
+	local alice_before = money("alice")
+	clear_pay_cooldown("alice")
+	r, msg = pay.func("alice", "ec5_tgt 1") -- 9900 + 100 = 10000, ON the cap
+	ok(r == true, "EC-5 a credit that lands ON the cap is allowed")
+	eq(money("ec5_tgt"), 10000, "EC-5 the target sits exactly at the cap")
+	rows = ledger_rows("ec5_tgt")
+	alice_before = money("alice")
+	clear_pay_cooldown("alice")
+	r, msg = pay.func("alice", "ec5_tgt 1") -- 10000 + 100 > 10000
+	ok(r == false, "EC-5 a credit PAST economy.max_balance is refused")
+	has(msg, "balance cap", "EC-5 the refusal names the cap")
+	eq(money("alice"), alice_before, "EC-5 the refused pay debited nothing")
+	eq(money("ec5_tgt"), 10000, "EC-5 the refused pay credited nothing")
+	eq(ledger_rows("ec5_tgt"), rows, "EC-5 the refused pay wrote no ledger rows")
+
+	-- B: store.max_balance is the binding cap — economy's is raised far
+	-- above the amounts so ONLY the store cap can explain a refusal.
+	settings_values["economy.max_balance"] = "1000000000"
+	settings_values["store.max_balance"] = nil
+	commands["smp"].func("root", "reload")
+	clear_pay_cooldown("alice")
+	r = pay.func("alice", "ec5_tgt 1") -- positive control: no cap in reach
+	ok(r == true, "EC-5 with economy's cap raised the same pay succeeds")
+	eq(money("ec5_tgt"), 10100, "EC-5 the positive control credited 100")
+	settings_values["store.max_balance"] = "10000"
+	load("smp_store") -- smp_store reads store.max_balance at load
+	commands["smp"].func("root", "reload") -- smp_economy reads the same key
+	rows = ledger_rows("ec5_tgt")
+	alice_before = money("alice")
+	clear_pay_cooldown("alice")
+	r, msg = pay.func("alice", "ec5_tgt 1") -- 10100 + 100 > 10000
+	ok(r == false, "EC-5 a credit PAST store.max_balance is refused")
+	has(msg, "balance cap", "EC-5 the store-cap refusal names the cap")
+	eq(money("alice"), alice_before, "EC-5 the store-cap refusal debited nothing")
+	eq(ledger_rows("ec5_tgt"), rows, "EC-5 the store-cap refusal wrote no rows")
+
+	-- Restore: cfg and settings back to suite-start state (economy's key
+	-- absent with cfg at its 10^15 default, store likewise). The reload
+	-- fallback is `tonumber(get(key)) or cfg`, so the key must be reset
+	-- to the default BEFORE it is removed — removing it alone would pin
+	-- the cap at whatever the section last loaded, which is exactly how
+	-- E-18's cleanup used to leave cfg at 10000 for the rest of the run.
+	settings_values["economy.max_balance"] = "1000000000000000"
+	settings_values["store.max_balance"] = "1000000000000000"
+	commands["smp"].func("root", "reload")
+	settings_values["economy.max_balance"] = nil
+	settings_values["store.max_balance"] = nil
+	commands["smp"].func("root", "reload")
+	load("smp_store") -- smp_store back on its default cap too
+end
 
 ----------------------------------------------------------------------
 -- E-11 / E-13: every player-facing string is translated and period-free

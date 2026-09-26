@@ -12,9 +12,10 @@
 --             to an external service that manages keys and rate limits
 --   off       disabled
 --
--- `/api` issues a personal key once (`fcsmp_` + sha1, stored in the
--- record as api_key = { key, created } per §5), re-shows the existing
--- key on repeat calls, and `/api delete` revokes it (T10).
+-- `/api` issues a personal key once (`fcsmp_` + 40 hex chars from
+-- SecureRandom — EC-7/S01; stored in the record as api_key = { key,
+-- created } per §5), re-shows the existing key on repeat calls, and
+-- `/api delete` revokes it (T10).
 --
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
@@ -25,13 +26,52 @@ smp_stats.api = {}
 local api = smp_stats.api
 
 ----------------------------------------------------------------------
--- Keys (§5): fcsmp_ + sha1(time:name:random). Issue-once, revoke,
--- re-issue — every step synchronous, no yields (shared §2.3).
+-- Keys (§5): `fcsmp_` + 40 hex chars. Issue-once, revoke, re-issue —
+-- every step synchronous, no yields (shared §2.3).
+--
+-- EC-7 (S01): the key used to be `sha1(us_time .. name .. math.random()
+-- .. os.clock())` — wall-clock time, the player name, the Lua PRNG
+-- (seeded from time/address by default) and a process-local timer. A
+-- local or modified-client attacker can enumerate that seed space and
+-- mint someone else's key. It now comes straight from the OS CSPRNG:
+-- `SecureRandom():next_bytes(20)` is 160 bits
+-- (doc/lua_api.md `SecureRandom`; src/script/lua_api/l_noise.cpp
+-- LuaSecureRandom), hex-encoded to the same 40 characters sha1 gave, so
+-- the observable `fcsmp_ + 40 hex` form is unchanged (f14 §10 F14-D5).
+--
+-- FAIL CLOSED: `SecureRandom()` THROWS when the OS has no secure random
+-- device (l_noise.cpp create_object) and a stubbed engine may answer
+-- nil instead. Either way no key is minted: `make_key` answers nil,
+-- `issue_key` stores nothing and `/api` reports the failure — never a
+-- predictable key.
+
+local function to_hex(bytes)
+	return (bytes:gsub(".", function(c)
+		return string.format("%02x", c:byte())
+	end))
+end
 
 function api.make_key(name)
-	local seed = core.get_us_time() .. ":" .. name .. ":"
-		.. tostring(math.random()) .. ":" .. tostring(os.clock())
-	return "fcsmp_" .. core.sha1(seed)
+	-- `name` stays in the signature (callers pass it) but the key no
+	-- longer needs it: 160 fresh bits per call, no seed to enumerate.
+	if type(SecureRandom) ~= "function" then
+		core.log("error", "[smp_stats] SecureRandom is unavailable; "
+			.. "refusing to issue an API key")
+		return nil
+	end
+	local ok, sr = pcall(SecureRandom)
+	if not ok or sr == nil then
+		core.log("error", "[smp_stats] SecureRandom failed ("
+			.. tostring(sr) .. "); refusing to issue an API key")
+		return nil
+	end
+	local drew, bytes = pcall(sr.next_bytes, sr, 20)
+	if not drew or type(bytes) ~= "string" or #bytes < 20 then
+		core.log("error", "[smp_stats] SecureRandom:next_bytes(20) failed ("
+			.. tostring(bytes) .. "); refusing to issue an API key")
+		return nil
+	end
+	return "fcsmp_" .. to_hex(bytes:sub(1, 20))
 end
 
 function api.key_of(name)
@@ -44,11 +84,13 @@ function api.key_of(name)
 end
 
 -- Returns (key, issued_now). An existing key is re-shown, not rotated
--- (T10: "issues a key once").
+-- (T10: "issues a key once"). EC-7: when no secure key can be minted,
+-- answers (nil, false) and stores NOTHING — fail closed.
 function api.issue_key(name)
 	local existing = api.key_of(name)
 	if existing then return existing, false end
 	local key = api.make_key(name)
+	if not key then return nil, false end
 	local rec = smp_store.api.ensure_player(name)
 	rec.api_key = { key = key, created = os.time() }
 	smp_store.api.upsert_player(rec)
@@ -136,6 +178,10 @@ core.register_chatcommand("api", {
 			return false, S("You have no API key")
 		end
 		local key, issued = api.issue_key(player_name)
+		if not key then
+			-- EC-7 fail-closed: no secure key, so no key at all.
+			return false, S("Could not generate an API key, try again")
+		end
 		if issued then
 			return true, S("API key issued: @1", key)
 		end

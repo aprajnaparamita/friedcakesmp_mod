@@ -285,6 +285,158 @@ modified.
 | V-53 | Is the scoreboard's lower-case money (`754k`) a third format, or the same formatter at a narrower width? |
 | V-27 | Exact name of the shard balance command (`/shards` vs `/shard`) |
 
+### 10.4 Security escalations from fix brief S01 (2026-09-27)
+
+Brief: `fixes/security/S01-economy-core.md`. Fixed inside this feature's
+edit surface (details in the brief's status section): **EC-2** (the leave
+handler resolves the ObjectRef to a name before closing sessions),
+**EC-3** (the offline-pending list is now a versioned aggregate capped at
+50 distinct senders, join summary capped at 20 lines + one "and N
+others" line), **EC-4 `/baltop` half** (60 s shared cache + 10 s
+per-player cooldown enforced in `core.register_on_chatcommand`, so it
+covers `smp_stats`' snapshot override too), **EC-5** (`/pay` pre-flights
+the receiver's headroom against `min(economy.max_balance,
+store.max_balance)` and refuses inside the validate phase), and
+**EC-7** (in `smp_stats/api.lua`: keys minted from
+`SecureRandom():next_bytes(20)`, fail closed).
+
+The three findings below all target integrator-owned files
+(`smp_store/**`, `smp_store/pg_proxy.py`) and are escalated here with
+ready-to-apply patch text:
+
+| Id | Target | Ask |
+|---|---|---|
+| S01/EC-1 | `smp_store/init.lua:267,292,335,354` | Sign/NaN/inf guards on the four money primitives (patch below) |
+| S01/EC-4 (ledger half) | `smp_store/backends/mod_storage.lua:134-165` + `STORAGE.md` | Per-actor ledger index, or a production SQLite recommendation (patch below) |
+| S01/EC-6 | `smp_store/pg_proxy.py` + `smp_store/backends/postgres.lua` | Shared-secret auth + content checks + per-thread connections (patch below) |
+
+#### S01/EC-1 — store primitives trust their callers (→ smp_store)
+
+`take_money(name, -500)`: `rec.money < -500` is false, so the balance
+GAINS 500. With NaN every comparison is false and the NaN balance is
+persisted. `add_shards`/`take_shards` have no sign check at all, and
+`add_money`'s `if delta > cap / if delta <= 0` pair lets NaN through
+(`NaN > cap` and `NaN <= 0` are both false) into `rec.money + delta`.
+No current caller passes a bad value today — this is one missed check
+from a money dupe. Patch (guards at the very top of each primitive):
+
+```lua
+-- smp_store/init.lua — top of take_money (line 292) and take_shards
+-- (line 354; its parameter is named `n`, as in add_shards)
+n = tonumber(n)
+if not n or n ~= n or n <= 0 or n >= math.huge then
+	return nil -- nil = nothing taken (documented contract)
+end
+n = math.floor(n)
+
+-- smp_store/init.lua — top of add_money (line 267) and add_shards (line 335)
+n = tonumber(n)
+if not n or n ~= n or n <= 0 or n >= math.huge then
+	return 0 -- 0 = nothing changed (documented contract)
+end
+n = math.floor(n)
+```
+(`take_money`/`add_money` name their parameter `cents`; use that name
+there — the guard itself is identical.)
+
+**Deviation from the brief's snippet (justified):** the brief returns
+`nil` from all four. `add_money` documents `0` as "nothing changed"
+(`init.lua:266`), and `smp_economy.give` passes `add_money`'s return
+STRAIGHT THROUGH while documenting "0 = credited nothing"
+(`init.lua:133-142`; `smp_economy/test.lua` asserts `give(...) == 0`) —
+so the `add_*` pair answers `0` and only the `take_*` pair answers
+`nil`, preserving every documented contract. The old
+`if delta <= 0 then return 0 end` inside `add_money` stays as a second
+line of defence after the guard.
+
+#### S01/EC-4 (ledger half) — `ledger_for` is O(all rows) per page (→ smp_store)
+
+`driver.ledger_for` walks every `ledger:` key and `read_json`s every
+entry to filter by actor before paging
+(`backends/mod_storage.lua:134-165`; the E-16 fix made it
+filter-then-page, which corrected correctness but kept the O(N) parse).
+`/ledger` is staff-only, so this is a DoS-amplification concern, not a
+hot-path one — hence Low. Two acceptable dispositions, integrator picks:
+
+1. **Per-actor index.** In `driver.append_ledger`, also append the new
+   id to `ledger:idx:<actor>` (JSON array, monotonic, same write
+   transaction as `ledger:<id>`). `driver.ledger_for` then reads only
+   `ledger:idx:<actor>`, sorts (ids are monotonic, so append order is
+   already newest-first for a single writer) and `read_json`s just the
+   `size` rows of the requested page — O(page) instead of O(all).
+2. **Docs only.** Add a "production" note to
+   `friedcake/mods/smp_store/STORAGE.md`: mod_storage is for small
+   servers; use `backend = sqlite` (or postgres) once the ledger passes
+   a few thousand rows. The sqlite/postgres backends page with SQL.
+
+#### S01/EC-6 — the Postgres proxy has no authentication (→ ops + smp_store)
+
+`pg_proxy.py` accepts any POST on `127.0.0.1:8457`; `json.loads` ignores
+Content-Type, so a browser on the host can `fetch` it as a CORS simple
+request (no preflight) and set `money` to anything. Any local process can
+do the same, and one psycopg2 connection is shared across
+`ThreadingHTTPServer` threads (cross-thread cursor/transaction races).
+Patch, proxy side (`pg_proxy.py`):
+
+```python
+import hmac  # plus: from threading import local as thread_local
+
+TOKEN = os.environ.get("FRIEDCAKE_PG_TOKEN")
+if not TOKEN:
+    sys.exit("FRIEDCAKE_PG_TOKEN is required (shared secret for the Lua driver)")
+
+MAX_BODY = 64 * 1024
+_local = thread_local()
+
+def db():
+    # One connection per handler thread: the old module-global _conn was
+    # shared across ThreadingHTTPServer threads.
+    conn = getattr(_local, "conn", None)
+    if conn is None or conn.closed:
+        conn = psycopg2.connect(DSN)
+        conn.autocommit = False
+        _local.conn = conn
+    return conn
+
+# Handler.do_POST — validate BEFORE reading or parsing the body:
+def do_POST(self):
+    length = int(self.headers.get("Content-Length", 0))
+    if length > MAX_BODY:
+        self._respond(413, {"ok": False, "error": "body too large"}); return
+    if not hmac.compare_digest(self.headers.get("X-Friedcake-Token", ""), TOKEN):
+        self._respond(401, {"ok": False, "error": "bad token"}); return
+    if (self.headers.get("Content-Type") or "").split(";")[0].strip() \
+            != "application/json":
+        self._respond(415, {"ok": False, "error": "content-type must be application/json"}); return
+    ...  # existing body read + dispatch
+```
+
+Patch, Lua driver side (`backends/postgres.lua`, inside
+`sync_request`):
+
+```lua
+local extra = { "Content-Type: application/json" }
+local token = (cfg and cfg.postgres_token)
+	or core.settings:get("store.postgres_token")
+if token and token ~= "" then
+	extra[#extra + 1] = "X-Friedcake-Token: " .. token
+end
+-- ... pass `extra_headers = extra` to http.fetch_async
+```
+
+Run the proxy with `FRIEDCAKE_PG_TOKEN=<random>` and set the same value
+as `store.postgres_token` in `minetest.conf`. The new config key needs a
+`shared/06` row — see `## Proposed shared changes`. `hmac.compare_digest`
+also removes the (minor) timing side channel of a plain `==`.
+
+#### Cross-feature notes from S01
+
+| # | Note | Ask |
+|---|---|---|
+| X-S01-1 | `spec/features/f14-stats.md` F14-D5 still says `/api` issues `fcsmp_ .. sha1`; the key now comes from `SecureRandom():next_bytes(20)` hex-encoded (same `fcsmp_` + 40-hex form). | f14's owner/integrator: reword the F14-D5 row; observable behaviour (issue-once, re-show, revoke, re-issue) is unchanged, only the entropy source moved. |
+| X-S01-2 | The `/baltop` cooldown lives in `core.register_on_chatcommand` in this mod precisely so it survives `smp_stats/init.lua`'s snapshot override: the engine runs chatcommand hooks BEFORE whichever `func` is registered, so both the economy func and the override's snapshot/fallback branches sit behind it. Proven for the hook ordering in `dev-tests/test_economy.lua` (EC-4 `dispatch`); the override's own branch is covered by construction, not by a second test. | Informational — if the override ever grows its OWN pre-func work (network, file IO), it must keep relying on this hook for rate limiting. |
+| X-S01-3 | EC-5 makes `store.max_balance` a second live reader in this mod (`cfg.store_max_balance`, same key/fallback as `smp_store/init.lua:30`). | Strengthens F-4 / the `shared/06` proposal below: the key is now consumed by two mods, so the config mirror really should list it. |
+
 ## Proposed shared changes
 
 Proposals only — `spec/shared/` is read-only for this agent.
@@ -294,3 +446,4 @@ Proposals only — `spec/shared/` is read-only for this agent.
 | `spec/shared/02-architecture.md` §2.5 (`:95`) | the M2 `<contents>` field is described as a **hash** over the contents | describe it as a **reversible token** (percent-encoded `compressed` meta, or the empty key for the serialized list); `stack_from_key` rebuilds the stack. The one-way hash was retired by E-20; consumers that compared it opaquely are unaffected. |
 | `spec/shared/06-config-reference.md` (`:10`, `:17`) | `economy.max_balance` marked read-but-dead; `store.max_balance` not listed although `smp_store` enforces it | `economy.max_balance` — now enforced by `smp_economy`'s credit paths (E-18); `store.max_balance` — listed as the store-level cap for direct `smp_store.api.add_money` callers. This is D7's mirror decision. |
 | `spec/shared/05-command-reference.md` | no `/payto` row; `/smp` row predates the test dispatcher | add `/payto <player> <amount>` (alias of `/pay`, f01 `PROPOSED`); widen `/smp test` to `<mod>` where the mod ships a `test.lua` (f01 `PROPOSED`). |
+| `spec/shared/06-config-reference.md` (S01/EC-6) | no `store.postgres_token` row | add `store.postgres_token` — shared secret sent as `X-Friedcake-Token` to `pg_proxy.py` (paired with the proxy's required `FRIEDCAKE_PG_TOKEN` env var); only meaningful when `store.backend = postgres`. |
