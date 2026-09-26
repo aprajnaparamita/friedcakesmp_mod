@@ -19,10 +19,9 @@ integrator.
 | 3 | **AH-1** | 🟠 High | A listing routed into an order is **deleted** when the order refuses. Griefable: open a 1-item order and every matching AH listing vanishes | [S03](S03-auction.md) |
 | 4 | **AX-1** | 🟠 High | The sell axe has the same misread (`accepted ~= false`) and deletes container stacks | [S05](S05-shops-shards.md) |
 | 5 | **SE-4 / CB-1** | 🟠 High | Combat-log escape: items parked in `/sell` (or the orders grid) are returned **after** the combat drop | [S02](S02-sell.md) · [S07](S07-combat-bounty.md) |
-| 6 | **SE-3** | 🟠 High | The $7 cobble anchor is on `mcl_walls:cobble` (the wall), so a cobble generator plus a stonecutter pays 7× | [S02](S02-sell.md) |
-| 7 | **SE-1** | 🟠 High | `sell.default_price` pays $1 for every registered item: moss, bone-meal flora and craft-multiplier faucets | [S02](S02-sell.md) |
-| 8 | **SE-2** | 🟠 High | $500/enchant-level bonus: XP and lapis → $2.5K–$5K per enchant. Shard gear → about $100K | [S02](S02-sell.md) |
-| 9 | **SP-2 / SP-3** | 🟠 High | Spawner withdrawals destroy items (`if not add_item` never fires; `set_count > 65535` clears) | [S06](S06-spawners.md) |
+| 6 | **SE-1** | 🟠 High | `sell.default_price` pays $1 for every registered item: moss, bone-meal flora and craft-multiplier faucets | [S02](S02-sell.md) |
+| 7 | **SE-2** | 🟠 High | $500/enchant-level bonus: XP and lapis → $2.5K–$5K per enchant. Shard gear → about $100K | [S02](S02-sell.md) |
+| 8 | **SP-2 / SP-3** | 🟠 High | Spawner withdrawals destroy items (`if not add_item` never fires; `set_count > 65535` clears) | [S06](S06-spawners.md) |
 
 ## Everything else
 
@@ -39,6 +38,7 @@ integrator.
 | EC-4 / SE-5 | 🟡 Medium | O(N) work per `/baltop`, `/ledger` and **every sale** (mod_storage key scan) | [S01](S01-economy-core.md) · [S02](S02-sell.md) |
 | TP-1 | 🟡 Medium | `/tpahere` trap: the destination is fixed at accept, the sender builds lava during warm-up, and `/tpauto` accepts without a prompt | [S08](S08-teleport.md) |
 | AX-2 | 🟡 Medium | Sell axe loops `0..size-1`, so the last slot is never processed | [S05](S05-shops-shards.md) |
+| SE-3 | ⚪ Low | *(corrected, was High)* Walls ($7) are priced above cobble ($6), so the stonecutter pays +17% per block | [S02](S02-sell.md) |
 | EC-1 | ⚪ Low | Store primitives accept negative or NaN (a negative `take` mints). ESCALATE | [S01](S01-economy-core.md) |
 | EC-5 | ⚪ Low | `/pay` into a capped balance destroys the overflow | [S01](S01-economy-core.md) |
 | EC-6 | ⚪ Low | `pg_proxy.py` is unauthenticated and CSRF-able from a local browser. ESCALATE | [S01](S01-economy-core.md) |

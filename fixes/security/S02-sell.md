@@ -25,7 +25,7 @@ through the sell container.
 |---|---|---|---|---|
 | SE-1 | High | CONFIRMED | `prices.lua:189`, `init.lua:97` | `sell.default_price` = $1 for **every** registered item makes zero-cost items a money faucet |
 | SE-2 | High | CONFIRMED | `prices.lua:199-221`, `init.lua:98` | $500 per enchantment level turns XP and lapis into money, and shard-shop gear into about $100K |
-| SE-3 | High | CONFIRMED | `prices_default.lua:48` | The cobblestone anchor is priced on `mcl_walls:cobble` (the **wall**): 1 cobble → 1 wall = 7× |
+| SE-3 | Low | CONFIRMED (corrected 2026-09-27) | `prices_default.lua:35`, `:48` | Wall ($7) is priced above cobble ($6), so the stonecutter's 1 cobble → 1 wall pays +$1 (about 17%) per block |
 | SE-4 | High | CONFIRMED | `mod.conf` (optional_depends `smp_combat`), `init.lua:604` | The sell container is returned **after** the combat-log drop: valuables escape a combat log |
 | SE-5 | Medium | CONFIRMED | `history.lua` → `smp_store` `append_history` (`mod_storage.lua:182`) | Every sale scans **all** keys of `smp_store`'s storage, so the cost grows with the ledger |
 
@@ -38,15 +38,16 @@ default, `init.lua:97`) for **any** `core.registered_items` entry missing
 from the table. The table lists about 110 items. Mineclonia registers
 thousands. Examples verified against `~/dev/mineclonia-git`:
 
-- `mcl_core:cobble` is unlisted, so it pays $1. A cobble generator is
-  unlimited. (See SE-3, which is worse.)
+- *(Correction: `mcl_core:cobble`, stone and dirt **are** listed, at
+  `prices_default.lua:34-39`. An earlier draft said cobble was unlisted.)*
 - Moss: bone meal on a moss block spreads moss
   (`mcl_lush_caves/nodes.lua:86` `_on_bone_meal = bone_meal_moss`). One
   bone ($10) makes 3 bone meal, which grows many moss blocks, carpets and
   azaleas at $1 each. Grass and flowers from bone meal behave the same.
-- Craft multipliers: 3 cobble → 6 slabs, stone → 2 slabs at the
-  stonecutter, 6 glass → 16 panes. Every recipe whose output count exceeds
-  its input count is profitable at a flat price.
+- Craft multipliers among **unlisted** items: 6 glass ($6) → 16 panes
+  ($16). Every recipe whose inputs are unlisted and whose output count
+  exceeds its input count is profitable at a flat price. (Slabs from
+  listed cobble or stone lose money, so they are not a faucet.)
 
 **Fix (pick one and record it in f02 §10 V-98):**
 1. Default `sell.default_price = 0`, which is off, until an operator
@@ -99,23 +100,23 @@ not by the bonus.
 
 ---
 
-### SE-3 — Cobblestone anchor keyed on the wall
+### SE-3 — Walls priced above their cobble (corrected)
 
-`prices_default.lua:48`: `["mcl_walls:cobble"] = 700, -- anchor [S2]`.
-In Mineclonia `mcl_walls:cobble` is an **alias of the cobblestone wall**
-(`mcl_walls/init.lua` registers `nodename` as an alias of
-`nodename.."_short_pillar"`; `mcl_core/nodes_stairs.lua:59`). The wall
-recipe is 6 cobble → 6 walls, and the stonecutter makes 1 cobble → 1
-wall (`_mcl_stonecutter_recipes`). Plain `mcl_core:cobble` is unlisted,
-so it pays $1 (SE-1).
+> **Correction (2026-09-27).** The first version of this finding said
+> cobblestone was unlisted and paid $1, which made the wall a "7×" faucet.
+> That was wrong: the audit read the price table from line 40 and missed
+> `["mcl_core:cobble"] = 600` at `prices_default.lua:35`. The corrected
+> finding is small.
 
-**Impact.** A cobblestone generator plus a stonecutter yields $7 per
-block, 7× the intended rate, from an unlimited source. (The anchor itself
-is observed Donut behaviour; the bug is which item it is attached to.)
+`["mcl_walls:cobble"] = 700` (`:48`) is priced above
+`["mcl_core:cobble"] = 600` (`:35`). The stonecutter makes 1 cobble → 1
+wall (`_mcl_stonecutter_recipes`, `mcl_walls/init.lua:278`), and the
+crafting grid makes 6 → 6. So every generator block is worth $7 instead of
+$6 when it goes through a stonecutter. Mossy cobble ($9) → mossy wall ($10)
+works the same way.
 
-**Fix.** Key the anchor on `mcl_core:cobble`. Price walls, stairs and slabs
-at or below their cobble-equivalent (wall ≤ $7, slab ≤ $3.50). The SE-1
-recipe test enforces this from then on.
+**Fix.** Price walls at or below their source block (wall ≤ cobble). The
+SE-1 recipe test enforces this from then on. Severity: **Low**.
 
 ---
 
