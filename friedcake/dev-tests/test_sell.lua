@@ -1068,7 +1068,7 @@ do
 	check(fs:find("item_image_button[10.375,5.75;1,1;mcl_panes:pane_lime_flat;confirm;]",
 		1, true) ~= nil,
 		"T1 the lime confirm pane sits in the bottom-right cell of the grid [F0094]")
-	check(fs:find("tooltip[confirm;Confirm\\nClick to sell items]", 1, true) ~= nil,
+	check(fs:find("tooltip[confirm;Confirm\nClick to sell items]", 1, true) ~= nil,
 		"T1 the confirm tooltip follows the shared §4.3 two-line idiom")
 	check(fs:find("listring[detached:smp_sell_alice;main]", 1, true) ~= nil,
 		"T1 shift-click rings between the grid and the inventory")

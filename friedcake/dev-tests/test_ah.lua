@@ -163,15 +163,15 @@ section("T2", "control tooltips verbatim", function()
 
 	-- shared/08-ui-strings.md §8.5 + f03 §3.1. Line 3 is the Mineclonia
 	-- itemstring (shared §0.5.1); the Java `14 component(s)` line is dropped.
-	has(H.form("alice"), "tooltip[ah_search;Search\\nClick to search\\n" ..
+	has(H.form("alice"), "tooltip[ah_search;Search\nClick to search\n" ..
 		smp_ah.fs.item("search") .. "]", "T2 Search tooltip")
-	has(H.form("alice"), "tooltip[ah_your_items;Your Items\\nClick to view\\n" ..
+	has(H.form("alice"), "tooltip[ah_your_items;Your Items\nClick to view\n" ..
 		smp_ah.fs.item("your_items") .. "]", "T2 Your Items tooltip")
 
 	-- The hopper tooltip carries the option list [F0118–F0123].
 	local bullet = "\226\128\162"
-	ok(p:find("Filter\\nClick to change\\n" .. bullet .. " Lowest Price\\n" ..
-		bullet .. " Highest Price\\n" .. bullet .. " Recently Listed\\n" ..
+	ok(p:find("Filter\nClick to change\n" .. bullet .. " Lowest Price\n" ..
+		bullet .. " Highest Price\n" .. bullet .. " Recently Listed\n" ..
 		smp_ah.fs.item("filter"), 1, true) ~= nil,
 		"T2 Filter tooltip: two lines then the three sorts in order")
 
@@ -190,7 +190,7 @@ section("T2", "control tooltips verbatim", function()
 	-- Listing tooltip: name, total price, Mineclonia itemstring [F0108].
 	local rec = mk("erin", "mcl_throwing:ender_pearl 16", 70000)   -- $700
 	H.cmd("ah", "alice", "")
-	has(H.form("alice"), "tooltip[ah_l" .. rec.id .. ";Ender Pearl\\n$700\\n" ..
+	has(H.form("alice"), "tooltip[ah_l" .. rec.id .. ";Ender Pearl\n$700\n" ..
 		"mcl_throwing:ender_pearl]", "T2 listing tooltip matches [F0108]")
 	hasnt(H.form("alice"), "15 component(s)", "T2 no component count")
 end)
@@ -318,7 +318,7 @@ section("T5", "Your Items > List > Insert Item > price > Confirm Listing", funct
 	-- Note the separator: `>`, not the `->` that orders uses (shared §4.2).
 	has(H.form("bob"), "Auction > Your Items", "T5 title uses `>`")
 	hasnt(H.form("bob"), "Auction -> Your Items", "T5 and never `->`")
-	has(H.form("bob"), "tooltip[ah_list;List\\nClick to sell an item\\n" ..
+	has(H.form("bob"), "tooltip[ah_list;List\nClick to sell an item\n" ..
 		smp_ah.fs.item("list") .. "]", "T5 the `List` pane tooltip [F0131]")
 
 	H.receive("bob", "smp_ah:your_items", { ah_list = "" })
@@ -354,10 +354,10 @@ section("T5", "Your Items > List > Insert Item > price > Confirm Listing", funct
 	eq(H.formname("bob"), "smp_ah:confirm_listing", "T5 `Confirm Listing` opens")
 	has(H.form("bob"), "Confirm Listing", "T5 title")
 	-- OBSERVED tooltip [F0142], minus the dropped component count.
-	has(H.form("bob"), "Dirt\\nYou're going to sell this item for $1\\nmcl_core:dirt",
+	has(H.form("bob"), "Dirt\nYou're going to sell this item for $1\nmcl_core:dirt",
 		"T5 the confirm tooltip reads exactly as observed")
 	hasnt(H.form("bob"), "13 component(s)", "T5 the component line is dropped")
-	has(H.form("bob"), "tooltip[ah_confirm;Confirm\\nClick to list item ($1)]",
+	has(H.form("bob"), "tooltip[ah_confirm;Confirm\nClick to list item ($1)]",
 		"T5 the Confirm pane names the amount")
 
 	H.receive("bob", "smp_ah:confirm_listing", { ah_confirm = "" })
@@ -413,8 +413,8 @@ section("T6", "purchase race re-validation", function()
 	H.receive("carol", "smp_ah:board", { ["ah_l" .. rec.id] = "" })
 	eq(H.formname("carol"), "smp_ah:confirm_buy", "T6 the click opens a confirmation")
 	has(H.form("carol"), "Auction > Confirm Purchase", "T6 confirm title")
-	has(H.form("carol"), "Chest\\n$ 5.1K\\nmcl_chests:chest", "T6 the listing tooltip [F0055 form]")
-	has(H.form("carol"), "tooltip[ah_buy;Confirm\\nClick to buy item ($5.1K)]",
+	has(H.form("carol"), "Chest\n$ 5.1K\nmcl_chests:chest", "T6 the listing tooltip [F0055 form]")
+	has(H.form("carol"), "tooltip[ah_buy;Confirm\nClick to buy item ($5.1K)]",
 		"T6 the Confirm pane names the amount, parenthesised with no space")
 
 	H.cmd("ah", "dave", "")
@@ -819,10 +819,10 @@ section("X-a", "listing tooltip money forms follow shared §0.6", function()
 	eq(smp_ah.fs.money_tail(900000), " 9K", "the `$@1` template tail")
 	H.cmd("ah", "alice", "")
 	local p = H.plain(H.form("alice"))
-	ok(p:find("Ender Pearl\\n$700\\nmcl_throwing:ender_pearl", 1, true) ~= nil,
+	ok(p:find("Ender Pearl\n$700\nmcl_throwing:ender_pearl", 1, true) ~= nil,
 		"$700 tooltip [F0108]")
-	ok(p:find("Diamond\\n$ 9K\\nmcl_core:diamond", 1, true) ~= nil, "$ 9K tooltip [F0124]")
-	ok(p:find("Diamond Shovel\\n$ 25K\\nmcl_tools:shovel_diamond", 1, true) ~= nil,
+	ok(p:find("Diamond\n$ 9K\nmcl_core:diamond", 1, true) ~= nil, "$ 9K tooltip [F0124]")
+	ok(p:find("Diamond Shovel\n$ 25K\nmcl_tools:shovel_diamond", 1, true) ~= nil,
 		"$ 25K tooltip [F0115]")
 	ok(p:find("component%(s%)") == nil, "no component line anywhere")
 	-- Stacks show a count badge, like the observed board [F0108 "16"].

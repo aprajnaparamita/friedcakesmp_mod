@@ -350,14 +350,15 @@ fs.control_element = control_element
 ----------------------------------------------------------------------
 
 --- Multi-line tooltip for a named element (shared §4.9). Each line is
--- escaped separately and joined with a literal `\n`, which the formspec
--- parser turns into a line break.
+-- escaped separately and joined with a real newline. (A two-character
+-- backslash-n is NOT a line break: the engine's unescape_string drops the
+-- backslash and renders a literal "n".)
 function fs.tooltip(name, lines, bgcolor, fontcolor)
 	local out = {}
 	for i, line in ipairs(lines) do
 		out[i] = F(tostring(line))
 	end
-	local s = "tooltip[" .. F(name) .. ";" .. table.concat(out, "\\n")
+	local s = "tooltip[" .. F(name) .. ";" .. table.concat(out, "\n")
 	if bgcolor then s = s .. ";" .. F(bgcolor) end
 	if fontcolor then s = s .. ";" .. F(fontcolor) end
 	return s .. "]"
@@ -705,7 +706,7 @@ local function confirm_grid(stack_name, tooltip_lines, confirm_name, confirm_lin
 			c(G.pitch) .. ";" .. (function()
 				local esc = {}
 				for i, l in ipairs(tooltip_lines) do esc[i] = F(tostring(l)) end
-				return table.concat(esc, "\\n")
+				return table.concat(esc, "\n")
 			end)() .. "]",
 		fs.control(confirm_name, sx(3), y, "confirm", confirm_lines),
 		fs.control(cancel_name, sx(7), y, "cancel", cancel_lines),

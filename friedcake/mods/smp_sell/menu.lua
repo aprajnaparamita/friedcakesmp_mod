@@ -304,7 +304,7 @@ function M.formspec(player_name, session)
 		-- with every drag, and redrawing the formspec mid-drag risks the
 		-- client losing the stack it is holding. f02 §10 V-54/V-92.
 		parts[#parts + 1] = "tooltip[confirm;"
-			.. core.formspec_escape(S("Confirm")) .. "\\n"
+			.. core.formspec_escape(S("Confirm")) .. "\n"
 			.. core.formspec_escape(S("Click to sell items")) .. "]"
 	end
 
