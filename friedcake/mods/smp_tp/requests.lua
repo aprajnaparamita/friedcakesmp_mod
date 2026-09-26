@@ -8,6 +8,11 @@
 -- refusal that reveals nothing about which rule fired — the chat
 -- analogue of the observed privacy refusal style (F0276–F0285).
 --
+-- S08: "offline" means NOT CONNECTED — core.player_exists is true for
+-- every account in the auth database, so it alone would still let a
+-- name allocate request state (TP-2). /tpauto accepts /tpa only;
+-- /tpahere always prompts (TP-1).
+--
 -- Copyright (c) 2026 FriedcakeSMP contributors.
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
@@ -84,7 +89,12 @@ local GENERIC_REFUSAL = "This player cannot be asked for a teleport"
 local function send_request(sender, target, type)
 	-- Validation order matters: all privacy checks before any side
 	-- effect, and the refusal string is identical for every rule (T7).
-	if not core.player_exists(target) then
+	-- `player_exists` alone is not enough (S08/TP-2): it is true for
+	-- every account in the auth database, online or not, so a name
+	-- that exists but is not connected would still get state
+	-- allocated below. Both refusals are the same generic string, so
+	-- an offline target is indistinguishable from a blocking one.
+	if not core.player_exists(target) or core.get_player_by_name(target) == nil then
 		core.chat_send_player(sender, S(GENERIC_REFUSAL))
 		return false
 	end
@@ -120,8 +130,12 @@ local function send_request(sender, target, type)
 		return false
 	end
 
-	if tstate.auto_accept then
-		-- /tpauto: accept immediately, no dialog (f08 §4.4.4).
+	if tstate.auto_accept and type == "tpa" then
+		-- /tpauto: accept immediately, no dialog (f08 §4.4.4) — but
+		-- only for /tpa, where the requester comes TO the target. A
+		-- /tpahere request moves the TARGET to a spot the sender
+		-- chose, so it always falls through to the prompt below,
+		-- even with /tpauto on (S08/TP-1).
 		local ok = smp_tp.accept_request(target, sender, type)
 		if not ok then
 			core.chat_send_player(sender, S(GENERIC_REFUSAL))

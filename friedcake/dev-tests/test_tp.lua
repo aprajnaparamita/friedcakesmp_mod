@@ -62,10 +62,30 @@ local fake = {
 	hpchange = nil,        -- the registered callback
 	globalsteps = {},      -- registered globalstep fns
 	leaves = {}, die = {}, fields = {},
-	players = {},          -- name -> fake player object
+	players = {},          -- name -> fake player object (connected)
+	authdb = {},           -- name -> true: exists in the auth DB, online or not
 	connected = {},        -- list of names
 	node_at = function() return "air" end,
 }
+
+----------------------------------------------------------------------
+-- MS-3: strict player-name stubs
+--
+-- The engine's name-taking functions are bound with luaL_checkstring,
+-- so a nil or numeric player name raises a Lua error there. A fake
+-- that silently tolerates it would hide exactly that class of bug
+-- (the harness encoding the bug — see test_engine_apis.lua), so these
+-- stubs raise the same way. Each test file carries its own copy on
+-- purpose: dev-tests share no harness module.
+----------------------------------------------------------------------
+
+local function check_name(fn, name)
+	if type(name) ~= "string" then
+		error(string.format(
+			"bad argument #1 to '%s' (string expected, got %s)",
+			fn, type(name)), 0)
+	end
+end
 
 local function advance(dt)
 	now = now + math.floor(dt)
@@ -101,24 +121,40 @@ local core = {
 		fake.pending[#fake.pending + 1] = { at = now + math.max(1, math.floor(sec)), fn = fn }
 	end,
 	chat_send_player = function(name, msg)
+		check_name("chat_send_player", name)
 		fake.chat[name] = fake.chat[name] or {}
 		fake.chat[name][#fake.chat[name] + 1] = msg
 	end,
-	get_player_by_name = function(name) return fake.players[name] end,
-	player_exists = function(name) return fake.players[name] ~= nil end,
+	get_player_by_name = function(name)
+		check_name("get_player_by_name", name)
+		return fake.players[name]
+	end,
+	player_exists = function(name)
+		check_name("player_exists", name)
+		return fake.players[name] ~= nil or fake.authdb[name] == true
+	end,
 	get_connected_players = function()
 		local out = {}
 		for name in pairs(fake.players) do out[#out + 1] = fake.players[name] end
 		return out
 	end,
 	get_node = function(pos) return { name = fake.node_at(pos.x, pos.y, pos.z) } end,
-	get_item_group = function(_, group) return 0 end,
+	get_item_group = function(name, group)
+		local def = core.registered_nodes and core.registered_nodes[name]
+		if def and type(def.groups) == "table" then
+			return def.groups[group] or 0
+		end
+		return 0
+	end,
 	emerge_area = function(_, _, cb) cb(nil, nil, 0) end,
 	show_formspec = function(name, formname, fs)
+		check_name("show_formspec", name)
 		fake.formspecs[name] = fake.formspecs[name] or {}
 		fake.formspecs[name][#fake.formspecs[name] + 1] = fs
 	end,
-	close_formspec = function() end,
+	close_formspec = function(name, formname)
+		check_name("close_formspec", name)
+	end,
 	get_gametime = function() return now end,
 	settings = nil,
 	register_chatcommand = function(name, def)
@@ -144,6 +180,29 @@ local core = {
 minetest = core
 core_global = core
 _G.core = core
+
+-- Node definitions, so destination safety (S08/TP-1) and rtp.lua see
+-- what the engine would report. Values mirror Mineclonia: lava
+-- damage_per_second 8 with group lava=3, fire damage_per_second 1 with
+-- group fire=1. Registering them changes no /rtp result — every name
+-- below is already on find_safe_y's reject list, and unregistered
+-- names keep the "unknown = solid" fallback.
+core.registered_nodes = {
+	["air"]                    = { walkable = false },
+	["ignore"]                 = { walkable = false },  -- unloaded mapblock
+	["mcl_core:dirt"]          = { walkable = true },
+	["mcl_core:stone"]         = { walkable = true },
+	["mcl_core:water_source"]  = { walkable = false, groups = { liquid = 3 } },
+	["mcl_core:lava_source"]   = { walkable = false, damage_per_second = 8,
+	                                groups = { liquid = 2, lava = 3 } },
+	["mcl_fire:fire"]          = { walkable = false, damage_per_second = 1,
+	                                groups = { fire = 1 } },
+	-- Damaging by GROUP only: catches a get_item_group-only path.
+	["mcl_campfires:campfire"] = { walkable = true, groups = { fire = 1 } },
+	-- Bottom slab: walkable, and a standing player occupies its node
+	-- (collision boxes — the legitimate solid-feet case).
+	["mcl_stairs:slab_stone"]  = { walkable = true },
+}
 
 local mcl_title = {
 	set = function(player, type, data)
@@ -435,8 +494,10 @@ end
 do
 	reset_chat()
 	fresh_world()
-	make_player("iris", { x = 700, y = 70, z = 700 })
-	make_player("joe",  { x = 710, y = 70, z = 700 })
+	-- y=61: standing on the dirt at y=60, so the /tpa destinations are
+	-- real, safe spots (S08 destination safety checks them).
+	make_player("iris", { x = 700, y = 61, z = 700 })
+	make_player("joe",  { x = 710, y = 61, z = 700 })
 
 	-- /tpa: iris asks joe; joe accepts; iris (sender) warms up.
 	core.registered_chatcommands["tpa"].func("iris", "joe")
@@ -446,6 +507,7 @@ do
 	w = smp_tp.warmup["iris"]
 	ok(w ~= nil and w.kind == "tpa", "T8 /tpa acceptance warms up the sender")
 	eq(math.floor(w.to.x), 710, "T8 sender destination is the target's position")
+	ok(w.check_dest == true, "T8 counterparty destination is safety-checked")
 	advance(6)
 	eq(math.floor(iris._pos.x), 710, "T8 sender moved to target")
 
@@ -454,8 +516,8 @@ do
 	-- first.)
 	reset_chat()
 	advance(31)
-	iris._pos = vnew(700, 70, 700)
-	joe._pos  = vnew(710, 70, 700)
+	iris._pos = vnew(700, 61, 700)
+	joe._pos  = vnew(710, 61, 700)
 	core.registered_chatcommands["tpahere"].func("iris", "joe")
 	ok(smp_tp.warmup["joe"] == nil, "T8 no warm-up before /tpahere acceptance")
 	ok(smp_tp.accept_request("joe", "iris", "tpahere") == true, "T8 joe accepts /tpahere")
@@ -730,6 +792,192 @@ do
 	make_player("vic", { x = 1300, y = 70, z = 1300 })
 	local r = core.registered_chatcommands["back"].func("vic", "")
 	ok(r == false, "back: /back refused while disabled")
+end
+
+----------------------------------------------------------------------
+-- S08/TP-1a — /tpauto accepts /tpa only; /tpahere always prompts
+----------------------------------------------------------------------
+
+do
+	reset_chat()
+	fresh_world()
+	make_player("tara", { x = 1400, y = 61, z = 1400 })
+	make_player("vince", { x = 1410, y = 61, z = 1400 })
+	smp_tp.get_state("vince").auto_accept = true   -- vince ran /tpauto
+
+	-- Control: /tpa (the requester comes TO you) still auto-accepts.
+	core.registered_chatcommands["tpa"].func("tara", "vince")
+	local w = smp_tp.warmup["tara"]
+	ok(w ~= nil and w.kind == "tpa", "TP1a /tpa is still auto-accepted with /tpauto on")
+	ok(next(fake.formspecs["vince"] or {}) == nil,
+		"TP1a no dialog for the auto-accepted /tpa")
+	advance(6)
+	eq(math.floor(tara._pos.x), 1410, "TP1a auto-accepted /tpa teleports the sender")
+
+	-- The fix: /tpahere (YOU go where the sender stands) never
+	-- auto-accepts — it prompts, and nothing moves.
+	reset_chat()
+	make_player("wanda", { x = 1420, y = 61, z = 1400 })
+	core.registered_chatcommands["tpahere"].func("wanda", "vince")
+	ok(smp_tp.warmup["vince"] == nil, "TP1a /tpahere does NOT auto-accept: no warm-up")
+	local fss = fake.formspecs["vince"]
+	ok(fss and #fss == 1, "TP1a /tpahere prompt shown to the target instead")
+	ok(fss and fss[1]:find("Teleport Request", 1, true) ~= nil,
+		"TP1a prompt is the Accept/Deny dialog")
+	local tst = smp_tp.get_state("vince")
+	ok(tst.requests_in["wanda"] ~= nil and tst.requests_in["wanda"]["tpahere"] ~= nil,
+		"TP1a the request stays pending for an explicit /tpaccept")
+	-- No timer runs on its own.
+	advance(6)
+	eq(math.floor(vince._pos.x), 1410, "TP1a target did not move")
+	ok(smp_tp.warmup["vince"] == nil, "TP1a still no warm-up after the countdown")
+end
+
+----------------------------------------------------------------------
+-- S08/TP-1b..d — the destination is re-checked at FIRE time
+--
+-- The trapper types /tpahere and stands where the victim will land;
+-- the victim accepts, then the trapper rebuilds the spot during the
+-- 5 s countdown.
+----------------------------------------------------------------------
+
+do
+	reset_chat()
+	fresh_world()
+	local n = 0
+	-- Returns the victim's name and the destination.
+	local function trap_run(label, expected_feet, dest_y, before, after)
+		n = n + 1
+		local dest = { x = 1500 + n * 10, y = dest_y, z = 1500 }
+		local trapper, victim = "evil" .. n, "prey" .. n
+		if before then before(dest) end
+		make_player(trapper, dest)
+		make_player(victim, { x = dest.x - 3, y = 61, z = dest.z })
+		core.registered_chatcommands["tpahere"].func(trapper, victim)
+		local acc = smp_tp.accept_request(victim, trapper, "tpahere")
+		ok(acc == true, label .. ": acceptance starts the warm-up")
+		local w = smp_tp.warmup[victim]
+		ok(w ~= nil, label .. ": warm-up recorded")
+		ok(w ~= nil and w.dest_feet == expected_feet,
+			label .. ": feet node captured at accept (" .. tostring(expected_feet) .. ")")
+		if after then after(dest) end
+		advance(6)
+		return victim, dest
+	end
+
+	-- TP-1b: lava poured onto the destination during the countdown.
+	local victim, dest = trap_run("TP1b", "air", 61, nil, function(d)
+		setcol(d.x, d.z, { [61] = "mcl_core:lava_source", [60] = "mcl_core:dirt" })
+	end)
+	eq(math.floor(victim == "prey1" and prey1._pos.x or -1), dest.x - 3,
+		"TP1b victim NOT teleported into the lava")
+	eq(last_chat(victim), "The destination is not safe",
+		"TP1b victim told the destination is not safe")
+
+	-- TP-1c: a void shaft dug under the destination.
+	victim, dest = trap_run("TP1c", "air", 61, nil, function(d)
+		setcol(d.x, d.z, {})   -- the dirt at y=60 is gone: no ground left
+	end)
+	eq(math.floor(victim == "prey2" and prey2._pos.x or -1), dest.x - 3,
+		"TP1c victim NOT teleported into the void")
+	eq(last_chat(victim), "The destination is not safe",
+		"TP1c victim told the destination is not safe")
+
+	-- TP-1d: a solid block placed at the victim's feet node.
+	victim, dest = trap_run("TP1d", "air", 61, nil, function(d)
+		setcol(d.x, d.z, { [61] = "mcl_core:stone", [60] = "mcl_core:dirt" })
+	end)
+	eq(math.floor(victim == "prey3" and prey3._pos.x or -1), dest.x - 3,
+		"TP1d victim NOT teleported into the trap block")
+	eq(last_chat(victim), "The destination is not safe",
+		"TP1d victim told the destination is not safe")
+
+	-- Control: a destination that is ALREADY solid at the feet is a
+	-- legitimate standing spot (bottom slab: the player occupies its
+	-- node), and it must still work.
+	victim, dest = trap_run("TP1-control", "mcl_stairs:slab_stone", 60.5,
+		function(d)
+			setcol(d.x, d.z, { [59] = "mcl_core:dirt", [60] = "mcl_stairs:slab_stone" })
+		end, nil)
+	eq(math.floor(victim == "prey4" and prey4._pos.x or -1), dest.x,
+		"TP1-control slab destination still teleports (no false positive)")
+	ok(last_chat(victim) == nil or last_chat(victim) ~= "The destination is not safe",
+		"TP1-control no safety refusal")
+end
+
+----------------------------------------------------------------------
+-- S08/TP-1 — an already-lethal destination is refused at ACCEPT time
+-- (no warm-up is started, no request state left dangling)
+----------------------------------------------------------------------
+
+do
+	reset_chat()
+	fresh_world()
+	-- The trapper stands in a void column when the request is accepted.
+	local dest = { x = 1700, y = 61, z = 1700 }
+	setcol(dest.x, dest.z, {})
+	make_player("evil_v", dest)
+	make_player("prey_v", { x = dest.x - 3, y = 61, z = dest.z })
+	core.registered_chatcommands["tpahere"].func("evil_v", "prey_v")
+	ok(smp_tp.accept_request("prey_v", "evil_v", "tpahere") == false,
+		"TP1 accept refused when the destination is already unsafe")
+	ok(smp_tp.warmup["prey_v"] == nil, "TP1 no warm-up started")
+	eq(last_chat("prey_v"), "The destination is not safe",
+		"TP1 accept-time refusal names the reason")
+	eq(math.floor(prey_v._pos.x), dest.x - 3, "TP1 victim did not move")
+end
+
+----------------------------------------------------------------------
+-- S08/TP-2 — an offline account gets the generic refusal and NO state
+----------------------------------------------------------------------
+
+do
+	reset_chat()
+	fresh_world()
+	make_player("yuri", { x = 1600, y = 61, z = 1600 })
+	-- Exists in the auth database (core.player_exists is true) but
+	-- nobody is connected under that name.
+	fake.authdb["ghost_player"] = true
+
+	local r = core.registered_chatcommands["tpa"].func("yuri", "ghost_player")
+	ok(r == false, "TP2 /tpa to an offline account refused")
+	local ghost_msg = last_chat("yuri")
+	eq(ghost_msg, "This player cannot be asked for a teleport",
+		"TP2 refusal is the T7 generic string, verbatim")
+	ok(smp_tp.state["ghost_player"] == nil, "TP2 no state allocated for the offline target")
+
+	-- Identical to the unknown-name refusal: one string, every rule.
+	reset_chat()
+	local r2 = core.registered_chatcommands["tpa"].func("yuri", "nobody_here")
+	ok(r2 == false, "TP2 /tpa to an unknown name refused")
+	eq(last_chat("yuri"), ghost_msg, "TP2 offline and unknown refusals are identical")
+	ok(smp_tp.state["ghost_player"] == nil, "TP2 still no state for the offline target")
+end
+
+----------------------------------------------------------------------
+-- MS-3 — the name-taking stubs raise on a non-string player name,
+-- exactly as the engine's luaL_checkstring bindings do
+----------------------------------------------------------------------
+
+do
+	local function raises(fn, ...)
+		return not pcall(fn, ...)
+	end
+	ok(raises(core.chat_send_player, nil, "x"),
+		"MS-3 chat_send_player raises on a nil name")
+	ok(raises(core.get_player_by_name, 42),
+		"MS-3 get_player_by_name raises on a number name")
+	ok(raises(core.player_exists, {}),
+		"MS-3 player_exists raises on a table name")
+	ok(raises(core.show_formspec, nil, "form", ""),
+		"MS-3 show_formspec raises on a nil name")
+	ok(raises(core.close_formspec, nil, "form"),
+		"MS-3 close_formspec raises on a nil name")
+	-- ... and still accepts a real name.
+	reset_chat()
+	local good = pcall(core.chat_send_player, "__ms3_probe", "hello")
+	ok(good, "MS-3 a string name is accepted")
+	reset_chat()
 end
 
 ----------------------------------------------------------------------
