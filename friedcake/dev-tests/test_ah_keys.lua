@@ -7,7 +7,21 @@
 -- Run: luajit friedcake/dev-tests/test_ah_keys.lua
 -- Prints ALL OK and exits 0 on success.
 
-local MODROOT = "/Volumes/Dara/dev/coconut/friedcake/mods/"
+local function readable(p)
+	local f = io.open(p, "r")
+	if f then f:close() return true end
+	return false
+end
+
+local MODROOT
+for _, c in ipairs({
+	"friedcake/mods/",   -- repo root (documented way)
+	"mods/",             -- cwd is friedcake/
+	"../mods/",          -- cwd is friedcake/dev-tests/
+}) do
+	if readable(c .. "smp_ah/keys.lua") then MODROOT = c break end
+end
+assert(MODROOT, "smp_ah/keys.lua not found: run from the repo root")
 
 ----------------------------------------------------------------------
 -- Stubs
